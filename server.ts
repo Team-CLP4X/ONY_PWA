@@ -5,6 +5,10 @@ import {
   geminiProvider,
   ProviderGenerationError,
 } from "./src/server/geminiProvider.ts";
+import {
+  verifyAuthToken,
+  type AuthenticatedRequest,
+} from "./src/server/authMiddleware.ts";
 import type {
   AIConversationRequest,
   AIConversationResponse,
@@ -220,7 +224,15 @@ async function startServer() {
     });
   });
 
-  app.post("/api/chat", async (req: Request, res: Response) => {
+  app.get("/api/auth/verify", verifyAuthToken, (req: AuthenticatedRequest, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!req.user) {
+      return res.status(401).json({ authenticated: false });
+    }
+    return res.json({ authenticated: true, user: req.user });
+  });
+
+  app.post("/api/chat", verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
 
     const clientIp = req.ip || req.socket.remoteAddress || "unknown";

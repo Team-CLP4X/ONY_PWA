@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile, personalization settings, and consent preferences.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "format": "email" },
+        "theme": { "type": "string", "enum": ["peach", "ocean", "sunset", "forest", "lavender", "neutral"] },
+        "companion": { "type": "string", "enum": ["Cat", "Dog", "Bunny", "Bear", "Fox", "Panda"] },
+        "persona": { "type": "string", "enum": ["gentle", "friendly", "calm"] },
+        "preferredLanguage": { "type": "string", "enum": ["English", "Bahasa Melayu", "中文"] },
+        "conversationStyle": { "type": "string", "enum": ["Reflective", "Practical", "A mix"] },
+        "responseLength": { "type": "string", "enum": ["Short", "Balanced", "Detailed"] },
+        "memoryConsent": { "type": "string", "enum": ["allow", "control"] },
+        "useActiveMemories": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName", "email", "theme", "companion", "persona", "preferredLanguage"]
+    },
+    "MoodCheckin": {
+      "title": "MoodCheckin",
+      "description": "User emotional check-in record.",
+      "type": "object",
+      "properties": {
+        "level": { "type": "number", "minimum": 1, "maximum": 5 },
+        "emoji": { "type": "string" },
+        "label": { "type": "string" },
+        "note": { "type": "string", "maxLength": 500 },
+        "reportAllowed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["level", "emoji", "label", "createdAt"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "Consented, user-controlled memory item used for reflection and optional context.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "maxLength": 300 },
+        "reason": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "active", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Chat session metadata and history.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string" },
+        "folderId": { "type": "number" },
+        "reportAllowed": { "type": "boolean" },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "enum": ["user", "ony"] },
+              "text": { "type": "string", "maxLength": 2000 }
+            },
+            "required": ["from", "text"]
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "messages", "updatedAt"]
+    },
+    "GlobeUser": {
+      "title": "GlobeUser",
+      "description": "Anonymous discovery globe node representing opted-in or simulated users across regions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "moodGlow": { "type": "string", "enum": ["bright", "soft", "dim", "neutral"] },
+        "moodLabel": { "type": "string", "maxLength": 50 },
+        "discoverable": { "type": "boolean" },
+        "acceptsMessages": { "type": "boolean" },
+        "minLevel": { "type": "number" },
+        "lon": { "type": "number" },
+        "lat": { "type": "number" }
+      },
+      "required": ["id", "moodGlow", "moodLabel", "discoverable", "acceptsMessages", "minLevel", "lon", "lat"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Community posts shared gently across categories.",
+      "type": "object",
+      "properties": {
+        "author": { "type": "string", "maxLength": 50 },
+        "authorId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "body": { "type": "string", "maxLength": 2000 },
+        "category": { "type": "string", "maxLength": 50 },
+        "likes": { "type": "number", "minimum": 0 },
+        "media": { "type": "string", "enum": ["image", "voice", "text"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["author", "title", "body", "category", "likes", "createdAt"]
+    },
+    "Merchant": {
+      "title": "Merchant",
+      "description": "Wellness and discovery voucher providers.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "maxLength": 50 },
+        "offer": { "type": "string", "maxLength": 100 },
+        "value": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 500 },
+        "image": { "type": "string" },
+        "validity": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["name", "category", "offer", "value", "description", "image", "validity"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles, preferences, and consent controls."
+    },
+    "/users/{userId}/moodCheckins/{checkinId}": {
+      "schema": "MoodCheckin",
+      "description": "Stores private mood entries per user."
+    },
+    "/users/{userId}/memories/{memoryId}": {
+      "schema": "Memory",
+      "description": "Stores user-managed context and memory vault items."
+    },
+    "/users/{userId}/conversations/{conversationId}": {
+      "schema": "Conversation",
+      "description": "Stores conversation history per user."
+    },
+    "/globeUsers/{nodeId}": {
+      "schema": "GlobeUser",
+      "description": "Stores anonymous globe presence nodes for community discovery."
+    },
+    "/communityPosts/{postId}": {
+      "schema": "CommunityPost",
+      "description": "Stores community feed posts and reflections."
+    },
+    "/merchants/{merchantId}": {
+      "schema": "Merchant",
+      "description": "Stores discoverable wellness merchants and voucher offerings."
+    }
+  }
+}

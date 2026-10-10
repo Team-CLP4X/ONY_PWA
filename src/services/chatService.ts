@@ -6,6 +6,8 @@ import type {
   SafetyAction,
 } from "./contracts";
 
+import { getCurrentIdToken } from "../firebase/auth";
+
 const MAX_CLIENT_HISTORY_TURNS = 10;
 const MAX_MESSAGE_LENGTH = 2000;
 const CLIENT_TIMEOUT_MS = 30_000;
@@ -50,12 +52,18 @@ class OnyBackendChatService implements AIService {
     const timeoutId = window.setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
 
     try {
+      const idToken = await getCurrentIdToken().catch(() => null);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+      if (idToken) {
+        headers.Authorization = `Bearer ${idToken}`;
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers,
         body: JSON.stringify({
           ...request,
           message: trimmedMessage,
