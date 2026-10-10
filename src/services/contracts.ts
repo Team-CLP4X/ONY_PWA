@@ -1,4 +1,8 @@
 export type PersonaId = "gentle" | "friendly" | "calm";
+export type PreferredLanguage = "English" | "Bahasa Melayu" | "中文";
+export type ConversationStyle = "Reflective" | "Practical" | "A mix";
+export type ResponseLength = "Short" | "Balanced" | "Detailed";
+export type SafetyAction = "support" | "offer_human_support" | "urgent_safety_flow";
 
 export interface AuthenticatedUser {
   id: string;
@@ -17,6 +21,7 @@ export interface ApprovedContext {
   memoryIds: string[];
   conversationIds: string[];
   consentVersion: string;
+  memories?: string[];
 }
 
 export interface AIConversationRequest {
@@ -24,13 +29,34 @@ export interface AIConversationRequest {
   message: string;
   history: { role: "user" | "assistant"; content: string }[];
   persona: PersonaId;
+  language?: PreferredLanguage | string;
+  conversationStyle?: ConversationStyle | string;
+  responseLength?: ResponseLength | string;
   approvedContext: ApprovedContext;
 }
 
 export interface AIConversationResponse {
   message: string;
-  safetyAction: "support" | "offer_human_support" | "urgent_safety_flow";
+  safetyAction: SafetyAction;
   citedResourceIds: string[];
+  model?: string;
+}
+
+export interface AIServiceErrorPayload {
+  error: {
+    code:
+      | "INVALID_REQUEST"
+      | "PAYLOAD_TOO_LARGE"
+      | "RATE_LIMITED"
+      | "MISSING_API_KEY"
+      | "INVALID_CREDENTIALS"
+      | "QUOTA_EXCEEDED"
+      | "MODEL_UNAVAILABLE"
+      | "TIMEOUT"
+      | "UPSTREAM_ERROR";
+    message: string;
+    safetyAction?: SafetyAction;
+  };
 }
 
 export interface AIService {

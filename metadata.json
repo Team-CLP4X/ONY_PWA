@@ -1,0 +1,8 @@
+{
+  "name": "ONY",
+  "description": "Designed for Malaysian young adults, this emotional-support app offers a friendly chatbot, community engagement, and personalized resources for everyday well-being.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

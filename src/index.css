@@ -340,6 +340,12 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
 .toast { position: absolute; z-index: 100; left: 50%; bottom: 95px; transform: translateX(-50%); background: var(--ink); color: white; padding: 11px 15px; border-radius: 100px; font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 7px; white-space: nowrap; box-shadow: var(--shadow); animation: toast .25s ease; }.toast .icon { width: 15px; }
 @keyframes toast { from { opacity: 0; transform: translate(-50%, 10px); } }
 
+.chat-error-banner { display: flex; flex-direction: column; gap: 8px; border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line)); background: color-mix(in srgb, var(--danger) 7%, var(--paper)); color: var(--ink); border-radius: 16px; padding: 11px 13px; margin: 4px 0; font-size: 12px; line-height: 1.45; }
+.chat-error-banner > div:first-child { display: flex; align-items: flex-start; gap: 8px; }
+.chat-error-banner > div:first-child .icon { width: 16px; height: 16px; color: var(--danger); margin-top: 1px; }
+.chat-error-actions { display: flex; gap: 7px; justify-content: flex-end; }
+.chat-error-actions .btn { min-height: 32px; padding: 5px 11px; font-size: 11px; }
+
 @media (min-width: 700px) {
   .app-shell { padding: 24px 0; }
   .phone { min-height: min(900px, calc(100dvh - 48px)); height: min(900px, calc(100dvh - 48px)); border-radius: 32px; }

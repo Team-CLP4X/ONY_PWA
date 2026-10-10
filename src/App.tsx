@@ -1,5 +1,7 @@
 import { FormEvent, ReactNode, useRef, useState } from "react";
 import logo from "./assets/ony-logo.png";
+import { chatService, ChatServiceError } from "./services/chatService";
+import type { SafetyAction } from "./services/contracts";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -154,7 +156,10 @@ function App() {
   const [displayName, setDisplayName] = useState("Aina");
   const [onboarding, setOnboarding] = useState(0);
   const [memoryConsent, setMemoryConsent] = useState("allow");
+  const [useActiveMemories, setUseActiveMemories] = useState(true);
   const [language, setLanguage] = useState("English");
+  const [conversationStyle, setConversationStyle] = useState("Reflective");
+  const [responseLength, setResponseLength] = useState("Balanced");
   const [selectedTopics, setSelectedTopics] = useState<string[]>(["Stress", "Study"]);
   const [theme, setTheme] = useState<Theme>("peach");
   const [companion, setCompanion] = useState<Companion>("Cat");
@@ -234,7 +239,7 @@ function App() {
         {screen === "main" ? (
           <>
             <main className="main-content">
-              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={setMemories} registerFreeUse={() => {
+              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={setMemories} registerFreeUse={() => {
                 if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                 const next = freeUsage + 1;
                 setFreeUsage(next);
@@ -252,13 +257,13 @@ function App() {
             {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={setMoodEntries} />}
             {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
             {screen === "help" && <Help back={back} navigate={navigate} />}
-            {screen === "personalise" && <Personalise back={back} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} />}
+            {screen === "personalise" && <Personalise back={back} language={language} setLanguage={setLanguage} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} />}
             {screen === "notifications" && <Notifications back={back} />}
             {screen === "subscription" && <Subscription back={back} openHelp={() => navigate("help")} status={subscriptionStatus} setStatus={setSubscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} resetFreeUsage={() => setFreeUsage(0)} notify={notify} />}
             {screen === "merchant" && <MerchantDetail back={back} navigate={navigate} merchantName={selectedMerchantName} notify={notify} />}
             {screen === "voucher" && <Voucher back={back} merchantName={selectedMerchantName} />}
             {screen === "post" && <CreatePost back={back} notify={notify} />}
-            {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} reviewMemories={() => goTab("memory")} clearMemories={() => setMemories([])} />}
+            {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} reviewMemories={() => goTab("memory")} clearMemories={() => setMemories([])} />}
             {screen === "about" && <About back={back} />}
             {screen === "addMemory" && <AddMemory back={back} memories={memories} setMemories={setMemories} editing={editingMemory} notify={notify} />}
             {screen === "jobPrefs" && <JobPreferences back={back} navigate={navigate} />}
@@ -450,8 +455,10 @@ function PageHeader({ title, subtitle, back, action }: { title: string; subtitle
   return <header className="page-header">{back ? <Button variant="ghost" className="icon-btn" onClick={back}><Icon name="back" /></Button> : <SmallLogo />}<div className="header-copy"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action || <span className="header-spacer" />}</header>;
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, registerFreeUse, notify }: {
-  navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona; soundOn: boolean; setSoundOn: (v: boolean) => void;
+function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, registerFreeUse, notify }: {
+  navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
+  language: string; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
+  soundOn: boolean; setSoundOn: (v: boolean) => void;
   conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
   selectedFolderId: number | null;
   memories: Memory[]; setMemories: (items: Memory[]) => void; registerFreeUse: () => void; notify: (s: string) => void;
@@ -477,69 +484,107 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, soundOn, s
   };
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
-  const [inputMode, setInputMode] = useState<"voice" | "text">("voice");
+  const [inputMode, setInputMode] = useState<"voice" | "text">("text");
   const [voiceState, setVoiceState] = useState<"idle" | "listening" | "recording" | "sent">("idle");
   const [savedMemoryId, setSavedMemoryId] = useState<number | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [failedUserText, setFailedUserText] = useState<string | null>(null);
+  const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
   const suggestions = ["I feel stressed", "I feel anxious", "I need someone to talk to", "Find a job", "Study pressure", "I want to relax"];
-  const reply = (text: string) => {
-    if (!text.trim()) return;
-    setSavedMemoryId(null);
-    const lower = text.toLowerCase();
-    if (lower.includes("hurt myself") || lower.includes("self-harm") || lower.includes("suicide")) {
-      setMessages((m) => [...m, { from: "user", text }, { from: "ony", text: "I’m really sorry you’re going through this. You don’t have to handle it alone. Let’s focus on getting you immediate human support." }]); setInput(""); return;
-    }
-    if (lower.includes("find a job") || lower.includes("finding work") || lower.includes("job opportunities")) {
-      registerFreeUse();
-      setMessages((m) => [...m, { from: "user", text }, { from: "ony", text: "I can help you explore sample opportunities. First, what kind of work are you looking for?" }]);
-      setInput("");
-      return;
-    }
-    if (lower.includes("professional support") || lower.includes("therapist") || lower.includes("counsellor")) {
-      setMessages((m) => [...m, { from: "user", text }, { from: "ony", text: "I can show you peer support and qualified professional options. You can choose what feels right." }]);
-      window.setTimeout(() => navigate("professional"), 500); return;
-    }
-    if (lower.includes("remember this")) { registerFreeUse(); setMessages((m) => [...m, { from: "user", text }, { from: "ony", text: "I can save that as a private memory if you’d like." }]); setInput(""); return; }
-    if (lower.includes("show my memories")) { goTab("memory"); return; }
-    if (lower.includes("community")) { goTab("community"); return; }
-    if (lower.includes("something relaxing") || lower.includes("help me relax") || lower.includes("want to relax")) { window.setTimeout(() => navigate("wellbeing"), 350); return; }
-    registerFreeUse();
-    const baseResponse = lower.includes("lonely")
-      ? "That sounds lonely, especially when you’ve been carrying it quietly. Would it help to tell me when it feels strongest?"
-      : lower.includes("study") || lower.includes("exam")
-        ? "It sounds like there’s a lot riding on this. Let’s make it smaller: what’s the one task that feels most urgent?"
-        : lower.includes("work")
-          ? "Work pressure can follow you home. What happened today that’s still sitting with you?"
-          : lower.includes("relationship")
-            ? "It makes sense that this feels heavy. You don’t have to decide everything now—what part hurts most?"
-            : lower.includes("stress")
-              ? "I hear you. Before we solve anything, take one slow breath with me. What’s taking up the most space in your mind?"
-              : "I’m listening. You don’t need to make it sound neat—tell me whatever feels important right now.";
-    const response = persona === "friendly"
-      ? `I’m with you. ${baseResponse.replace("I hear you. ", "").replace("I’m listening. ", "")}`
-      : persona === "calm"
-        ? `Let’s pause here. ${baseResponse.replace("I hear you. ", "").replace("I’m listening. ", "")}`
-        : baseResponse;
-    setMessages((m) => [...m, { from: "user", text }]); setInput(""); setTyping(true);
-    window.setTimeout(() => {
+
+  const sendToBackend = async (textToSend: string, priorMessages: Message[]) => {
+    setTyping(true);
+    setChatError(null);
+
+    const activeConsentedMemories =
+      memoryConsent === "allow" && useActiveMemories
+        ? memories.filter((m) => m.active && m.kind !== "image")
+        : [];
+
+    try {
+      const response = await chatService.sendMessage({
+        conversationId: String(activeIdRef.current || "new"),
+        message: textToSend,
+        history: priorMessages.slice(-10).map((m) => ({
+          role: m.from === "user" ? "user" : "assistant",
+          content: m.text,
+        })),
+        persona,
+        language,
+        conversationStyle,
+        responseLength,
+        approvedContext: {
+          memoryIds: activeConsentedMemories.map((m) => String(m.id)),
+          conversationIds: activeIdRef.current ? [String(activeIdRef.current)] : [],
+          consentVersion: "1.0",
+          memories: activeConsentedMemories.slice(0, 5).map((m) => m.text),
+        },
+      });
+
+      setServerSafetyAction(response.safetyAction);
+      setFailedUserText(null);
+      setMessages((m) => [...m, { from: "ony", text: response.message }]);
+
+      if (response.safetyAction !== "urgent_safety_flow") {
+        registerFreeUse();
+      }
+    } catch (err) {
+      const message =
+        err instanceof ChatServiceError
+          ? err.message
+          : "Unable to get a reply from ONY right now. Please try again.";
+      if (err instanceof ChatServiceError && err.safetyAction) {
+        setServerSafetyAction(err.safetyAction);
+      }
+      setChatError(message);
+      setFailedUserText(textToSend);
+    } finally {
       setTyping(false);
-      setMessages((m) => [...m, { from: "ony", text: response }]);
-    }, 650);
+    }
   };
+
+  const reply = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || typing) return;
+    setSavedMemoryId(null);
+    const lower = trimmed.toLowerCase();
+    if (lower === "show my memories") { goTab("memory"); setInput(""); return; }
+    if (lower === "open community") { goTab("community"); setInput(""); return; }
+
+    const priorMessages = [...messages];
+    setMessages((m) => [...m, { from: "user", text: trimmed }]);
+    setInput("");
+    void sendToBackend(trimmed, priorMessages);
+  };
+
+  const retryLastMessage = () => {
+    if (!failedUserText || typing) return;
+    const priorMessages = messages.slice(0, -1);
+    void sendToBackend(failedUserText, priorMessages);
+  };
+
   const submit = (e: FormEvent) => { e.preventDefault(); reply(input); };
   const handleVoice = () => {
+    if (typing) return;
     if (voiceState === "idle" || voiceState === "sent") {
       setVoiceState("listening");
       window.setTimeout(() => setVoiceState("recording"), 450);
     }
     else if (voiceState === "listening") setVoiceState("recording");
-    else if (voiceState === "recording") { registerFreeUse(); setVoiceState("sent"); setMessages((m) => [...m, { from: "user", text: "I’ve been feeling a bit overwhelmed today." }, { from: "ony", text: "I hear you. Thank you for saying it out loud. Would you like something calming, or would you rather talk through what feels heaviest?" }]); notify("Voice transcribed and sent"); }
+    else if (voiceState === "recording") {
+      setVoiceState("sent");
+      notify("Voice transcribed and sent");
+      reply("I’ve been feeling a bit overwhelmed today.");
+    }
     else setVoiceState("idle");
   };
   const latestUserText = [...messages].reverse().find((message) => message.from === "user")?.text || "";
   const latestLower = latestUserText.toLowerCase();
-  const safetyContext = ["hurt myself", "self-harm", "suicide", "not safe", "end my life"].some((phrase) => latestLower.includes(phrase));
+  const safetyContext =
+    serverSafetyAction === "urgent_safety_flow" ||
+    ["hurt myself", "self-harm", "suicide", "not safe", "end my life", "kill myself", "bunuh diri", "cederakan diri", "tak nak hidup"].some((phrase) => latestLower.includes(phrase));
   const memoryContext = ["always", "helps me", "calmer when", "remember this", "important to me", "i prefer", "i like"].some((phrase) => latestLower.includes(phrase));
-  const anxietyContext = ["anxious", "anxiety", "stress", "overwhelmed", "panic"].some((phrase) => latestLower.includes(phrase));
+  const anxietyContext = ["anxious", "anxiety", "stress", "overwhelmed", "panic", "relax"].some((phrase) => latestLower.includes(phrase));
   const studyContext = ["study", "exam", "assignment", "class"].some((phrase) => latestLower.includes(phrase));
   const jobContext = ["job", "work opportunity", "internship", "career"].some((phrase) => latestLower.includes(phrase));
   const relationshipContext = ["relationship", "partner", "boyfriend", "girlfriend", "friendship"].some((phrase) => latestLower.includes(phrase));
@@ -558,16 +603,24 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, soundOn, s
     <PageHeader title="Chat with ONY" subtitle="Here with you, at your pace" action={<div className="chat-header-actions"><Button variant="secondary" onClick={() => navigate("mood")}>Mood</Button><Button variant="secondary" onClick={() => navigate("help")}>Help</Button></div>} />
     <div className="chat-scroll">
     <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety demo</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
-    {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>Memory is on · You’re in control</span><Button variant="ghost" onClick={() => goTab("memory")}>View</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} onClick={() => reply(s)}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
+    {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? "Memory is on · You’re in control" : "Memory sharing paused · You’re in control"}</span><Button variant="ghost" onClick={() => goTab("memory")}>View</Button></div>}
+    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing} onClick={() => reply(s)}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
         <div className="message">{m.text}</div>
       </div>)}
       {typing && <div className="message-row ony"><CompanionAvatar companion={companion} /><div className="message typing"><i /><i /><i /></div></div>}
+      {chatError && !typing && <div className="chat-error-banner" role="alert">
+        <div><Icon name="info" /><span>{chatError}</span></div>
+        <div className="chat-error-actions">
+          <Button variant="ghost" onClick={() => setChatError(null)}>Dismiss</Button>
+          {failedUserText && <Button variant="secondary" onClick={retryLastMessage}>Retry</Button>}
+        </div>
+      </div>}
       {!typing && <div className="context-actions">
         {safetyContext && <><Button variant="danger" onClick={() => navigate("safety")}>Get help now</Button><Button variant="secondary" onClick={() => navigate("professional")}>Find professional support</Button><Button variant="secondary" onClick={() => navigate("trusted")}>Contact trusted person</Button></>}
+        {!safetyContext && serverSafetyAction === "offer_human_support" && <><Button variant="secondary" onClick={() => navigate("professional")}>Find professional support</Button><Button variant="secondary" onClick={() => navigate("help")}>View support resources</Button></>}
         {!safetyContext && memoryContext && (savedMemoryId === null ? <Button variant="secondary" onClick={saveContextMemory}><Icon name="memory" />Remember this</Button> : <div className="memory-saved"><Icon name="check" /><span>Saved to your Memory Vault.</span><Button variant="ghost" onClick={undoContextMemory}>Undo</Button></div>)}
         {!safetyContext && anxietyContext && <><Button variant="secondary" onClick={() => navigate("wellbeing")}>Try something calming</Button><Button variant="secondary" onClick={() => notify("One-minute breathing activity opened")}>Breathing activity</Button><Button variant="secondary" onClick={() => navigate("wellbeing")}>Calming music</Button></>}
         {!safetyContext && studyContext && <><Button variant="secondary" onClick={() => reply("Help me make a study plan")}>Study plan</Button><Button variant="secondary" onClick={() => notify("A five-minute break timer started")}>Take a break</Button><Button variant="secondary" onClick={() => reply("I want to talk about my study pressure")}>Talk about it</Button></>}
@@ -579,10 +632,10 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, soundOn, s
     <div className="chat-composer">
       <Button variant="ghost" className="ai-notice" onClick={() => navigate("resources")}><Icon name="info" />AI can be inaccurate · Not diagnosis or treatment</Button>
       <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />Voice</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />Text</button></div>
-      {inputMode === "voice" ? <div className={`voice-composer state-${voiceState}`}><button className="primary-mic" onClick={handleVoice}><Icon name={voiceState === "recording" ? "close" : voiceState === "sent" ? "check" : "mic"} /></button><div><strong>{voiceState === "idle" ? "Tap to speak" : voiceState === "listening" ? "Listening…" : voiceState === "recording" ? "Recording · tap Done" : "Message sent"}</strong><small>{voiceState === "listening" ? "Start talking when you’re ready" : voiceState === "recording" ? "00:08 · Stop / Done" : voiceState === "sent" ? "Tap the mic to speak again" : "Voice stays in this demo"}</small></div></div> :
+      {inputMode === "voice" ? <div className={`voice-composer state-${voiceState}`}><button className="primary-mic" disabled={typing} onClick={handleVoice}><Icon name={voiceState === "recording" ? "close" : voiceState === "sent" ? "check" : "mic"} /></button><div><strong>{voiceState === "idle" ? "Tap to speak" : voiceState === "listening" ? "Listening…" : voiceState === "recording" ? "Recording · tap Done" : "Message sent"}</strong><small>{voiceState === "listening" ? "Start talking when you’re ready" : voiceState === "recording" ? "00:08 · Stop / Done" : voiceState === "sent" ? "Tap the mic to speak again" : "Voice stays in this demo"}</small></div></div> :
     <form className="chat-input" onSubmit={submit}>
-      <TextInput value={input} onChange={(e) => setInput(e.target.value)} placeholder="Share what’s on your mind..." aria-label="Message ONY" />
-      <Button className="send-btn" type="submit"><Icon name="send" /></Button>
+      <TextInput value={input} onChange={(e) => setInput(e.target.value)} placeholder="Share what’s on your mind..." aria-label="Message ONY" maxLength={2000} />
+      <Button className="send-btn" type="submit" disabled={typing || !input.trim()}><Icon name="send" /></Button>
     </form>}
     </div>
   </div>;
@@ -869,21 +922,24 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
   </section></>;
 }
 
-function Personalise({ back, language, setLanguage, theme, setTheme, companion, setCompanion, persona, setPersona, soundOn, setSoundOn, volume, setVolume, notify }: {
-  back: () => void; language: string; setLanguage: (v: string) => void; theme: Theme; setTheme: (v: Theme) => void; companion: Companion; setCompanion: (v: Companion) => void;
+function Personalise({ back, language, setLanguage, conversationStyle, setConversationStyle, responseLength, setResponseLength, useActiveMemories, setUseActiveMemories, theme, setTheme, companion, setCompanion, persona, setPersona, soundOn, setSoundOn, volume, setVolume, notify }: {
+  back: () => void; language: string; setLanguage: (v: string) => void;
+  conversationStyle: string; setConversationStyle: (v: string) => void;
+  responseLength: string; setResponseLength: (v: string) => void;
+  useActiveMemories: boolean; setUseActiveMemories: (v: boolean) => void;
+  theme: Theme; setTheme: (v: Theme) => void; companion: Companion; setCompanion: (v: Companion) => void;
   soundOn: boolean; setSoundOn: (v: boolean) => void; volume: number; setVolume: (v: number) => void; notify: (s: string) => void;
   persona: Persona; setPersona: (v: Persona) => void;
 }) {
-  const [style, setStyle] = useState("Reflective"); const [length, setLength] = useState("Short"); const [memory, setMemory] = useState(true);
   return <><PageHeader title="Personalise ONY" subtitle="Shape how conversations feel" back={back} /><section className="page-pad">
     <div className="setting-block"><h3>ONY companion</h3><p>Choose who accompanies you.</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
     <div className="setting-block"><h3>Environment</h3><p>Choose a calming space for the whole app.</p><ThemePicker value={theme} setValue={setTheme} /></div>
     <div className="ambient-settings"><div><strong>{themeOptions.find((item) => item.id === theme)?.name} ambience</strong><small>Simulated prototype sound</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button><label>Volume <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
     <div className="setting-block"><h3>Communication style</h3><p>Tone changes, but ONY’s safety rules never do.</p><PersonaPicker value={persona} setValue={setPersona} /></div>
-    <SettingChoices title="Conversation style" values={["Reflective", "Practical", "A mix"]} value={style} setValue={setStyle} />
-    <SettingChoices title="Response length" values={["Short", "Balanced", "Detailed"]} value={length} setValue={setLength} />
+    <SettingChoices title="Conversation style" values={["Reflective", "Practical", "A mix"]} value={conversationStyle} setValue={setConversationStyle} />
+    <SettingChoices title="Response length" values={["Short", "Balanced", "Detailed"]} value={responseLength} setValue={setResponseLength} />
     <SettingChoices title="Language" values={["English", "Bahasa Melayu", "中文"]} value={language} setValue={setLanguage} />
-    <div className="setting-toggle"><div><strong>Relevant memories</strong><p>Let ONY use active Vault memories.</p></div><Toggle on={memory} setOn={setMemory} /></div>
+    <div className="setting-toggle"><div><strong>Relevant memories</strong><p>Let ONY use active Vault memories.</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
     <div className="preview-bubble"><CompanionAvatar companion={companion} /><div><span>Your preview</span><p>{personaOptions.find((item) => item.id === persona)?.preview}</p></div></div>
     <Button className="full" onClick={() => notify("Your ONY preferences are saved")}>Save preferences</Button>
   </section></>;
@@ -1237,11 +1293,11 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
   </section></>;
 }
 
-function Privacy({ back, notify, memoryCount, reviewMemories, clearMemories }: { back: () => void; notify: (s: string) => void; memoryCount: number; reviewMemories: () => void; clearMemories: () => void }) {
-  const [analytics, setAnalytics] = useState(false); const [memory, setMemory] = useState(true);
-  return <><PageHeader title="Privacy & safety" subtitle="Clear choices, always" back={back} /><section className="page-pad"><div className="help-hero"><Icon name="shield" /><div><h2>Know what this demo does.</h2><p>Conversation state is held locally for this session. No production backend, account security, or deletion service is connected.</p></div></div>
-    <div className="privacy-facts"><div><strong>What may be used</strong><p>Your selected persona, active memories, and current conversation context can personalise mock replies.</p></div><div><strong>AI model training</strong><p>This prototype does not send conversations to an AI model, so they are not used for model training.</p></div><div><strong>Share less identifying data</strong><p>Avoid unnecessary names, addresses, IDs, financial details, or private information about other people.</p></div></div>
-    <div className="setting-toggle"><div><strong>Use active memories</strong><p>Allow {memoryCount} saved {memoryCount === 1 ? "memory" : "memories"} to personalise future mock replies.</p></div><Toggle on={memory} setOn={setMemory} /></div>
+function Privacy({ back, notify, memoryCount, useActiveMemories, setUseActiveMemories, reviewMemories, clearMemories }: { back: () => void; notify: (s: string) => void; memoryCount: number; useActiveMemories: boolean; setUseActiveMemories: (v: boolean) => void; reviewMemories: () => void; clearMemories: () => void }) {
+  const [analytics, setAnalytics] = useState(false);
+  return <><PageHeader title="Privacy & safety" subtitle="Clear choices, always" back={back} /><section className="page-pad"><div className="help-hero"><Icon name="shield" /><div><h2>Know what this demo does.</h2><p>Conversation state is held locally for this session. Chat messages are sent through ONY’s server endpoint to Gemini when configured.</p></div></div>
+    <div className="privacy-facts"><div><strong>What may be used</strong><p>Your selected persona, language, active consented memories, and bounded recent conversation context are sent with your message.</p></div><div><strong>AI provider</strong><p>Chatbot replies are generated via the server-side Gemini API integration. Review provider retention policies before public launch.</p></div><div><strong>Share less identifying data</strong><p>Avoid unnecessary names, addresses, IDs, financial details, or private information about other people.</p></div></div>
+    <div className="setting-toggle"><div><strong>Use active memories</strong><p>Allow {memoryCount} saved {memoryCount === 1 ? "memory" : "memories"} to personalise future replies.</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
     <div className="setting-toggle"><div><strong>Proposed anonymous analytics</strong><p>Illustrative setting only; no analytics service is connected.</p></div><Toggle on={analytics} setOn={setAnalytics} /></div>
     <Button variant="secondary" className="full" onClick={reviewMemories}>Review saved memories</Button>
     <Button variant="secondary" className="full" onClick={() => notify("Demo data export simulated — no file created")}>Preview data export</Button>
