@@ -1,0 +1,31 @@
+{
+  "name": "ONY",
+  "short_name": "ONY",
+  "description": "Designed for Malaysian young adults, this emotional-support app offers a friendly chatbot, community engagement, and personalized resources for everyday well-being.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#fff9f1",
+  "background_color": "#fff9f1",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
