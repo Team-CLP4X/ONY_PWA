@@ -48,7 +48,23 @@ class GeminiChatProvider implements ServerChatProvider {
 
   private getApiKey(): string | undefined {
     const key = process.env.GEMINI_API_KEY?.trim();
-    return key && key.length > 0 ? key : undefined;
+    if (key && key.length > 0 && !key.toLowerCase().startsWith("gemini-")) {
+      return key;
+    }
+    // Fallback: If GEMINI_MODEL appears to contain an API key (e.g. starts with AQ. or AIzaSy)
+    const modelCandidate = process.env.GEMINI_MODEL?.trim();
+    if (
+      modelCandidate &&
+      (modelCandidate.startsWith("AQ.") ||
+        modelCandidate.startsWith("AIzaSy") ||
+        (modelCandidate.length > 35 && !modelCandidate.toLowerCase().includes("gemini")))
+    ) {
+      console.warn(
+        "[ONY] Detected API key in GEMINI_MODEL environment variable; using it as API key.",
+      );
+      return modelCandidate;
+    }
+    return undefined;
   }
 
   isConfigured(): boolean {
@@ -57,9 +73,28 @@ class GeminiChatProvider implements ServerChatProvider {
 
   getModel(): string {
     const configuredModel = process.env.GEMINI_MODEL?.trim();
-    return configuredModel && configuredModel.length > 0
-      ? configuredModel
-      : DEFAULT_GEMINI_MODEL;
+    if (!configuredModel) {
+      return DEFAULT_GEMINI_MODEL;
+    }
+
+    // Guard against API keys accidentally passed in GEMINI_MODEL
+    const isApiKeyPattern =
+      configuredModel.startsWith("AQ.") ||
+      configuredModel.startsWith("AIzaSy") ||
+      (configuredModel.length > 35 && !configuredModel.toLowerCase().includes("gemini"));
+
+    const isValidModelPattern =
+      configuredModel.toLowerCase().includes("gemini") ||
+      configuredModel.toLowerCase().startsWith("models/");
+
+    if (isApiKeyPattern || !isValidModelPattern) {
+      console.warn(
+        `[ONY] Ignoring invalid GEMINI_MODEL value ("${configuredModel.slice(0, 8)}..."). Falling back to default model: ${DEFAULT_GEMINI_MODEL}.`,
+      );
+      return DEFAULT_GEMINI_MODEL;
+    }
+
+    return configuredModel;
   }
 
   async generateReply(input: GenerateReplyInput): Promise<GenerateReplyResult> {
@@ -107,10 +142,10 @@ class GeminiChatProvider implements ServerChatProvider {
       }, GEMINI_TIMEOUT_MS);
     });
 
-    try {
+    const executeGenerate = async (targetModel: string) => {
       const response = await Promise.race([
         ai.models.generateContent({
-          model,
+          model: targetModel,
           contents,
           config: {
             systemInstruction: input.systemInstruction,
@@ -131,8 +166,12 @@ class GeminiChatProvider implements ServerChatProvider {
 
       return {
         reply: replyText,
-        model: response.modelVersion || model,
+        model: response.modelVersion || targetModel,
       };
+    };
+
+    try {
+      return await executeGenerate(model);
     } catch (err: unknown) {
       if (err instanceof ProviderGenerationError) {
         throw err;
@@ -151,6 +190,28 @@ class GeminiChatProvider implements ServerChatProvider {
             ? errObj.code
             : undefined;
       const rawMsg = (errObj?.message || "").toLowerCase();
+
+      // If a custom or configured model failed due to invalid model / not found / bad request,
+      // attempt fallback to default model if we haven't already.
+      if (
+        (status === 404 ||
+          status === 400 ||
+          rawMsg.includes("not found") ||
+          rawMsg.includes("not supported")) &&
+        model !== DEFAULT_GEMINI_MODEL
+      ) {
+        console.warn(
+          `[ONY /api/chat] Model ${model} failed with ${status}. Attempting fallback to ${DEFAULT_GEMINI_MODEL}...`,
+        );
+        try {
+          return await executeGenerate(DEFAULT_GEMINI_MODEL);
+        } catch (fallbackErr: unknown) {
+          console.error(
+            `[ONY /api/chat] Fallback model ${DEFAULT_GEMINI_MODEL} also failed:`,
+            fallbackErr,
+          );
+        }
+      }
 
       console.info(
         `[ONY /api/chat] Handled Gemini API error: status=${status ?? "n/a"} name=${errObj?.name ?? "Error"} model=${model}`,
