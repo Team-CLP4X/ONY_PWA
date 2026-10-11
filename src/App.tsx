@@ -542,7 +542,7 @@ function App() {
         {screen === "main" ? (
           <>
             <main className="main-content">
-              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} registerFreeUse={() => {
+              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                 if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                 const next = freeUsage + 1;
                 setFreeUsage(next);
@@ -832,13 +832,15 @@ function PageHeader({ title, subtitle, back, action }: { title: string; subtitle
   return <header className="page-header">{back ? <Button variant="ghost" className="icon-btn" onClick={back}><Icon name="back" /></Button> : <SmallLogo />}<div className="header-copy"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action || <span className="header-spacer" />}</header>;
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, registerFreeUse, notify }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   language: string; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
   conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
   selectedFolderId: number | null;
-  memories: Memory[]; setMemories: (items: Memory[]) => void; registerFreeUse: () => void; notify: (s: string) => void;
+  memories: Memory[]; setMemories: (items: Memory[]) => void;
+  subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
+  registerFreeUse: () => void; notify: (s: string) => void;
 }) {
   const activeIdRef = useRef<number | null>(activeChatId);
   activeIdRef.current = activeChatId;
@@ -868,6 +870,38 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const [failedUserText, setFailedUserText] = useState<string | null>(null);
   const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
   const suggestions = ["I feel stressed", "I feel anxious", "I need someone to talk to", "Find a job", "Study pressure", "I want to relax"];
+
+  const isSubscribed = subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly";
+  const isLimitReached = !isSubscribed && freeUsage >= freeLimit;
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    requestAnimationFrame(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior, block: "end" });
+      } else if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTo({
+          top: chatScrollRef.current.scrollHeight,
+          behavior,
+        });
+      }
+    });
+  };
+
+  useEffect(() => {
+    if (messages.length > 0 || typing) {
+      scrollToBottom("smooth");
+    }
+  }, [messages.length, typing]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom("auto");
+    }
+  }, [activeChatId]);
 
   const sendToBackend = async (textToSend: string, priorMessages: Message[]) => {
     setTyping(true);
@@ -901,6 +935,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       setServerSafetyAction(response.safetyAction);
       setFailedUserText(null);
       setMessages((m) => [...m, { from: "ony", text: response.message }]);
+      scrollToBottom("smooth");
 
       if (response.safetyAction !== "urgent_safety_flow") {
         registerFreeUse();
@@ -923,6 +958,11 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const reply = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || typing) return;
+    if (isLimitReached) {
+      notify("Message limit reached. Please choose a subscription plan.");
+      navigate("subscription");
+      return;
+    }
     setSavedMemoryId(null);
     const lower = trimmed.toLowerCase();
     if (lower === "show my memories") { goTab("memory"); setInput(""); return; }
@@ -931,6 +971,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     const priorMessages = [...messages];
     setMessages((m) => [...m, { from: "user", text: trimmed }]);
     setInput("");
+    scrollToBottom("smooth");
     void sendToBackend(trimmed, priorMessages);
   };
 
@@ -976,12 +1017,33 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     setSavedMemoryId(null);
     notify("Memory removed");
   };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const target = e.target;
+    target.style.height = "auto";
+    const nextHeight = Math.min(Math.max(target.scrollHeight, 38), 120);
+    target.style.height = `${nextHeight}px`;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!typing && !isLimitReached && input.trim()) {
+        reply(input);
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
+      }
+    }
+  };
+
   return <div className="chat-page">
     <PageHeader title="Chat with ONY" subtitle="Here with you, at your pace" action={<div className="chat-header-actions"><Button variant="secondary" onClick={() => navigate("mood")}>Mood</Button><Button variant="secondary" onClick={() => navigate("help")}>Help</Button></div>} />
-    <div className="chat-scroll">
+    <div className="chat-scroll" ref={chatScrollRef}>
     <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety demo</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? "Memory is on · You’re in control" : "Memory sharing paused · You’re in control"}</span><Button variant="ghost" onClick={() => goTab("memory")}>View</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing} onClick={() => reply(s)}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
+    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
@@ -1004,16 +1066,41 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         {!safetyContext && jobContext && <><Button variant="secondary" onClick={() => navigate("jobs")}>Find job opportunities</Button><Button variant="secondary" onClick={() => navigate("jobPrefs")}>Set job preferences</Button></>}
         {!safetyContext && relationshipContext && <><Button variant="secondary" onClick={() => reply("I want to tell you more about it")}>Tell me more</Button><Button variant="secondary" onClick={() => reply("Help me reflect on this relationship")}>Help me reflect</Button></>}
       </div>}
+      <div ref={messagesEndRef} className="chat-bottom-spacer" />
     </div>}
     </div>
     <div className="chat-composer">
       <Button variant="ghost" className="ai-notice" onClick={() => navigate("resources")}><Icon name="info" />AI can be inaccurate · Not diagnosis or treatment</Button>
-      <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />Voice</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />Text</button></div>
-      {inputMode === "voice" ? <div className={`voice-composer state-${voiceState}`}><button className="primary-mic" disabled={typing} onClick={handleVoice}><Icon name={voiceState === "recording" ? "close" : voiceState === "sent" ? "check" : "mic"} /></button><div><strong>{voiceState === "idle" ? "Tap to speak" : voiceState === "listening" ? "Listening…" : voiceState === "recording" ? "Recording · tap Done" : "Message sent"}</strong><small>{voiceState === "listening" ? "Start talking when you’re ready" : voiceState === "recording" ? "00:08 · Stop / Done" : voiceState === "sent" ? "Tap the mic to speak again" : "Voice stays in this demo"}</small></div></div> :
-    <form className="chat-input" onSubmit={submit}>
-      <TextInput value={input} onChange={(e) => setInput(e.target.value)} placeholder="Share what’s on your mind..." aria-label="Message ONY" maxLength={2000} />
-      <Button className="send-btn" type="submit" disabled={typing || !input.trim()}><Icon name="send" /></Button>
-    </form>}
+      {isLimitReached ? (
+        <div className="chat-limit-banner">
+          <div className="limit-banner-text">
+            <strong><Icon name="shield" /> Free message allowance reached ({freeUsage}/{freeLimit})</strong>
+            <p>You’ve reached the free message limit. Please choose a plan or activate your free trial to continue chatting with ONY.</p>
+          </div>
+          <Button variant="primary" className="full upgrade-btn" onClick={() => navigate("subscription")}>
+            View Subscription Plans & Unlock
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />Voice</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />Text</button></div>
+          {inputMode === "voice" ? <div className={`voice-composer state-${voiceState}`}><button className="primary-mic" disabled={typing} onClick={handleVoice}><Icon name={voiceState === "recording" ? "close" : voiceState === "sent" ? "check" : "mic"} /></button><div><strong>{voiceState === "idle" ? "Tap to speak" : voiceState === "listening" ? "Listening…" : voiceState === "recording" ? "Recording · tap Done" : "Message sent"}</strong><small>{voiceState === "listening" ? "Start talking when you’re ready" : voiceState === "recording" ? "00:08 · Stop / Done" : voiceState === "sent" ? "Tap the mic to speak again" : "Voice stays in this demo"}</small></div></div> :
+          <form className="chat-input" onSubmit={submit}>
+            <textarea
+              ref={textareaRef}
+              className="chat-textarea"
+              rows={1}
+              value={input}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Share what's on your mind.."
+              aria-label="Message ONY"
+              maxLength={2000}
+            />
+            <Button className="send-btn" type="submit" disabled={typing || !input.trim()}><Icon name="send" /></Button>
+          </form>}
+        </>
+      )}
     </div>
   </div>;
 }

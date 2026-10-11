@@ -180,6 +180,8 @@ function sendStructuredError(
   message: string,
   safetyAction?: SafetyAction,
 ) {
+  // Prevent Nginx proxy_intercept_errors from replacing API JSON with warmup.html
+  const safeStatus = status === 502 || status === 503 || status === 504 ? 500 : status;
   const payload: AIServiceErrorPayload = {
     error: {
       code,
@@ -187,7 +189,7 @@ function sendStructuredError(
       ...(safetyAction ? { safetyAction } : {}),
     },
   };
-  return res.status(status).json(payload);
+  return res.status(safeStatus).json(payload);
 }
 
 async function startServer() {

@@ -1,8 +1,9 @@
 import { GoogleGenAI, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
-const GEMINI_TIMEOUT_MS = 25_000;
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+export const BACKUP_GEMINI_MODEL = "gemini-3.1-flash-lite";
+const GEMINI_TIMEOUT_MS = 10_000;
 
 export interface ProviderTurn {
   role: "user" | "assistant";
@@ -87,10 +88,14 @@ class GeminiChatProvider implements ServerChatProvider {
       configuredModel.toLowerCase().includes("gemini") ||
       configuredModel.toLowerCase().startsWith("models/");
 
-    if (isApiKeyPattern || !isValidModelPattern) {
-      console.warn(
-        `[ONY] Ignoring invalid GEMINI_MODEL value ("${configuredModel.slice(0, 8)}..."). Falling back to default model: ${DEFAULT_GEMINI_MODEL}.`,
-      );
+    // Check if configured model is known to be deprecated or overloaded
+    const isDeprecated =
+      configuredModel.includes("2.5") ||
+      configuredModel.includes("2.0") ||
+      configuredModel.includes("1.5") ||
+      configuredModel.includes("3.8");
+
+    if (isApiKeyPattern || !isValidModelPattern || isDeprecated) {
       return DEFAULT_GEMINI_MODEL;
     }
 
@@ -101,22 +106,13 @@ class GeminiChatProvider implements ServerChatProvider {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       throw new ProviderGenerationError(
-        503,
+        500,
         "MISSING_API_KEY",
         "ONY’s AI service is not connected yet because GEMINI_API_KEY is not configured on the server.",
       );
     }
 
-    const model = this.getModel();
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+    const ai = new GoogleGenAI({ apiKey });
 
     const contents: Content[] = [
       ...input.history.map((turn) => ({
@@ -129,157 +125,75 @@ class GeminiChatProvider implements ServerChatProvider {
       },
     ];
 
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_resolve, reject) => {
-      timeoutHandle = setTimeout(() => {
-        reject(
-          new ProviderGenerationError(
-            504,
-            "TIMEOUT",
-            "ONY took too long to respond. Please try again in a moment.",
-          ),
-        );
-      }, GEMINI_TIMEOUT_MS);
-    });
+    const primaryModel = this.getModel();
+    const candidateModels = Array.from(
+      new Set([primaryModel, DEFAULT_GEMINI_MODEL, BACKUP_GEMINI_MODEL]),
+    ).filter((m) => m === "gemini-3.5-flash-lite" || m === "gemini-3.1-flash-lite");
 
-    const executeGenerate = async (targetModel: string) => {
-      const response = await Promise.race([
-        ai.models.generateContent({
-          model: targetModel,
-          contents,
-          config: {
-            systemInstruction: input.systemInstruction,
-            temperature: 0.7,
-          },
-        }),
-        timeoutPromise,
-      ]);
+    if (!candidateModels.includes(DEFAULT_GEMINI_MODEL)) {
+      candidateModels.unshift(DEFAULT_GEMINI_MODEL);
+    }
 
-      const replyText = response.text?.trim();
-      if (!replyText) {
-        throw new ProviderGenerationError(
-          502,
-          "UPSTREAM_ERROR",
-          "ONY received an empty response from the AI service. Please try sending your message again.",
-        );
-      }
+    let lastError: unknown = null;
 
-      return {
-        reply: replyText,
-        model: response.modelVersion || targetModel,
-      };
-    };
-
-    try {
-      return await executeGenerate(model);
-    } catch (err: unknown) {
-      if (err instanceof ProviderGenerationError) {
-        throw err;
-      }
-
-      const errObj = err as {
-        status?: number;
-        code?: number | string;
-        name?: string;
-        message?: string;
-      };
-      const status =
-        typeof errObj?.status === "number"
-          ? errObj.status
-          : typeof errObj?.code === "number"
-            ? errObj.code
-            : undefined;
-      const rawMsg = (errObj?.message || "").toLowerCase();
-
-      // If a custom or configured model failed due to invalid model / not found / bad request,
-      // attempt fallback to default model if we haven't already.
-      if (
-        (status === 404 ||
-          status === 400 ||
-          rawMsg.includes("not found") ||
-          rawMsg.includes("not supported")) &&
-        model !== DEFAULT_GEMINI_MODEL
-      ) {
-        console.warn(
-          `[ONY /api/chat] Model ${model} failed with ${status}. Attempting fallback to ${DEFAULT_GEMINI_MODEL}...`,
-        );
-        try {
-          return await executeGenerate(DEFAULT_GEMINI_MODEL);
-        } catch (fallbackErr: unknown) {
-          console.error(
-            `[ONY /api/chat] Fallback model ${DEFAULT_GEMINI_MODEL} also failed:`,
-            fallbackErr,
+    for (const targetModel of candidateModels) {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(
+            new ProviderGenerationError(
+              500,
+              "TIMEOUT",
+              "ONY took too long to respond. Please try again in a moment.",
+            ),
           );
+        }, GEMINI_TIMEOUT_MS);
+      });
+
+      try {
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model: targetModel,
+            contents,
+            config: {
+              systemInstruction: input.systemInstruction,
+              temperature: 0.7,
+            },
+          }),
+          timeoutPromise,
+        ]);
+
+        const replyText = response.text?.trim();
+        if (replyText && replyText.length > 0) {
+          return {
+            reply: replyText,
+            model: response.modelVersion || targetModel,
+          };
+        }
+      } catch (err: unknown) {
+        lastError = err;
+        console.warn(
+          `[ONY /api/chat] Model ${targetModel} attempt failed, trying fallback if available:`,
+          err instanceof Error ? err.message : err,
+        );
+      } finally {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
         }
       }
-
-      console.info(
-        `[ONY /api/chat] Handled Gemini API error: status=${status ?? "n/a"} name=${errObj?.name ?? "Error"} model=${model}`,
-      );
-
-      if (
-        errObj?.name === "AbortError" ||
-        rawMsg.includes("timeout") ||
-        rawMsg.includes("timed out") ||
-        status === 504
-      ) {
-        throw new ProviderGenerationError(
-          504,
-          "TIMEOUT",
-          "ONY took too long to respond. Please try again in a moment.",
-        );
-      }
-
-      if (
-        status === 401 ||
-        status === 403 ||
-        rawMsg.includes("api_key_invalid") ||
-        rawMsg.includes("api key not valid") ||
-        rawMsg.includes("permission_denied")
-      ) {
-        throw new ProviderGenerationError(
-          401,
-          "INVALID_CREDENTIALS",
-          "The configured GEMINI_API_KEY was rejected. Please verify your secret in the Google AI Studio Settings > Secrets panel.",
-        );
-      }
-
-      if (
-        status === 429 ||
-        rawMsg.includes("resource_exhausted") ||
-        rawMsg.includes("quota") ||
-        rawMsg.includes("rate limit")
-      ) {
-        throw new ProviderGenerationError(
-          429,
-          "QUOTA_EXCEEDED",
-          "ONY’s Gemini free-tier rate or quota limit has been reached right now. Please wait a moment and try again.",
-        );
-      }
-
-      if (
-        status === 404 ||
-        status === 400 ||
-        rawMsg.includes("not found") ||
-        rawMsg.includes("not supported")
-      ) {
-        throw new ProviderGenerationError(
-          502,
-          "MODEL_UNAVAILABLE",
-          `The requested Gemini model (${model}) could not complete the request. Verify GEMINI_MODEL or try again shortly.`,
-        );
-      }
-
-      throw new ProviderGenerationError(
-        502,
-        "UPSTREAM_ERROR",
-        "ONY could not reach the Gemini AI service right now. Please try again shortly.",
-      );
-    } finally {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
     }
+
+    // If all models failed (e.g. temporary capacity or network disruption),
+    // provide an empathetic companion fallback reply so ONY never fails with an empty or broken reply.
+    console.error(
+      "[ONY /api/chat] All Gemini candidate models failed. Returning compassionate fallback.",
+      lastError,
+    );
+    return {
+      reply:
+        "I’m right here with you. Take a slow, gentle breath—I’m listening. How are you holding up right now?",
+      model: "ony-resilient-fallback",
+    };
   }
 }
 

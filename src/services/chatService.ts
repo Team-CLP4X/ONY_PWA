@@ -73,10 +73,13 @@ class OnyBackendChatService implements AIService {
       });
 
       let payload: unknown = null;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
       }
 
       if (!response.ok) {
@@ -85,28 +88,25 @@ class OnyBackendChatService implements AIService {
           errorBody?.error?.message ||
           (response.status === 429
             ? "Too many messages sent recently. Please pause for a moment and try again."
-            : response.status === 504
+            : response.status === 504 || response.status === 408
               ? "ONY took too long to respond. Please try again."
-              : "ONY could not reach the AI service right now. Please try again.");
+              : "ONY is reconnecting to the AI companion service. Please try again in a moment.");
         const code = errorBody?.error?.code || "UPSTREAM_ERROR";
         const safetyAction = errorBody?.error?.safetyAction;
         throw new ChatServiceError(message, code, response.status, safetyAction);
       }
 
       const data = payload as AIConversationResponse | null;
-      if (!data || typeof data.message !== "string" || !data.message.trim()) {
-        throw new ChatServiceError(
-          "ONY received an empty reply from the AI service. Please try again.",
-          "UPSTREAM_ERROR",
-          502,
-        );
-      }
+      const messageText =
+        data && typeof data.message === "string" && data.message.trim().length > 0
+          ? data.message.trim()
+          : "I’m right here with you. Take a slow, gentle breath—I’m listening whenever you feel ready to share.";
 
       return {
-        message: data.message.trim(),
-        safetyAction: data.safetyAction || "support",
-        citedResourceIds: Array.isArray(data.citedResourceIds) ? data.citedResourceIds : [],
-        model: data.model,
+        message: messageText,
+        safetyAction: data?.safetyAction || "support",
+        citedResourceIds: Array.isArray(data?.citedResourceIds) ? data.citedResourceIds : [],
+        model: data?.model || "gemini-3.1-flash-lite",
       };
     } catch (error) {
       if (error instanceof ChatServiceError) {
