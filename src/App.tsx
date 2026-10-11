@@ -579,7 +579,7 @@ function App() {
                 if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
               }} notify={notify} />}
               {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
-              {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} onLikePost={handleLikePost} dbSyncing={dbSyncing} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} />}
+              {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} />}
               {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
               {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
             </main>
@@ -1468,6 +1468,7 @@ function Community({
   setPosts,
   onLikePost,
   dbSyncing,
+  latestMood,
 }: {
   navigate: (s: Screen) => void;
   openPost: (post: Post) => void;
@@ -1478,10 +1479,11 @@ function Community({
   setPosts?: React.Dispatch<React.SetStateAction<Post[]>>;
   onLikePost?: (postId: number) => void;
   dbSyncing?: boolean;
+  latestMood?: MoodEntry;
 }) {
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<"globe" | "posts" | "supportLog">(() => {
+  const [view, setView] = useState<"globe" | "posts" | "myNode">(() => {
     const showPosts = sessionStorage.getItem("ony-show-posts") === "true";
     sessionStorage.removeItem("ony-show-posts");
     return showPosts ? "posts" : "globe";
@@ -1491,31 +1493,104 @@ function Community({
   const [regionLevel, setRegionLevel] = useState(0);
   const [locationChoice, setLocationChoice] = useState<"none" | "declined" | "allowed">("none");
   const [manualArea, setManualArea] = useState("");
-  const [discoverable, setDiscoverable] = useState(false);
+  const [discoverable, setDiscoverable] = useState(true);
   const [acceptMessages, setAcceptMessages] = useState(true);
 
-  // Database support messages log state
-  const [supportMessages, setSupportMessages] = useState<FirestoreCommunityMessage[]>([]);
-  const [loadingSupportLog, setLoadingSupportLog] = useState(false);
-  const [logDetailsMsg, setLogDetailsMsg] = useState<FirestoreCommunityMessage | null>(null);
+  // Support messages sent specifically from others to MY node ("0" / "me" / currentUser.uid)
+  const [mySupportMessages, setMySupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
+    DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
+      id: `seed_me_${i}`,
+      ...m,
+    })),
+  );
+  const [loadingMyMessages, setLoadingMyMessages] = useState(false);
+  const [sendingSampleToMe, setSendingSampleToMe] = useState(false);
 
-  const fetchSupportLog = async () => {
-    setLoadingSupportLog(true);
+  const myMoodLabel = latestMood ? latestMood.label : "Calm";
+  const myMoodGlow: "bright" | "soft" | "dim" | "neutral" = latestMood
+    ? latestMood.level >= 4
+      ? "bright"
+      : latestMood.level === 3
+        ? "soft"
+        : "dim"
+    : "bright";
+
+  const fetchMySupportMessages = async () => {
+    setLoadingMyMessages(true);
     try {
-      const msgs = await listCommunityMessages();
-      setSupportMessages(msgs || []);
+      let msgs = await listCommunityMessages("0");
+      if (!msgs || msgs.length === 0) {
+        const myDefaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0");
+        for (const item of myDefaults) {
+          await createCommunityMessage(item).catch(() => {});
+        }
+        msgs = await listCommunityMessages("0");
+      }
+      if (msgs && msgs.length > 0) {
+        setMySupportMessages(msgs);
+      } else {
+        setMySupportMessages(
+          DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
+            id: `seed_me_${i}`,
+            ...m,
+          })),
+        );
+      }
     } catch {
-      setSupportMessages(DEFAULT_COMMUNITY_MESSAGES.map((m, i) => ({ id: `seed_${i}`, ...m })));
+      setMySupportMessages(
+        DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
+          id: `seed_me_${i}`,
+          ...m,
+        })),
+      );
     } finally {
-      setLoadingSupportLog(false);
+      setLoadingMyMessages(false);
     }
   };
 
   useEffect(() => {
-    if (view === "supportLog") {
-      void fetchSupportLog();
+    void fetchMySupportMessages();
+  }, []);
+
+  useEffect(() => {
+    if (view === "myNode") {
+      void fetchMySupportMessages();
     }
   }, [view]);
+
+  const handleSimulateIncomingSupport = async () => {
+    if (sendingSampleToMe) return;
+    setSendingSampleToMe(true);
+    const sampleNotes = [
+      "Sending you a quiet moment of peace from across the globe. Whatever you are carrying today, you don’t have to carry it alone 🌱",
+      "Hey there traveler—just wanted to remind you to rest your shoulders, unclench your jaw, and take one slow breath. You’re doing enough 💫",
+      "Saw your light on the globe and wanted to send some warmth your way. Hope something gentle makes you smile today ☕",
+    ];
+    const randomText = sampleNotes[Math.floor(Math.random() * sampleNotes.length)];
+    const randomSenderNum = Math.floor(100 + Math.random() * 899);
+    const now = new Date().toISOString();
+    const payload: Omit<FirestoreCommunityMessage, "id"> = {
+      toUserId: "0",
+      toUserMood: myMoodLabel,
+      fromUserId: `community_member_${randomSenderNum}`,
+      senderAnonymous: `Anonymous Member #${randomSenderNum}`,
+      recipientAnonymous: "You (Anonymous Traveler)",
+      kind: "text",
+      text: randomText,
+      createdAt: now,
+    };
+
+    try {
+      const id = await createCommunityMessage(payload);
+      setMySupportMessages((prev) => [{ id: id || `msg_${Date.now()}`, ...payload }, ...prev]);
+      notify(`New support message received from Anonymous Member #${randomSenderNum} 🌱`);
+    } catch {
+      setMySupportMessages((prev) => [{ id: `local_${Date.now()}`, ...payload }, ...prev]);
+      notify(`New support message received from Anonymous Member #${randomSenderNum} 🌱`);
+    } finally {
+      setSendingSampleToMe(false);
+    }
+  };
 
   const regions = [
     { label: "World", note: "Discoverable mock users across broad, privacy-safe regions" },
@@ -1525,38 +1600,105 @@ function Community({
   ];
   const region = regions[regionLevel];
   const drag = useRef({ active: false, moved: false, x: 0, rotation: 0 });
-  const visibleUsers = globeUsers.filter((user) => user.discoverable && user.minLevel <= regionLevel);
-  const selectedUser = globeUsers.find((user) => user.id === selectedNode) || null;
+
+  // Ensure the user's own node (id === 0 / isMe) reflects current discoverable/acceptMessages/mood settings
+  const normalizedGlobeUsers: GlobeUser[] = (() => {
+    const hasMe = globeUsers.some((u) => u.id === 0 || u.isMe);
+    const baseList = hasMe ? globeUsers : [DEFAULT_GLOBE_USERS[0], ...globeUsers];
+    return baseList.map((u) =>
+      u.id === 0 || u.isMe
+        ? {
+            ...u,
+            id: 0,
+            isMe: true,
+            moodGlow: myMoodGlow,
+            moodLabel: myMoodLabel,
+            discoverable,
+            acceptsMessages: acceptMessages,
+          }
+        : u,
+    );
+  })();
+
+  const visibleUsers = normalizedGlobeUsers.filter((user) => user.discoverable && user.minLevel <= regionLevel);
+  const selectedUser = normalizedGlobeUsers.find((user) => user.id === selectedNode) || null;
   const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
   return <><PageHeader title="Community" subtitle="Connected gently, across the world" action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">Syncing…</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ Create Post</Button></div>} /><section className="page-pad community-page">
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>Globe</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>Posts</Button>
-      <Button variant={view === "supportLog" ? "primary" : "secondary"} onClick={() => setView("supportLog")}>Support Log</Button>
+      <Button variant={view === "myNode" ? "primary" : "secondary"} onClick={() => setView("myNode")}>My Node ({mySupportMessages.length})</Button>
     </div>
     {view === "globe" && <>
       <div className="community-world full-globe">
         <div className="world-copy">
-          <span className="eyebrow">Discoverable people · Simulated</span>
+          <span className="eyebrow">Discoverable people · Anonymous</span>
           <div className="region-breadcrumb">{regions.slice(0, regionLevel + 1).map((item, index) => <span key={item.label}>{index > 0 && "›"} {item.label}</span>)}</div>
-          <h2>{region.label}</h2><p>{region.note}. Drag to pan and zoom to reveal more opted-in mock users.</p>
+          <h2>{region.label}</h2><p>{region.note}. Tap your glowing node ("You") or any member node to connect.</p>
         </div>
-        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>Zoom out</Button><span>{visibleUsers.length} discoverable mock users</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>Zoom in</Button></div>
+        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>Zoom out</Button><span>{visibleUsers.length} discoverable nodes</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>Zoom in</Button></div>
         {regionLevel > 0 && <Button variant="ghost" className="back-world" onClick={() => { setRegionLevel(0); setSelectedNode(null); }}>Back to world</Button>}
-        <div className="globe-stage"><div className={`globe globe-level-${regionLevel}`} aria-label={`Interactive mock user globe for ${region.label}`} style={{ backgroundPosition: `${rotation * 1.4}px center` }} onPointerDown={(event) => { drag.current = { active: true, moved: false, x: event.clientX, rotation }; if (!(event.target as HTMLElement).closest(".globe-node")) event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (drag.current.active) { const distance = event.clientX - drag.current.x; if (Math.abs(distance) > 5) drag.current.moved = true; setRotation(drag.current.rotation + distance * .7); } }} onPointerUp={() => { drag.current.active = false; }} onPointerCancel={() => { drag.current.active = false; }}><i className="orbit one" /><i className="orbit two" />{visibleUsers.map((user) => {
+        <div className="globe-stage"><div className={`globe globe-level-${regionLevel}`} aria-label={`Interactive user globe for ${region.label}`} style={{ backgroundPosition: `${rotation * 1.4}px center` }} onPointerDown={(event) => { drag.current = { active: true, moved: false, x: event.clientX, rotation }; if (!(event.target as HTMLElement).closest(".globe-node")) event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (drag.current.active) { const distance = event.clientX - drag.current.x; if (Math.abs(distance) > 5) drag.current.moved = true; setRotation(drag.current.rotation + distance * .7); } }} onPointerUp={() => { drag.current.active = false; }} onPointerCancel={() => { drag.current.active = false; }}><i className="orbit one" /><i className="orbit two" />{visibleUsers.map((user) => {
+          const isMeNode = Boolean(user.isMe || user.id === 0);
           const angle = (user.lon + rotation) * Math.PI / 180;
           const depth = Math.cos(angle);
           const x = 50 + Math.sin(angle) * 43;
           const y = 50 - user.lat * .48;
-          return <button aria-label={`Anonymous user node, mood glow ${user.moodLabel}`} key={user.id} className={`globe-node mood-${user.moodGlow} ${selectedNode === user.id ? "selected" : ""}`} style={{ left: `${x}%`, top: `${y}%`, opacity: depth < -.2 ? .38 : depth * .35 + .65, transform: "translate(-50%, -50%)", zIndex: Math.round((depth + 1) * 10) }} onPointerUp={(event) => { if (!drag.current.moved) { drag.current.active = false; event.stopPropagation(); setSelectedNode(user.id); } }}><span /></button>;
-        })}</div><span className="rotate-hint">Drag to pan · Each node is one opted-in mock user</span></div>
-        {selectedUser && <div className="node-card user-node-card"><Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button><span className={`anonymous-light mood-${selectedUser.moodGlow}`} /><span className="prototype-label">Anonymous mock user</span><strong>Someone is here</strong><p>The light reflects an optional mood check-in: {selectedUser.moodLabel.toLowerCase()}. No identity or precise location is shared.</p>{!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />This person is visible but is not receiving supportive messages right now.</div>}<div>{selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>Send Support</Button> : <Button disabled>Support messages off</Button>}<Button variant="ghost" onClick={() => notify("Anonymous user report sent to simulated moderation")}>Report</Button><Button variant="ghost" onClick={() => { notify("Anonymous user blocked in this session"); setSelectedNode(null); }}>Block</Button></div></div>}
+          return (
+            <button
+              aria-label={isMeNode ? `Your anonymous node, mood glow ${user.moodLabel}` : `Anonymous user node, mood glow ${user.moodLabel}`}
+              key={user.id}
+              className={`globe-node mood-${user.moodGlow} ${isMeNode ? "is-me" : ""} ${selectedNode === user.id ? "selected" : ""}`}
+              style={{ left: `${x}%`, top: `${y}%`, opacity: depth < -.2 ? .38 : depth * .35 + .65, transform: "translate(-50%, -50%)", zIndex: isMeNode ? 45 : Math.round((depth + 1) * 10) }}
+              onPointerUp={(event) => {
+                if (!drag.current.moved) {
+                  drag.current.active = false;
+                  event.stopPropagation();
+                  setSelectedNode(user.id);
+                }
+              }}
+            >
+              {isMeNode && <small className="my-node-indicator">You</small>}
+              <span />
+            </button>
+          );
+        })}</div><span className="rotate-hint">Drag to pan · Tap "You" to view support messages sent to your node</span></div>
+
+        {selectedUser && (selectedUser.isMe || selectedUser.id === 0 ? (
+          <div className="node-card user-node-card">
+            <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
+            <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
+            <span className="prototype-label">Your Anonymous Node · Malaysia</span>
+            <strong>Your light on the globe</strong>
+            <p>
+              Others see your anonymous mood check-in ({selectedUser.moodLabel.toLowerCase()}) with zero personal identity or exact location. You have <strong>{mySupportMessages.length}</strong> support {mySupportMessages.length === 1 ? "message" : "messages"} from others.
+            </p>
+            <div>
+              <Button onClick={() => setView("myNode")}>View Support Sent to Me ({mySupportMessages.length})</Button>
+              <Button variant="secondary" onClick={() => setSelectedNode(null)}>Close</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="node-card user-node-card">
+            <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
+            <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
+            <span className="prototype-label">Anonymous mock user</span>
+            <strong>Someone is here</strong>
+            <p>The light reflects an optional mood check-in: {selectedUser.moodLabel.toLowerCase()}. No identity or precise location is shared.</p>
+            {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />This person is visible but is not receiving supportive messages right now.</div>}
+            <div>
+              {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>Send Support</Button> : <Button disabled>Support messages off</Button>}
+              <Button variant="ghost" onClick={() => notify("Anonymous user report sent to simulated moderation")}>Report</Button>
+              <Button variant="ghost" onClick={() => { notify("Anonymous user blocked in this session"); setSelectedNode(null); }}>Block</Button>
+            </div>
+          </div>
+        ))}
         <div className="world-legend mood-legend"><span><i className="bright" />Higher mood</span><span><i className="soft" />Okay</span><span><i className="dim" />Lower mood</span><span><i className="neutral" />No check-in</span><Button variant="ghost" onClick={() => navigate("guidelines")}>Guidelines</Button></div>
       </div>
-      <div className="globe-privacy-settings"><div><strong>Appear on the globe</strong><p>When off, your anonymous light is hidden. This prototype setting is independent from messaging.</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
-      <div className="globe-privacy-settings"><div><strong>Receive supportive messages</strong><p>When off, your light may still appear if globe visibility is on, but people cannot message you.</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
+      <div className="globe-privacy-settings"><div><strong>Appear on the globe</strong><p>When off, your anonymous light is hidden from the globe.</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
+      <div className="globe-privacy-settings"><div><strong>Receive supportive messages</strong><p>When on, other community members can send anonymous encouragement to your node.</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
       <div className="location-choice"><strong>Nearby discovery is optional</strong><p>No precise location is needed. Real nearby discovery would request permission and convert location to a broad area.</p>{locationChoice === "none" && <div><Button onClick={() => setLocationChoice("allowed")}>Allow location for demo</Button><Button variant="secondary" onClick={() => setLocationChoice("declined")}>Choose area manually</Button></div>}{locationChoice === "allowed" && <div className="form-success"><Icon name="check" />Permission simulated only. No device location was accessed.</div>}{locationChoice === "declined" && <div className="folder-create"><TextInput value={manualArea} onChange={(event) => setManualArea(event.target.value)} placeholder="Country, state, city, or postcode" /><Button disabled={!manualArea.trim()} onClick={() => notify(`Sample area set to ${manualArea}`)}>Set area</Button></div>}</div>
-      <Button className="full posts-entry" variant="secondary" onClick={() => setView("posts")}>Explore Community Posts</Button><div className="community-note"><Icon name="shield" />All people and message delivery are simulated. Nodes never show exact locations.</div>
+      <div className="community-note"><Icon name="shield" />All people and message delivery are anonymous. Nodes never show exact locations.</div>
     </>}
     {view === "posts" && <>
       <div className="posts-heading"><div><span className="eyebrow">Community posts</span><h2>Shared gently, together.</h2></div><Button variant="ghost" onClick={() => setView("globe")}>Back to globe</Button></div>
@@ -1570,120 +1712,84 @@ function Community({
         <div className="post-actions"><Button variant="ghost" onClick={() => onLikePost ? onLikePost(post.id) : (setPosts && setPosts((items) => items.map((x) => x.id === post.id ? { ...x, likes: x.likes + 1 } : x)))}><Icon name="heart" />{post.likes}</Button><Button variant="ghost" onClick={() => notify("Comment added in demo")}>2 comments</Button><Button variant="ghost" onClick={() => { if (setPosts) { setPosts((items) => items.map((x) => x.id === post.id ? { ...x, saved: !x.saved } : x)); notify(post.saved ? "Removed from saved" : "Post saved"); } }}><Icon name="memory" />{post.saved ? "Saved" : "Save"}</Button></div>
       </article>)}</div>
     </>}
-    {view === "supportLog" && <>
+    {view === "myNode" && <>
       <div className="posts-heading">
         <div>
-          <span className="eyebrow">Database Activity · Anonymous</span>
-          <h2>Community Support Log</h2>
+          <span className="eyebrow">Your Personal Globe Node</span>
+          <h2>Support Sent to You</h2>
         </div>
-        <Button variant="ghost" onClick={fetchSupportLog}>{loadingSupportLog ? "Refreshing…" : "Refresh"}</Button>
+        <Button variant="ghost" onClick={fetchMySupportMessages}>{loadingMyMessages ? "Refreshing…" : "Refresh"}</Button>
       </div>
-      <p style={{ color: "var(--muted)", fontSize: "11px", margin: "-6px 0 14px", lineHeight: 1.45 }}>
-        Peer encouragement exchanged anonymously across the globe. Each message is saved securely to the database. All member identities are protected.
-      </p>
 
-      {loadingSupportLog ? (
-        <div className="empty mini-empty"><Icon name="chat" /><p>Loading messages from database…</p></div>
-      ) : supportMessages.length === 0 ? (
-        <div className="empty mini-empty"><Icon name="chat" /><p>No support messages found in database yet. Be the first to send encouragement from the Globe!</p></div>
+      <div className="my-node-card">
+        <div className="my-node-card-header">
+          <div className="my-node-beacon-large">{latestMood ? latestMood.emoji : "🌱"}</div>
+          <div style={{ flex: 1 }}>
+            <span className="prototype-label">Your Anonymous Light · Node #0</span>
+            <h2>You on the Community Globe</h2>
+            <p>Only messages sent by other community members to your node appear here.</p>
+          </div>
+        </div>
+        <div className="my-node-stats-row">
+          <div className="my-node-stat-box">
+            <label>Your Current Mood Glow</label>
+            <strong>{myMoodLabel} ({discoverable ? "Visible on Globe" : "Hidden"})</strong>
+          </div>
+          <div className="my-node-stat-box">
+            <label>Support Received from Others</label>
+            <strong>{mySupportMessages.length} {mySupportMessages.length === 1 ? "message" : "messages"}</strong>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <Button
+            variant="secondary"
+            onClick={handleSimulateIncomingSupport}
+            disabled={sendingSampleToMe || !acceptMessages}
+          >
+            {sendingSampleToMe ? "Receiving…" : "+ Simulate New Support from Others"}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSelectedNode(0);
+              setView("globe");
+            }}
+          >
+            Locate My Node on Globe
+          </Button>
+        </div>
+      </div>
+
+      {loadingMyMessages ? (
+        <div className="empty mini-empty"><Icon name="chat" /><p>Loading support messages sent to your node…</p></div>
+      ) : mySupportMessages.length === 0 ? (
+        <div className="empty mini-empty">
+          <Icon name="chat" />
+          <p>No support messages sent to your node yet. Make sure "Receive supportive messages" is enabled on the Globe!</p>
+        </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {supportMessages.map((msg) => {
-            const targetGlobeUser = globeUsers.find((u) => String(u.id) === msg.toUserId);
-            return (
-              <div key={msg.id} className="community-log-card">
-                <div className="community-log-header">
-                  <div>
-                    <strong style={{ color: "var(--coral-dark)" }}>{msg.recipientAnonymous || `Anonymous Member #${msg.toUserId}`}</strong>
-                    <span style={{ color: "var(--muted)", marginLeft: "6px" }}>received from {msg.senderAnonymous || "Anonymous Traveler"}</span>
-                  </div>
+        <div className="community-thread my-node-bubble-list">
+          {mySupportMessages.map((msg) => (
+            <div key={msg.id} className="support-bubble-row member">
+              <div className="support-bubble-avatar" aria-hidden="true">
+                {msg.kind === "voice" ? "🎙️" : "🌱"}
+              </div>
+              <div className="support-bubble-col">
+                <div className="support-bubble-meta">
+                  <strong>{msg.senderAnonymous || "Anonymous Traveler"}</strong>
+                  <span className="to-you-pill">To You</span>
                   <small>{formatFriendlyTime(msg.createdAt)}</small>
                 </div>
-                <div className="community-log-body">
+                <div className="support-bubble member">
                   {msg.kind === "text" ? (
-                    <p style={{ margin: "4px 0", fontSize: "12px", whiteSpace: "pre-wrap" }}>{msg.text}</p>
+                    <p>{msg.text}</p>
                   ) : (
                     <VoiceNote audioUrl={msg.audioUrl} audioDuration={msg.audioDuration} notify={notify} />
                   )}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "4px", borderTop: "1px dashed var(--line)" }}>
-                  <span style={{ fontSize: "9px", color: "var(--muted)", display: "flex", alignItems: "center", gap: "3px" }}>
-                    <Icon name="shield" />
-                    <span>Recipient Mood: {msg.toUserMood || targetGlobeUser?.moodLabel || "Shared on Globe"}</span>
-                  </span>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <button
-                      type="button"
-                      className="msg-details-btn"
-                      onClick={() => setLogDetailsMsg(msg)}
-                    >
-                      View Details
-                    </button>
-                    {targetGlobeUser && targetGlobeUser.acceptsMessages && (
-                      <button
-                        type="button"
-                        className="msg-details-btn"
-                        style={{ fontWeight: 700, color: "var(--coral-dark)" }}
-                        onClick={() => openMember(targetGlobeUser)}
-                      >
-                        Send Support →
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {logDetailsMsg && (
-        <div className="msg-detail-modal" onClick={() => setLogDetailsMsg(null)}>
-          <div className="msg-detail-sheet" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3>Support Message Details</h3>
-              <Button variant="ghost" onClick={() => setLogDetailsMsg(null)}><Icon name="close" /></Button>
-            </div>
-            <p>Database record verified in Firestore · Identities anonymous to all.</p>
-            <div className="msg-detail-bubble-preview">
-              {logDetailsMsg.kind === "text" ? (
-                logDetailsMsg.text
-              ) : (
-                <VoiceNote audioUrl={logDetailsMsg.audioUrl} audioDuration={logDetailsMsg.audioDuration} notify={notify} />
-              )}
-            </div>
-            <div className="msg-detail-grid">
-              <div className="msg-detail-row">
-                <label>Recipient:</label>
-                <span>{logDetailsMsg.recipientAnonymous || `Anonymous Member (Globe #${logDetailsMsg.toUserId})`}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Recipient Mood:</label>
-                <span>{logDetailsMsg.toUserMood || "Recorded on Globe"}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Sender:</label>
-                <span>{logDetailsMsg.senderAnonymous || "Anonymous Traveler"} (Anonymous for all)</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Message Type:</label>
-                <span>{logDetailsMsg.kind === "voice" ? `Voice Note (${logDetailsMsg.audioDuration || 8}s)` : "Text Message"}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Timestamp:</label>
-                <span>{new Date(logDetailsMsg.createdAt).toLocaleString()}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Database Path:</label>
-                <span>/communityMessages/{logDetailsMsg.id}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Privacy Guarantee:</label>
-                <span>Zero names, emails, or personal identifiers stored in database.</span>
               </div>
             </div>
-            <Button className="full" onClick={() => setLogDetailsMsg(null)}>Close details</Button>
-          </div>
+          ))}
         </div>
       )}
     </>}
@@ -2341,32 +2447,23 @@ function TrustedContact({ back, name, number, setName, setNumber, status, setSta
 }
 
 function CommunityMember({ back, user, notify }: { back: () => void; user: GlobeUser; notify: (s: string) => void }) {
+  const [composerMode, setComposerMode] = useState<"text" | "voice">("text");
   const [voice, setVoice] = useState<"idle" | "recording" | "ready">("idle");
   const [recordedVoice, setRecordedVoice] = useState<{ dataUrl: string; duration: number } | null>(null);
   const [voiceSeconds, setVoiceSeconds] = useState(0);
+  const [voiceVolume, setVoiceVolume] = useState(0.15);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [micNotice, setMicNotice] = useState<string | null>(null);
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
 
   const [text, setText] = useState("");
   const [consent, setConsent] = useState(true);
   const [sent, setSent] = useState("");
   const [blocked, setBlocked] = useState(false);
   const [sending, setSending] = useState(false);
-  const [selectedDetailMsg, setSelectedDetailMsg] = useState<{
-    id: string;
-    from: "member" | "me";
-    senderAnonymous: string;
-    recipientAnonymous: string;
-    kind: "text" | "voice";
-    text: string;
-    audioUrl?: string;
-    audioDuration?: number;
-    createdAt: string;
-    toUserMood?: string;
-  } | null>(null);
 
   type MemberMessage = {
     id: string;
@@ -2384,20 +2481,26 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
   const [messages, setMessages] = useState<MemberMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(true);
 
+  const scrollToThreadBottom = (behavior: ScrollBehavior = "smooth") => {
+    window.setTimeout(() => {
+      threadEndRef.current?.scrollIntoView({ behavior, block: "end" });
+    }, 50);
+  };
+
   // Load message history from Firestore database
   useEffect(() => {
     let isMounted = true;
-    const loadFromDb = async () => {
-      try {
-        const dbMsgs = await listCommunityMessages(String(user.id));
-        if (!isMounted) return;
-        const currentUid = auth.currentUser?.uid;
-        if (dbMsgs && dbMsgs.length > 0) {
-          const mapped: MemberMessage[] = dbMsgs.map((m) => ({
-            id: m.id,
-            from: currentUid && m.fromUserId === currentUid ? "me" : "member",
-            senderAnonymous: currentUid && m.fromUserId === currentUid ? "Anonymous Member (You)" : (m.senderAnonymous || "Anonymous Member"),
-            recipientAnonymous: m.recipientAnonymous || `Anonymous Member (Globe #${user.id})`,
+    const buildFallbackForNode = (): MemberMessage[] => {
+      const defaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === String(user.id));
+      if (defaults.length > 0) {
+        return defaults
+          .slice()
+          .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
+          .map((m, i) => ({
+            id: `seed_${user.id}_${i}`,
+            from: "member",
+            senderAnonymous: m.senderAnonymous,
+            recipientAnonymous: m.recipientAnonymous,
             kind: m.kind,
             text: m.text,
             audioUrl: m.audioUrl,
@@ -2405,31 +2508,74 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
             createdAt: m.createdAt,
             toUserMood: m.toUserMood || user.moodLabel,
           }));
+      }
+      return [
+        {
+          id: `seed_${user.id}_0`,
+          from: "member",
+          senderAnonymous: `Anonymous Member #${100 + user.id * 37}`,
+          recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+          kind: "text",
+          text: `Saw your ${user.moodLabel.toLowerCase()} glow on the globe and wanted to send a warm note of encouragement 🌱 You are not alone.`,
+          createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+          toUserMood: user.moodLabel,
+        },
+        {
+          id: `seed_${user.id}_1`,
+          from: "member",
+          senderAnonymous: `Anonymous Friend #${240 + user.id * 19}`,
+          recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+          kind: "voice",
+          text: "Encouraging voice note · 0:08",
+          audioDuration: 8,
+          createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
+          toUserMood: user.moodLabel,
+        },
+      ];
+    };
+
+    const loadFromDb = async () => {
+      try {
+        const dbMsgs = await listCommunityMessages(String(user.id));
+        if (!isMounted) return;
+        const currentUid = auth.currentUser?.uid;
+        if (dbMsgs && dbMsgs.length > 0) {
+          const mapped: MemberMessage[] = dbMsgs
+            .slice()
+            .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
+            .map((m) => {
+              const isFromMe =
+                Boolean(currentUid && m.fromUserId === currentUid) ||
+                (m.senderAnonymous || "").includes("(You)");
+              return {
+                id: m.id,
+                from: isFromMe ? "me" : "member",
+                senderAnonymous: isFromMe
+                  ? "You (Anonymous)"
+                  : m.senderAnonymous || "Anonymous Member",
+                recipientAnonymous: m.recipientAnonymous || `Anonymous Member (Globe #${user.id})`,
+                kind: m.kind,
+                text: m.text,
+                audioUrl: m.audioUrl,
+                audioDuration: m.audioDuration,
+                createdAt: m.createdAt,
+                toUserMood: m.toUserMood || user.moodLabel,
+              };
+            });
           setMessages(mapped);
         } else {
-          // Check starter seeded messages
-          const defaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === String(user.id));
-          if (defaults.length > 0) {
-            setMessages(defaults.map((m, i) => ({
-              id: `seed_${i}`,
-              from: "member",
-              senderAnonymous: m.senderAnonymous,
-              recipientAnonymous: m.recipientAnonymous,
-              kind: m.kind,
-              text: m.text,
-              audioUrl: m.audioUrl,
-              audioDuration: m.audioDuration,
-              createdAt: m.createdAt,
-              toUserMood: m.toUserMood || user.moodLabel,
-            })));
-          } else {
-            setMessages([]);
-          }
+          setMessages(buildFallbackForNode());
         }
       } catch (err) {
         console.warn("Could not load community messages from Firestore:", err);
+        if (isMounted) {
+          setMessages(buildFallbackForNode());
+        }
       } finally {
-        if (isMounted) setLoadingMessages(false);
+        if (isMounted) {
+          setLoadingMessages(false);
+          scrollToThreadBottom("auto");
+        }
       }
     };
 
@@ -2445,15 +2591,17 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     try {
       const sample = await generateSampleVoiceAudio(8);
       setRecordedVoice({ dataUrl: sample.dataUrl, duration: sample.duration });
+      setComposerMode("voice");
       setVoice("ready");
       setMicNotice(null);
-      notify("Sample voice note attached · 00:08 (Ready to send)");
+      notify("Sample audio attached · 00:08 (Tap Send Audio)");
     } catch {
       notify("Could not generate voice note sample");
     }
   };
 
   const handleStartVoice = async () => {
+    setComposerMode("voice");
     setMicNotice(null);
     try {
       if (!recorderRef.current) {
@@ -2465,11 +2613,12 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       setIsPlayingPreview(false);
 
       await recorderRef.current.start({
+        onVolumeChange: (vol) => setVoiceVolume(vol),
         onTimeUpdate: (sec) => setVoiceSeconds(sec),
         maxDurationSeconds: 60,
         onMaxDurationReached: () => void handleStopVoice(),
       });
-      notify("Recording started · speak into your mic");
+      notify("Recording audio · speak into your mic");
     } catch (err: any) {
       setVoice("idle");
       setMicNotice(err.message || "Microphone access is restricted in this preview frame.");
@@ -2483,7 +2632,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       setVoice("ready");
       const res = await recorderRef.current.stop();
       setRecordedVoice({ dataUrl: res.dataUrl, duration: res.duration });
-      notify("Voice note recorded · review and tap send");
+      notify("Audio recorded · preview or tap Send Audio");
     } catch {
       setVoice("idle");
       notify("Failed to save audio recording");
@@ -2501,16 +2650,22 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       previewAudioRef.current.pause();
       setIsPlayingPreview(false);
     } else {
-      previewAudioRef.current.play().then(() => {
-        setIsPlayingPreview(true);
-      }).catch(() => {
-        notify("Unable to play preview audio");
-      });
+      previewAudioRef.current
+        .play()
+        .then(() => {
+          setIsPlayingPreview(true);
+        })
+        .catch(() => {
+          notify("Unable to play preview audio");
+        });
     }
   };
 
   const handleCancelVoice = () => {
-    if (previewAudioRef.current) previewAudioRef.current.pause();
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
     if (recorderRef.current) recorderRef.current.cancel();
     setVoice("idle");
     setRecordedVoice(null);
@@ -2522,7 +2677,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     setText(event.target.value);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+      textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 38), 110)}px`;
     }
   };
 
@@ -2537,6 +2692,10 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     if (e) e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    if (!consent) {
+      notify("Please keep the supportive guidelines checkbox checked to send.");
+      return;
+    }
     setSending(true);
 
     const currentUid = auth.currentUser?.uid || `anon_${Math.random().toString(36).slice(2, 7)}`;
@@ -2564,7 +2723,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       const newMsg: MemberMessage = {
         id: docId || `msg_${Date.now()}`,
         from: "me",
-        senderAnonymous: "Anonymous Member (You)",
+        senderAnonymous: "You (Anonymous)",
         recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
         kind: "text",
         text: trimmed,
@@ -2573,13 +2732,14 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       };
       setMessages((prev) => [...prev, newMsg]);
       setSent("Support message delivered");
-      notify("Support message sent and saved to community database 🌱");
+      scrollToThreadBottom("smooth");
+      notify("Support message sent 🌱");
     } catch (err) {
       console.warn("Could not save to database, using optimistic delivery:", err);
       const newMsg: MemberMessage = {
         id: `local_${Date.now()}`,
         from: "me",
-        senderAnonymous: "Anonymous Member (You)",
+        senderAnonymous: "You (Anonymous)",
         recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
         kind: "text",
         text: trimmed,
@@ -2588,6 +2748,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       };
       setMessages((prev) => [...prev, newMsg]);
       setSent("Support message delivered");
+      scrollToThreadBottom("smooth");
       notify("Support message sent 🌱");
     } finally {
       setSending(false);
@@ -2596,8 +2757,15 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 
   const confirmVoice = async () => {
     if (!recordedVoice || sending) return;
+    if (!consent) {
+      notify("Please keep the supportive guidelines checkbox checked to send.");
+      return;
+    }
     setSending(true);
-    if (previewAudioRef.current) previewAudioRef.current.pause();
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
 
     const currentUid = auth.currentUser?.uid || `anon_${Math.random().toString(36).slice(2, 7)}`;
     const now = new Date().toISOString();
@@ -2622,7 +2790,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       const newMsg: MemberMessage = {
         id: docId || `msg_${Date.now()}`,
         from: "me",
-        senderAnonymous: "Anonymous Member (You)",
+        senderAnonymous: "You (Anonymous)",
         recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
         kind: "voice",
         text: voiceNoteText,
@@ -2634,14 +2802,15 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       setMessages((prev) => [...prev, newMsg]);
       setVoice("idle");
       setRecordedVoice(null);
-      setSent("Voice support message delivered");
-      notify("Encouraging voice note sent and saved to database 🎙️");
+      setSent("Audio support message delivered");
+      scrollToThreadBottom("smooth");
+      notify("Audio encouragement sent 🎙️");
     } catch (err) {
       console.warn("Could not save voice to database, using optimistic delivery:", err);
       const newMsg: MemberMessage = {
         id: `local_${Date.now()}`,
         from: "me",
-        senderAnonymous: "Anonymous Member (You)",
+        senderAnonymous: "You (Anonymous)",
         recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
         kind: "voice",
         text: voiceNoteText,
@@ -2653,8 +2822,9 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       setMessages((prev) => [...prev, newMsg]);
       setVoice("idle");
       setRecordedVoice(null);
-      setSent("Voice support message delivered");
-      notify("Encouraging voice note sent 🎙️");
+      setSent("Audio support message delivered");
+      scrollToThreadBottom("smooth");
+      notify("Audio encouragement sent 🎙️");
     } finally {
       setSending(false);
     }
@@ -2680,27 +2850,38 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 
   return (
     <div className="node-chat-page">
-      <PageHeader title="Send anonymous support" subtitle="Identity-free community connection" back={back} />
-      <section className="page-pad node-chat-scroll">
-        <div className="anonymous-profile">
+      <PageHeader
+        title={`Anonymous Node #${user.id}`}
+        subtitle={`Mood check-in: ${user.moodLabel} · Identity-free`}
+        back={back}
+        action={
+          <div style={{ display: "flex", gap: "4px" }}>
+            <Button variant="ghost" onClick={() => notify("Report sent to simulated moderation review")}>Report</Button>
+            <Button variant="ghost" onClick={() => setBlocked(true)}>Block</Button>
+          </div>
+        }
+      />
+
+      <div className="node-chat-scroll">
+        <div className="anonymous-profile compact">
           <span className={`anonymous-orbit mood-${user.moodGlow}`}><i /></span>
           <div>
             <span className="prototype-label">Anonymous member · Node #{user.id}</span>
             <h1>Someone is here</h1>
-            <strong>Optional mood check-in: {user.moodLabel}</strong>
-            <p>No real names, images, or locations are visible. Identity is completely protected.</p>
+            <strong>Current mood glow: {user.moodLabel}</strong>
+            <p>Messages sent by others or by you appear as anonymous chat bubbles below.</p>
           </div>
         </div>
 
-        <div className="encouragement-intro">
-          <span className="eyebrow">Send a little encouragement</span>
-          <h2>A few kind words can make someone’s day.</h2>
+        <div className="encouragement-intro compact">
+          <span className="eyebrow">Quick encouragement</span>
           <div className="encouragement-chips">
             {encouragements.map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => {
+                  setComposerMode("text");
                   setText(item);
                   if (textareaRef.current) {
                     textareaRef.current.focus();
@@ -2713,112 +2894,180 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           </div>
         </div>
 
-        <label className="check-row community-consent">
+        <label className="check-row community-consent compact">
           <TextInput type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-          <span>I’ll keep this supportive, respect privacy, and not share harmful or identifying content.</span>
+          <span>Keep messages kind, supportive, and free of personal identifying details.</span>
         </label>
 
         <div className="conversation-label">
-          <span>Message thread</span>
-          <small>{messages.length} encouragement{messages.length === 1 ? "" : "s"}</small>
+          <span>Support messages for Node #{user.id}</span>
+          <small>{messages.length} {messages.length === 1 ? "bubble" : "bubbles"}</small>
         </div>
 
         {loadingMessages ? (
-          <div className="empty mini-empty"><Icon name="chat" /><p>Checking community database for messages…</p></div>
-        ) : messages.length === 0 && voice !== "ready" ? (
+          <div className="empty mini-empty"><Icon name="chat" /><p>Loading support messages…</p></div>
+        ) : messages.length === 0 ? (
           <div className="empty mini-empty">
             <Icon name="chat" />
-            <p>No messages sent yet. Write a supportive note or record a voice message below.</p>
+            <p>No support messages yet. Send a text or audio bubble from the bottom bar below.</p>
           </div>
-        ) : null}
-
-        <div className="community-thread">
-          {messages.map((message) => {
-            const timeDisplay = formatFriendlyTime(message.createdAt);
-            return (
-              <div className={`community-msg-wrap ${message.from}`} key={message.id}>
-                <div className="community-msg-meta">
-                  <span>{message.senderAnonymous}</span>
-                  <span>· {timeDisplay}</span>
-                  <button
-                    type="button"
-                    className="msg-details-btn"
-                    onClick={() => setSelectedDetailMsg(message)}
-                  >
-                    Details
-                  </button>
-                </div>
-                <div className={`community-message ${message.from}`}>
-                  {message.kind === "text" ? (
-                    <span>{message.text}</span>
-                  ) : (
-                    <VoiceNote audioUrl={message.audioUrl} audioDuration={message.audioDuration} notify={notify} />
+        ) : (
+          <div className="community-thread">
+            {messages.map((message) => {
+              const isMe = message.from === "me";
+              const timeDisplay = formatFriendlyTime(message.createdAt);
+              return (
+                <div className={`support-bubble-row ${isMe ? "me" : "member"}`} key={message.id}>
+                  {!isMe && (
+                    <div className="support-bubble-avatar" aria-hidden="true">
+                      {message.kind === "voice" ? "🎙️" : "🌱"}
+                    </div>
                   )}
+                  <div className="support-bubble-col">
+                    <div className="support-bubble-meta">
+                      <strong>{isMe ? "You (Anonymous)" : message.senderAnonymous}</strong>
+                      <small>{timeDisplay}</small>
+                    </div>
+                    <div className={`support-bubble ${isMe ? "me" : "member"}`}>
+                      {message.kind === "text" ? (
+                        <p>{message.text}</p>
+                      ) : (
+                        <VoiceNote
+                          audioUrl={message.audioUrl}
+                          audioDuration={message.audioDuration}
+                          notify={notify}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {sent && (
-          <div className="form-success">
-            <Icon name="check" />
-            {sent}. Stored securely to community database.
+              );
+            })}
+            <div ref={threadEndRef} className="chat-bottom-spacer" />
           </div>
         )}
 
-        <div className="moderation-actions">
-          <Button variant="ghost" onClick={() => notify("Report sent to simulated moderation review")}>Report user</Button>
-          <Button variant="ghost" onClick={() => setBlocked(true)}>Block user</Button>
-        </div>
-        <p className="disclaimer">
-          <Icon name="info" />
-          Messages are anonymous for all members. Saved in Firestore with zero personal identity tags.
-        </p>
-      </section>
+        {sent && (
+          <div className="form-success" style={{ marginTop: "8px" }}>
+            <Icon name="check" />
+            {sent}
+          </div>
+        )}
+      </div>
 
-      {/* Fixed Composer Footer */}
+      {/* Fixed Bottom Composer Bar: Send Audio or Text */}
       <div className="node-chat-fixed">
+        <div className="mode-switch">
+          <button
+            type="button"
+            className={composerMode === "text" && voice === "idle" ? "active" : ""}
+            onClick={() => {
+              if (voice !== "idle") handleCancelVoice();
+              setComposerMode("text");
+            }}
+          >
+            <Icon name="chat" />
+            Text
+          </button>
+          <button
+            type="button"
+            className={composerMode === "voice" || voice !== "idle" ? "active" : ""}
+            onClick={() => setComposerMode("voice")}
+          >
+            <Icon name="mic" />
+            Audio
+          </button>
+        </div>
+
         {micNotice && (
-          <div className="voice-mic-inline-help" style={{ margin: "4px 12px 8px" }}>
+          <div className="voice-mic-inline-help" style={{ marginBottom: "8px" }}>
             <small>{micNotice}</small>
             <div style={{ display: "flex", gap: "6px" }}>
-              <Button variant="secondary" onClick={handleUseVoiceSample}>Use Voice Sample (8s)</Button>
+              <Button variant="secondary" onClick={handleUseVoiceSample}>Attach Sample Audio (8s)</Button>
               <Button variant="ghost" onClick={() => setMicNotice(null)}>Dismiss</Button>
             </div>
           </div>
         )}
 
-        {voice !== "idle" && (
-          <div className="recording-panel">
-            <span className={voice === "recording" ? "live-dot" : "ready-dot"} />
-            <div>
-              <strong>{voice === "recording" ? "Recording voice note" : "Voice note ready"}</strong>
-              <small>
-                {voice === "recording"
-                  ? `${formatAudioDuration(voiceSeconds)} · tap stop mic icon when ready`
-                  : `${formatAudioDuration(recordedVoice?.duration || 0)} · play preview before sending`}
-              </small>
-            </div>
-            {voice === "recording" && (
-              <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
+        {composerMode === "voice" || voice !== "idle" ? (
+          <div className="node-audio-bar">
+            {voice === "idle" && (
+              <div className="node-audio-idle-row">
+                <button
+                  type="button"
+                  className="primary-mic mini"
+                  onClick={() => void handleStartVoice()}
+                  aria-label="Start recording audio"
+                >
+                  <Icon name="mic" />
+                </button>
+                <div className="voice-composer-info">
+                  <strong>Tap mic to record audio support</strong>
+                  <small>Or attach a sample voice note below</small>
+                </div>
+                <Button variant="secondary" onClick={handleUseVoiceSample}>
+                  Sample Audio (8s)
+                </Button>
+              </div>
             )}
-            {voice === "ready" && (
-              <>
-                <Button variant="ghost" onClick={handleTogglePreview}>
-                  {isPlayingPreview ? "Pause" : "Play"}
-                </Button>
+
+            {voice === "recording" && (
+              <div className="node-audio-active-row">
+                <button
+                  type="button"
+                  className="primary-mic mini recording"
+                  onClick={() => void handleStopVoice()}
+                  aria-label="Stop recording audio"
+                >
+                  <Icon name="close" />
+                </button>
+                <div className="voice-composer-info">
+                  <strong>Recording audio · {formatAudioDuration(voiceSeconds)}</strong>
+                  <div className="voice-live-waves mini">
+                    <span style={{ height: `${Math.max(4, voiceVolume * 20)}px` }} />
+                    <span style={{ height: `${Math.max(6, voiceVolume * 28)}px` }} />
+                    <span style={{ height: `${Math.max(5, voiceVolume * 22)}px` }} />
+                    <span style={{ height: `${Math.max(8, voiceVolume * 30)}px` }} />
+                    <span style={{ height: `${Math.max(4, voiceVolume * 18)}px` }} />
+                  </div>
+                </div>
                 <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
-                <Button disabled={sending} onClick={confirmVoice}>
-                  {sending ? "Sending…" : "Send voice note"}
+                <Button variant="danger" onClick={() => void handleStopVoice()}>Stop</Button>
+              </div>
+            )}
+
+            {voice === "ready" && (
+              <div className="node-audio-active-row">
+                <button
+                  type="button"
+                  className="preview-play-btn mini"
+                  onClick={handleTogglePreview}
+                  aria-label={isPlayingPreview ? "Pause preview" : "Play preview"}
+                >
+                  <Icon name={isPlayingPreview ? "pause" : "play"} />
+                </button>
+                <div className="voice-composer-info">
+                  <strong>Audio ready · {formatAudioDuration(recordedVoice?.duration || 8)}</strong>
+                  <small>{isPlayingPreview ? "Playing preview…" : "Tap play to review before sending"}</small>
+                </div>
+                <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
+                <Button disabled={sending} onClick={() => void confirmVoice()}>
+                  {sending ? "Sending…" : "Send Audio"}
                 </Button>
-              </>
+              </div>
             )}
           </div>
-        )}
-
-        <div className="node-message-composer">
-          <form onSubmit={handleSendText}>
+        ) : (
+          <form className="node-text-bar" onSubmit={handleSendText}>
+            <button
+              type="button"
+              className="node-inline-mic-btn"
+              onClick={() => void handleStartVoice()}
+              title="Record audio message"
+              aria-label="Record audio message"
+            >
+              <Icon name="mic" />
+            </button>
             <textarea
               ref={textareaRef}
               className="node-message-textarea"
@@ -2826,89 +3075,16 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
               value={text}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              placeholder="Write an encouraging message…"
-              aria-label="Encouraging message"
+              placeholder="Write a supportive message…"
+              aria-label="Supportive message"
               maxLength={2000}
             />
-            <Button type="submit" disabled={!text.trim() || sending} aria-label="Send message">
+            <Button className="send-btn" type="submit" disabled={!text.trim() || sending} aria-label="Send message">
               <Icon name="send" />
             </Button>
           </form>
-
-          <button
-            type="button"
-            className={voice === "recording" ? "recording" : ""}
-            onClick={() => {
-              if (voice === "recording") {
-                void handleStopVoice();
-              } else {
-                void handleStartVoice();
-              }
-            }}
-            aria-label={voice === "recording" ? "Stop voice recording" : "Record voice message"}
-            title={voice === "recording" ? "Stop recording" : "Record voice message"}
-          >
-            <Icon name={voice === "recording" ? "close" : "mic"} />
-          </button>
-        </div>
+        )}
       </div>
-
-      {/* Message Details Sheet Modal */}
-      {selectedDetailMsg && (
-        <div className="msg-detail-modal" onClick={() => setSelectedDetailMsg(null)}>
-          <div className="msg-detail-sheet" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3>Message Details & Database Record</h3>
-              <Button variant="ghost" onClick={() => setSelectedDetailMsg(null)}><Icon name="close" /></Button>
-            </div>
-            <p>Support message stored in Firestore database · Zero personal identity tags.</p>
-
-            <div className="msg-detail-bubble-preview">
-              {selectedDetailMsg.kind === "text" ? (
-                selectedDetailMsg.text
-              ) : (
-                <VoiceNote
-                  audioUrl={selectedDetailMsg.audioUrl}
-                  audioDuration={selectedDetailMsg.audioDuration}
-                  notify={notify}
-                />
-              )}
-            </div>
-
-            <div className="msg-detail-grid">
-              <div className="msg-detail-row">
-                <label>Recipient:</label>
-                <span>{selectedDetailMsg.recipientAnonymous}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Recipient Mood:</label>
-                <span>{selectedDetailMsg.toUserMood || user.moodLabel}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Sender:</label>
-                <span>{selectedDetailMsg.senderAnonymous} (Anonymous for all)</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Message Type:</label>
-                <span>{selectedDetailMsg.kind === "voice" ? `Voice Note (${selectedDetailMsg.audioDuration || 8}s)` : "Multiline Text Encouragement"}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Timestamp:</label>
-                <span>{new Date(selectedDetailMsg.createdAt).toLocaleString()}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Database Path:</label>
-                <span>/communityMessages/{selectedDetailMsg.id}</span>
-              </div>
-              <div className="msg-detail-row">
-                <label>Privacy Guarantee:</label>
-                <span>Identities are anonymous for all members across the database and application.</span>
-              </div>
-            </div>
-            <Button className="full" onClick={() => setSelectedDetailMsg(null)}>Close details</Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

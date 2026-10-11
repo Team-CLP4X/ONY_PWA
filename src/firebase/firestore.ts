@@ -411,12 +411,13 @@ export async function listGlobeUsers(): Promise<FirestoreGlobeUser[]> {
   try {
     const colRef = collection(db, "globeUsers");
     const snap = await getDocs(colRef);
-    if (snap.empty) return [];
-    return snap.docs
+    if (snap.empty) return DEFAULT_GLOBE_USERS;
+    const loaded: FirestoreGlobeUser[] = snap.docs
       .map((d) => {
         const data = d.data() as FirestoreGlobeUser;
+        const id = data.id ?? Number(d.id);
         return {
-          id: data.id ?? Number(d.id),
+          id,
           moodGlow: data.moodGlow,
           moodLabel: data.moodLabel,
           discoverable: data.discoverable,
@@ -424,9 +425,15 @@ export async function listGlobeUsers(): Promise<FirestoreGlobeUser[]> {
           minLevel: data.minLevel,
           lon: data.lon,
           lat: data.lat,
+          isMe: Boolean(data.isMe || id === 0),
         };
       })
       .sort((a, b) => a.id - b.id);
+
+    if (!loaded.some((u) => u.id === 0 || u.isMe)) {
+      loaded.unshift({ ...DEFAULT_GLOBE_USERS[0], isMe: true });
+    }
+    return loaded;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
@@ -514,8 +521,14 @@ export async function listCommunityMessages(
     // Sort in memory by newest first (resilient against composite index requirements)
     messages.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     if (toUserId) {
+      const currentUid = auth.currentUser?.uid;
       messages = messages.filter(
-        (m) => m.toUserId === toUserId || (toUserId === "0" && (m.toUserId === "0" || m.toUserId === "me"))
+        (m) =>
+          m.toUserId === toUserId ||
+          (toUserId === "0" &&
+            (m.toUserId === "0" ||
+              m.toUserId === "me" ||
+              Boolean(currentUid && m.toUserId === currentUid))),
       );
     }
     return messages;
@@ -732,9 +745,9 @@ export async function seedInitialDatabaseData(): Promise<{
   merchantsCount: number;
   communityMessagesCount: number;
 }> {
-  // 1. Globe Users
+  // 1. Globe Users (always ensure node 0 / "You" exists)
   let globeUsers = await listGlobeUsers().catch(() => []);
-  if (globeUsers.length === 0) {
+  if (globeUsers.length <= 1) {
     for (const user of DEFAULT_GLOBE_USERS) {
       const docRef = doc(db, "globeUsers", String(user.id));
       await setDoc(docRef, user, { merge: true }).catch((e) =>
@@ -742,6 +755,9 @@ export async function seedInitialDatabaseData(): Promise<{
       );
     }
     globeUsers = await listGlobeUsers().catch(() => DEFAULT_GLOBE_USERS);
+  } else {
+    const myNodeRef = doc(db, "globeUsers", "0");
+    await setDoc(myNodeRef, DEFAULT_GLOBE_USERS[0], { merge: true }).catch(() => {});
   }
 
   // 2. Community Posts
@@ -768,22 +784,23 @@ export async function seedInitialDatabaseData(): Promise<{
     merchants = await listMerchants().catch(() => DEFAULT_MERCHANTS);
   }
 
-  // 4. Community Support Messages
-  let messages = await listCommunityMessages().catch(() => []);
-  if (messages.length === 0) {
-    for (const msg of DEFAULT_COMMUNITY_MESSAGES) {
+  // 4. Community Support Messages (ensure incoming messages for node "0" exist)
+  let myMessages = await listCommunityMessages("0").catch(() => []);
+  if (myMessages.length === 0) {
+    const myDefaultMsgs = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0");
+    for (const msg of myDefaultMsgs) {
       await createCommunityMessage(msg).catch((e) =>
         console.warn("[ONY Seed] communityMessage seed warning:", e),
       );
     }
-    messages = await listCommunityMessages().catch(() => []);
+    myMessages = await listCommunityMessages("0").catch(() => []);
   }
 
   return {
     globeUsersCount: globeUsers.length,
     communityPostsCount: posts.length,
     merchantsCount: merchants.length,
-    communityMessagesCount: messages.length,
+    communityMessagesCount: myMessages.length,
   };
 }
 
