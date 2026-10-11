@@ -77,12 +77,22 @@ export interface UserProfileData {
 
 export interface FirestoreMoodEntry {
   id: string;
+  dateKey?: string;
   level: number;
   emoji: string;
   label: string;
   note: string;
   reportAllowed: boolean;
   createdAt: string;
+}
+
+export function getLocalDateKey(isoOrDate?: string | Date): string {
+  const d = isoOrDate ? new Date(isoOrDate) : new Date();
+  const validDate = isNaN(d.getTime()) ? new Date() : d;
+  const year = validDate.getFullYear();
+  const month = String(validDate.getMonth() + 1).padStart(2, "0");
+  const day = String(validDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export interface FirestoreMemory {
@@ -221,19 +231,71 @@ export async function updateUserProfile(
   }
 }
 
-// Mood Check-in Operations
+// Mood Check-in Operations (Saved per day in users/{uid}/moodCheckins/{YYYY-MM-DD})
 export async function listMoodEntries(uid: string): Promise<FirestoreMoodEntry[]> {
   const path = `users/${uid}/moodCheckins`;
   try {
     const colRef = collection(db, "users", uid, "moodCheckins");
-    const q = query(colRef, orderBy("createdAt", "desc"), limit(50));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<FirestoreMoodEntry, "id">),
-    }));
+    const snap = await getDocs(colRef);
+    const rawDocs = snap.docs
+      .map((d) => {
+        const data = d.data() as Omit<FirestoreMoodEntry, "id">;
+        const dateKey =
+          data.dateKey ||
+          (/^\d{4}-\d{2}-\d{2}$/.test(d.id) ? d.id : getLocalDateKey(data.createdAt));
+        return {
+          id: d.id,
+          ...data,
+          note: data.note || "",
+          reportAllowed: data.reportAllowed ?? true,
+          dateKey,
+        };
+      })
+      .sort(
+        (a, b) =>
+          (b.dateKey || "").localeCompare(a.dateKey || "") ||
+          (b.createdAt || "").localeCompare(a.createdAt || ""),
+      );
+
+    const byDate = new Map<string, FirestoreMoodEntry>();
+    for (const item of rawDocs) {
+      const key = item.dateKey || getLocalDateKey(item.createdAt);
+      if (!byDate.has(key)) {
+        byDate.set(key, item);
+      }
+    }
+    return Array.from(byDate.values())
+      .sort(
+        (a, b) =>
+          (b.dateKey || "").localeCompare(a.dateKey || "") ||
+          (b.createdAt || "").localeCompare(a.createdAt || ""),
+      )
+      .slice(0, 90);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function getTodayMoodEntry(uid: string): Promise<FirestoreMoodEntry | null> {
+  const todayKey = getLocalDateKey();
+  const path = `users/${uid}/moodCheckins/${todayKey}`;
+  try {
+    const docRef = doc(db, "users", uid, "moodCheckins", todayKey);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as Omit<FirestoreMoodEntry, "id">;
+      return {
+        id: snap.id,
+        ...data,
+        note: data.note || "",
+        reportAllowed: data.reportAllowed ?? true,
+        dateKey: data.dateKey || todayKey,
+      };
+    }
+    const all = await listMoodEntries(uid);
+    return all.find((m) => (m.dateKey || getLocalDateKey(m.createdAt)) === todayKey) || null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
   }
 }
 
@@ -241,14 +303,53 @@ export async function saveMoodEntry(
   uid: string,
   entry: Omit<FirestoreMoodEntry, "id">,
 ): Promise<string> {
-  const path = `users/${uid}/moodCheckins`;
+  const dateKey = entry.dateKey || getLocalDateKey(entry.createdAt);
+  const path = `users/${uid}/moodCheckins/${dateKey}`;
   try {
-    const colRef = collection(db, "users", uid, "moodCheckins");
-    const newDocRef = doc(colRef);
-    await setDoc(newDocRef, entry);
-    return newDocRef.id;
+    const docRef = doc(db, "users", uid, "moodCheckins", dateKey);
+    await setDoc(
+      docRef,
+      {
+        level: entry.level,
+        emoji: entry.emoji,
+        label: entry.label,
+        note: (entry.note || "").slice(0, 500),
+        reportAllowed: entry.reportAllowed ?? true,
+        createdAt: entry.createdAt || new Date().toISOString(),
+        dateKey,
+      },
+      { merge: true },
+    );
+    // Also keep user's anonymous globe node mood in sync
+    const moodGlow: "bright" | "soft" | "dim" =
+      entry.level >= 4 ? "bright" : entry.level === 3 ? "soft" : "dim";
+    await setDoc(
+      doc(db, "globeUsers", "0"),
+      {
+        id: 0,
+        isMe: true,
+        moodLabel: entry.label,
+        moodGlow,
+      },
+      { merge: true },
+    ).catch(() => {});
+    return dateKey;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateMoodEntry(
+  uid: string,
+  entryId: string,
+  updates: Partial<FirestoreMoodEntry>,
+): Promise<void> {
+  const path = `users/${uid}/moodCheckins/${entryId}`;
+  try {
+    const docRef = doc(db, "users", uid, "moodCheckins", entryId);
+    await setDoc(docRef, updates, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

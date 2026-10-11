@@ -22,9 +22,10 @@
     },
     "MoodCheckin": {
       "title": "MoodCheckin",
-      "description": "User emotional check-in record.",
+      "description": "User emotional check-in record saved per day (YYYY-MM-DD).",
       "type": "object",
       "properties": {
+        "dateKey": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
         "level": { "type": "number", "minimum": 1, "maximum": 5 },
         "emoji": { "type": "string" },
         "label": { "type": "string" },
@@ -32,7 +33,7 @@
         "reportAllowed": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["level", "emoji", "label", "createdAt"]
+      "required": ["dateKey", "level", "emoji", "label", "createdAt"]
     },
     "Memory": {
       "title": "Memory",

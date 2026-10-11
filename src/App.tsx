@@ -17,7 +17,9 @@ import {
   updateUserProfile,
   listMoodEntries,
   saveMoodEntry,
+  updateMoodEntry,
   deleteMoodEntry,
+  getLocalDateKey,
   listMemories,
   saveMemory,
   updateMemory,
@@ -97,7 +99,56 @@ type Message = { from: "ony" | "user"; text: string };
 type Conversation = { id: number; title: string; category: string; day: "Today" | "Yesterday"; messages: Message[]; folderId?: number; archived?: boolean; reportAllowed?: boolean };
 type ChatFolder = { id: number; name: string };
 type LegalDocumentId = "disclaimer" | "terms" | "privacy" | "crisis";
-type MoodEntry = { id: number; level: number; emoji: string; label: string; note: string; createdAt: string; reportAllowed: boolean };
+type MoodEntry = { id: number; dateKey?: string; level: number; emoji: string; label: string; note: string; createdAt: string; reportAllowed: boolean };
+
+function getMoodDateKey(entry: Pick<MoodEntry, "dateKey" | "createdAt">): string {
+  if (entry.dateKey && /^\d{4}-\d{2}-\d{2}$/.test(entry.dateKey)) {
+    return entry.dateKey;
+  }
+  return getLocalDateKey(entry.createdAt);
+}
+
+const MOOD_STORAGE_KEY = "ony_daily_mood_checkins_v1";
+
+function loadCachedMoodEntries(): MoodEntry[] {
+  try {
+    const raw = localStorage.getItem(MOOD_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return deduplicateMoodEntriesByDay(parsed);
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedMoodEntries(entries: MoodEntry[]): void {
+  try {
+    localStorage.setItem(MOOD_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function deduplicateMoodEntriesByDay(entries: MoodEntry[]): MoodEntry[] {
+  const byDate = new Map<string, MoodEntry>();
+  const sorted = [...entries].sort(
+    (a, b) =>
+      getMoodDateKey(b).localeCompare(getMoodDateKey(a)) ||
+      (b.createdAt || "").localeCompare(a.createdAt || ""),
+  );
+  for (const item of sorted) {
+    const dKey = getMoodDateKey(item);
+    if (!byDate.has(dKey)) {
+      byDate.set(dKey, { ...item, dateKey: dKey });
+    }
+  }
+  return Array.from(byDate.values()).sort(
+    (a, b) =>
+      getMoodDateKey(b).localeCompare(getMoodDateKey(a)) ||
+      (b.createdAt || "").localeCompare(a.createdAt || ""),
+  );
+}
 type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
 type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
 type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string };
@@ -235,7 +286,7 @@ function App() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
   const [freeUsage, setFreeUsage] = useState(0);
   const freeLimit = 3;
-  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
+  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>(() => loadCachedMoodEntries());
   const [selectedCommunityUser, setSelectedCommunityUser] = useState<GlobeUser | null>(null);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
@@ -354,19 +405,45 @@ function App() {
             if (profile.onboardingCompleted) setOnboarding(9);
           }
           const loadedMoods = await listMoodEntries(user.uid);
-          if (loadedMoods.length > 0) {
-            setMoodEntries(
-              loadedMoods.map((m) => ({
-                id: Number(m.id) || Date.now(),
-                level: m.level,
-                emoji: m.emoji,
-                label: m.label,
-                note: m.note,
-                createdAt: m.createdAt,
-                reportAllowed: m.reportAllowed,
-              })),
-            );
+          const firestoreByDate = new Map<string, MoodEntry>();
+          loadedMoods.forEach((m, idx) => {
+            const dKey =
+              m.dateKey ||
+              (/^\d{4}-\d{2}-\d{2}$/.test(m.id) ? m.id : getLocalDateKey(m.createdAt));
+            const parsedTime = Date.parse(m.createdAt);
+            firestoreByDate.set(dKey, {
+              id: !isNaN(parsedTime) ? parsedTime + idx : Date.now() - idx * 1000,
+              dateKey: dKey,
+              level: m.level,
+              emoji: m.emoji,
+              label: m.label,
+              note: m.note || "",
+              createdAt: m.createdAt,
+              reportAllowed: m.reportAllowed ?? true,
+            });
+          });
+
+          // Merge any locally cached daily mood entries and ensure they are persisted to Firestore
+          const cachedLocal = loadCachedMoodEntries();
+          for (const localEntry of cachedLocal) {
+            const dKey = getMoodDateKey(localEntry);
+            if (!firestoreByDate.has(dKey)) {
+              firestoreByDate.set(dKey, { ...localEntry, dateKey: dKey });
+              saveMoodEntry(user.uid, {
+                dateKey: dKey,
+                level: localEntry.level,
+                emoji: localEntry.emoji,
+                label: localEntry.label,
+                note: localEntry.note,
+                reportAllowed: localEntry.reportAllowed,
+                createdAt: localEntry.createdAt,
+              }).catch((e) => console.warn("[ONY] Mood backfill notice:", e));
+            }
           }
+
+          const mergedMoods = deduplicateMoodEntriesByDay(Array.from(firestoreByDate.values()));
+          setMoodEntries(mergedMoods);
+          saveCachedMoodEntries(mergedMoods);
           const loadedMemories = await listMemories(user.uid);
           if (loadedMemories.length > 0) {
             setMemories(
@@ -482,21 +559,58 @@ function App() {
 
   const handleSetMoodEntries = (action: MoodEntry[] | ((prev: MoodEntry[]) => MoodEntry[])) => {
     setMoodEntries((prev) => {
-      const next = typeof action === "function" ? action(prev) : action;
-      if (currentUser && next.length > prev.length) {
-        const newest = next[0];
-        saveMoodEntry(currentUser.uid, {
-          level: newest.level,
-          emoji: newest.emoji,
-          label: newest.label,
-          note: newest.note,
-          reportAllowed: newest.reportAllowed,
-          createdAt: newest.createdAt,
-        }).catch((e) => console.warn("[ONY] Mood save error:", e));
+      const rawNext = typeof action === "function" ? action(prev) : action;
+      const next = deduplicateMoodEntriesByDay(rawNext);
+      saveCachedMoodEntries(next);
+
+      if (currentUser) {
+        const prevByDate = new Map(prev.map((item) => [getMoodDateKey(item), item]));
+        const nextByDate = new Map(next.map((item) => [getMoodDateKey(item), item]));
+
+        // Save new or updated daily entries to Firestore (users/{uid}/moodCheckins/{YYYY-MM-DD})
+        for (const [dKey, entry] of nextByDate.entries()) {
+          const existing = prevByDate.get(dKey);
+          if (!existing) {
+            saveMoodEntry(currentUser.uid, {
+              dateKey: dKey,
+              level: entry.level,
+              emoji: entry.emoji,
+              label: entry.label,
+              note: entry.note,
+              reportAllowed: entry.reportAllowed,
+              createdAt: entry.createdAt,
+            }).catch((e) => console.warn("[ONY] Mood save error:", e));
+          } else if (
+            existing.reportAllowed !== entry.reportAllowed ||
+            existing.level !== entry.level ||
+            existing.note !== entry.note
+          ) {
+            updateMoodEntry(currentUser.uid, dKey, {
+              level: entry.level,
+              emoji: entry.emoji,
+              label: entry.label,
+              note: entry.note,
+              reportAllowed: entry.reportAllowed,
+              dateKey: dKey,
+            }).catch((e) => console.warn("[ONY] Mood update error:", e));
+          }
+        }
+
+        // Delete removed daily entries from Firestore
+        for (const [dKey] of prevByDate.entries()) {
+          if (!nextByDate.has(dKey)) {
+            deleteMoodEntry(currentUser.uid, dKey).catch((e) =>
+              console.warn("[ONY] Mood delete error:", e),
+            );
+          }
+        }
       }
       return next;
     });
   };
+
+  const todayDateKey = getLocalDateKey();
+  const todayMoodEntry = moodEntries.find((entry) => getMoodDateKey(entry) === todayDateKey) || null;
 
   const handleSetMemories = (action: Memory[] | ((prev: Memory[]) => Memory[])) => {
     setMemories((prev) => {
@@ -572,7 +686,7 @@ function App() {
         {screen === "main" ? (
           <>
             <main className="main-content">
-              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
+              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                 if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                 const next = freeUsage + 1;
                 setFreeUsage(next);
@@ -621,7 +735,7 @@ function App() {
             {screen === "communityMember" && selectedCommunityUser && <CommunityMember back={back} user={selectedCommunityUser} notify={notify} />}
             {screen === "guidelines" && <CommunityGuidelines back={back} />}
             {screen === "chatHistory" && <ChatHistory back={back} navigate={navigate} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} folders={folders} setFolders={setFolders} selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} />}
-            {screen === "monthlyReport" && <MonthlyReport back={back} moodEntries={moodEntries} setMoodEntries={setMoodEntries} conversations={conversations} setConversations={setConversations} memories={memories} />}
+            {screen === "monthlyReport" && <MonthlyReport back={back} moodEntries={moodEntries} setMoodEntries={handleSetMoodEntries} conversations={conversations} setConversations={setConversations} memories={memories} />}
             {screen === "postDetail" && selectedPost && <PostDetail back={() => { sessionStorage.setItem("ony-show-posts", "true"); back(); }} post={selectedPost} onLikePost={handleLikePost} notify={notify} />}
             {screen === "riskDemo" && <RiskDemo back={back} navigate={navigate} persona={persona} companion={companion} />}
             {screen === "resources" && <ResourceLibrary back={back} navigate={navigate} notify={notify} />}
@@ -862,13 +976,14 @@ function PageHeader({ title, subtitle, back, action }: { title: string; subtitle
   return <header className="page-header">{back ? <Button variant="ghost" className="icon-btn" onClick={back}><Icon name="back" /></Button> : <SmallLogo />}<div className="header-copy"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action || <span className="header-spacer" />}</header>;
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   language: string; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
   conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
   selectedFolderId: number | null;
   memories: Memory[]; setMemories: (items: Memory[]) => void;
+  todayMoodEntry?: MoodEntry | null;
   subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
   registerFreeUse: () => void; notify: (s: string) => void;
 }) {
@@ -1195,9 +1310,31 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   };
 
   return <div className="chat-page">
-    <PageHeader title="Chat with ONY" subtitle="Here with you, at your pace" action={<div className="chat-header-actions"><Button variant="secondary" onClick={() => navigate("mood")}>Mood</Button><Button variant="secondary" onClick={() => navigate("help")}>Help</Button></div>} />
+    <PageHeader
+      title="Chat with ONY"
+      subtitle="Here with you, at your pace"
+      action={
+        <div className="chat-header-actions">
+          <Button
+            variant="secondary"
+            onClick={() => navigate(todayMoodEntry ? "trend" : "mood")}
+            title={todayMoodEntry ? `Today's mood check-in completed (${todayMoodEntry.emoji} ${todayMoodEntry.label})` : "Check in your mood for today"}
+          >
+            {todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : "Mood"}
+          </Button>
+          <Button variant="secondary" onClick={() => navigate("help")}>Help</Button>
+        </div>
+      }
+    />
     <div className="chat-scroll" ref={chatScrollRef}>
     <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? "ONY voice on · Replies will be read aloud" : "ONY voice off"); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? "Voice on" : "Voice off"}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety demo</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
+    {!todayMoodEntry && messages.length === 0 && (
+      <div className="memory-note" style={{ marginBottom: "8px" }}>
+        <span>🌱</span>
+        <span>You haven’t checked in your mood yet today.</span>
+        <Button variant="secondary" onClick={() => navigate("mood")}>Check in</Button>
+      </div>
+    )}
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? "Memory is on · You’re in control" : "Memory sharing paused · You’re in control"}</span><Button variant="ghost" onClick={() => goTab("memory")}>View</Button></div>}
     {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
@@ -1366,17 +1503,48 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
 function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () => void; navigate: (s: Screen) => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void; notify: (s: string) => void }) {
   const [mood, setMood] = useState<number | null>(null);
   const [note, setNote] = useState("");
-  const [done, setDone] = useState(false);
+  const todayKey = getLocalDateKey();
+  const todayEntry = entries.find((entry) => getMoodDateKey(entry) === todayKey) || null;
   const selected = mood === null ? null : moodOptions[mood];
+
   const save = () => {
-    if (!selected || mood === null) return;
-    setEntries([{ id: Date.now(), level: mood + 1, emoji: selected.emoji, label: selected.label, note: note.trim(), createdAt: new Date().toISOString(), reportAllowed: true }, ...entries]);
-    setDone(true);
-    notify("Added to your private mood history");
+    if (!selected || mood === null || todayEntry) return;
+    const nowIso = new Date().toISOString();
+    const newEntry: MoodEntry = {
+      id: Date.now(),
+      dateKey: todayKey,
+      level: mood + 1,
+      emoji: selected.emoji,
+      label: selected.label,
+      note: note.trim(),
+      createdAt: nowIso,
+      reportAllowed: true,
+    };
+    setEntries([newEntry, ...entries.filter((item) => getMoodDateKey(item) !== todayKey)]);
+    notify("Today’s mood check-in saved to database");
   };
-  if (done && selected) return <div className="centered-state"><img src={logo} alt="ONY" /><div className="success-mark"><Icon name="check" /></div><h1>Check-in saved</h1><p>You chose <strong>{selected.emoji} {selected.label}</strong>. One check-in cannot capture everything you’re feeling, but it can be a useful moment of reflection.</p><Button onClick={() => navigate("trend")}>View mood history</Button><Button variant="ghost" onClick={back}>Back to chat</Button></div>;
+
+  // If the user has already done the mood check-in for today, do NOT prompt them to input the mood again
+  if (todayEntry) {
+    return (
+      <div className="centered-state">
+        <img src={logo} alt="ONY" />
+        <div className="success-mark"><Icon name="check" /></div>
+        <span className="eyebrow">Daily Check-in Complete · {todayKey}</span>
+        <h1>Check-in saved for today</h1>
+        <p>
+          You checked in today as <strong>{todayEntry.emoji} {todayEntry.label}</strong>
+          {todayEntry.note ? <> — <em>“{todayEntry.note}”</em></> : "."}{" "}
+          Your mood is saved in the database for today. Come back tomorrow for your next daily check-in.
+        </p>
+        <Button onClick={() => navigate("trend")}>View mood history</Button>
+        <Button variant="ghost" onClick={back}>Back to chat</Button>
+      </div>
+    );
+  }
+
   return <><PageHeader title="Mood check-in" subtitle="A quick moment for you" back={back} /><section className="page-pad">
-    <div className="eyebrow">Right now</div><h1>How is your mood today?</h1><p className="muted">Choose the closest fit. An emoji is only one small part of how you feel.</p>
+    <div className="eyebrow">Right now · {todayKey}</div><h1>How is your mood today?</h1><p className="muted">Choose the closest fit. Your check-in is saved once per day to your private database history.</p>
     <div className="mood-scale emoji-scale">{moodOptions.map((option, index) => <button key={option.label} onClick={() => setMood(index)} className={mood === index ? "active" : ""} aria-pressed={mood === index}><span>{option.emoji}</span><small>{option.label}</small></button>)}</div>
     <div className="selected-mood">{selected ? <><span>{selected.emoji}</span><strong>{selected.label}</strong></> : <p>Select a mood to continue.</p>}</div>
     <label className="field-label">What’s contributing to your mood today? <small>Optional</small></label><TextArea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Write as much or as little as you like…" />
@@ -1387,10 +1555,24 @@ function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () =
 
 function MoodTrend({ back, entries, setEntries }: { back: () => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void }) {
   const recent = entries[0];
-  return <><PageHeader title="Mood history" subtitle="Private reflection, not a diagnosis" back={back} /><section className="page-pad">
-    {recent && <div className="trend-summary"><div><span>Most recent</span><strong>{recent.emoji} {recent.label}</strong><small>{new Date(recent.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}</small></div><span className="score">{recent.level}/5</span></div>}
-    {entries.length === 0 ? <div className="empty"><span className="empty-emoji">😐</span><h3>No mood check-ins yet</h3><p>Your saved check-ins will appear here after you choose to record one.</p></div> : <><div className="card"><div className="card-title"><h3>Your entries</h3><span>{entries.length} saved</span></div><div className="mood-history-list">{entries.map((entry) => <div key={entry.id}><span className="history-emoji">{entry.emoji}</span><div><strong>{entry.label}</strong><small>{new Date(entry.createdAt).toLocaleString("en-MY", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</small>{entry.note && <p>{entry.note}</p>}</div><Toggle on={entry.reportAllowed} setOn={(value) => setEntries(entries.map((item) => item.id === entry.id ? { ...item, reportAllowed: value } : item))} /><Button variant="ghost" onClick={() => setEntries(entries.filter((item) => item.id !== entry.id))}><Icon name="trash" /></Button></div>)}</div></div>{entries.length >= 3 ? <div className="card"><h3>Recent pattern</h3><div className="bars mood-entry-bars">{[...entries].reverse().slice(-7).map((entry) => <div key={entry.id}><span style={{ height: `${entry.level * 20}%` }} /><small>{entry.emoji}</small></div>)}</div><p className="muted">A simple view of your saved entries, not a clinical interpretation.</p></div> : <div className="community-note"><Icon name="info" />At least three included check-ins are needed before ONY shows a simple trend.</div>}</>}
-    <p className="disclaimer"><Icon name="info" />Use the switch beside an entry to include or exclude it from monthly reports. Deleting an entry removes it from this local prototype state.</p>
+  const todayKey = getLocalDateKey();
+  const todayEntry = entries.find((entry) => getMoodDateKey(entry) === todayKey) || null;
+  return <><PageHeader title="Mood history" subtitle="Saved daily in Cloud Firestore" back={back} /><section className="page-pad">
+    {todayEntry && (
+      <div className="community-note" style={{ marginBottom: "12px" }}>
+        <Icon name="check" />
+        <span>
+          <strong>Today’s check-in complete ({todayKey}):</strong> {todayEntry.emoji} {todayEntry.label}. You are all set for today.
+        </span>
+      </div>
+    )}
+    {recent && <div className="trend-summary"><div><span>Most recent ({getMoodDateKey(recent) === todayKey ? "Today" : getMoodDateKey(recent)})</span><strong>{recent.emoji} {recent.label}</strong><small>{new Date(recent.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}</small></div><span className="score">{recent.level}/5</span></div>}
+    {entries.length === 0 ? <div className="empty"><span className="empty-emoji">😐</span><h3>No mood check-ins yet</h3><p>Your daily mood check-ins will appear here after you record one.</p></div> : <><div className="card"><div className="card-title"><h3>Daily check-ins</h3><span>{entries.length} {entries.length === 1 ? "day" : "days"} saved</span></div><div className="mood-history-list">{entries.map((entry) => {
+      const dKey = getMoodDateKey(entry);
+      const isToday = dKey === todayKey;
+      return <div key={dKey || entry.id}><span className="history-emoji">{entry.emoji}</span><div><strong>{entry.label} {isToday ? "· Today" : ""}</strong><small>{dKey} · {new Date(entry.createdAt).toLocaleString("en-MY", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</small>{entry.note && <p>{entry.note}</p>}</div><Toggle on={entry.reportAllowed} setOn={(value) => setEntries(entries.map((item) => getMoodDateKey(item) === dKey ? { ...item, reportAllowed: value } : item))} /><Button variant="ghost" onClick={() => setEntries(entries.filter((item) => getMoodDateKey(item) !== dKey))}><Icon name="trash" /></Button></div>;
+    })}</div></div>{entries.length >= 3 ? <div className="card"><h3>Recent pattern</h3><div className="bars mood-entry-bars">{[...entries].reverse().slice(-7).map((entry) => <div key={getMoodDateKey(entry) || entry.id}><span style={{ height: `${entry.level * 20}%` }} /><small>{entry.emoji}</small></div>)}</div><p className="muted">A simple view of your daily entries, not a clinical interpretation.</p></div> : <div className="community-note"><Icon name="info" />At least three daily check-ins are needed before ONY shows a simple trend.</div>}</>}
+    <p className="disclaimer"><Icon name="info" />Each mood check-in is saved per day in Cloud Firestore. Use the switch beside an entry to include or exclude it from monthly reports.</p>
   </section></>;
 }
 
