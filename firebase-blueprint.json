@@ -118,6 +118,24 @@
         "validity": { "type": "string", "maxLength": 100 }
       },
       "required": ["name", "category", "offer", "value", "description", "image", "validity"]
+    },
+    "CommunityMessage": {
+      "title": "CommunityMessage",
+      "description": "Anonymous support message (text or voice) sent between community members.",
+      "type": "object",
+      "properties": {
+        "toUserId": { "type": "string", "maxLength": 100 },
+        "toUserMood": { "type": "string", "maxLength": 100 },
+        "fromUserId": { "type": "string", "maxLength": 100 },
+        "senderAnonymous": { "type": "string", "maxLength": 100 },
+        "recipientAnonymous": { "type": "string", "maxLength": 100 },
+        "kind": { "type": "string", "enum": ["text", "voice"] },
+        "text": { "type": "string", "maxLength": 2000 },
+        "audioUrl": { "type": "string" },
+        "audioDuration": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["toUserId", "fromUserId", "senderAnonymous", "recipientAnonymous", "kind", "text", "createdAt"]
     }
   },
   "firestore": {
@@ -148,6 +166,10 @@
     "/merchants/{merchantId}": {
       "schema": "Merchant",
       "description": "Stores discoverable wellness merchants and voucher offerings."
+    },
+    "/communityMessages/{messageId}": {
+      "schema": "CommunityMessage",
+      "description": "Stores supportive anonymous messages between community members."
     }
   }
 }

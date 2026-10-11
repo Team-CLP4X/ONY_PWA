@@ -116,6 +116,7 @@ export interface FirestoreGlobeUser {
   minLevel: number;
   lon: number;
   lat: number;
+  isMe?: boolean;
 }
 
 export interface FirestoreCommunityPost {
@@ -128,6 +129,8 @@ export interface FirestoreCommunityPost {
   likes: number;
   saved?: boolean;
   media?: "image" | "voice";
+  audioUrl?: string;
+  audioDuration?: number;
   createdAt: string;
 }
 
@@ -140,6 +143,20 @@ export interface FirestoreMerchant {
   description: string;
   image: string;
   validity: string;
+}
+
+export interface FirestoreCommunityMessage {
+  id: string;
+  toUserId: string;
+  toUserMood?: string;
+  fromUserId: string;
+  senderAnonymous: string;
+  recipientAnonymous: string;
+  kind: "text" | "voice";
+  text: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  createdAt: string;
 }
 
 // User Profile Operations
@@ -480,10 +497,53 @@ export async function listMerchants(): Promise<FirestoreMerchant[]> {
 }
 
 // ==========================================
+// Community Support Messages Operations
+// ==========================================
+
+export async function listCommunityMessages(
+  toUserId?: string,
+): Promise<FirestoreCommunityMessage[]> {
+  const path = "communityMessages";
+  try {
+    const colRef = collection(db, "communityMessages");
+    const snap = await getDocs(colRef);
+    let messages = snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<FirestoreCommunityMessage, "id">),
+    }));
+    // Sort in memory by newest first (resilient against composite index requirements)
+    messages.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    if (toUserId) {
+      messages = messages.filter(
+        (m) => m.toUserId === toUserId || (toUserId === "0" && (m.toUserId === "0" || m.toUserId === "me"))
+      );
+    }
+    return messages;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function createCommunityMessage(
+  message: Omit<FirestoreCommunityMessage, "id">,
+): Promise<string> {
+  const path = "communityMessages";
+  try {
+    const colRef = collection(db, "communityMessages");
+    const newDocRef = doc(colRef);
+    await setDoc(newDocRef, message);
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+// ==========================================
 // Initial Database Seeding
 // ==========================================
 
 export const DEFAULT_GLOBE_USERS: FirestoreGlobeUser[] = [
+  { id: 0, moodGlow: "bright", moodLabel: "Calm", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 101, lat: 3, isMe: true },
   { id: 1, moodGlow: "bright", moodLabel: "Good", discoverable: true, acceptsMessages: true, minLevel: 0, lon: -145, lat: 38 },
   { id: 2, moodGlow: "soft", moodLabel: "Okay", discoverable: true, acceptsMessages: false, minLevel: 0, lon: -45, lat: 24 },
   { id: 3, moodGlow: "dim", moodLabel: "Low", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 70, lat: -4 },
@@ -513,6 +573,7 @@ export const DEFAULT_COMMUNITY_POSTS: Omit<FirestoreCommunityPost, "id">[] = [
     category: "Work",
     likes: 21,
     media: "voice",
+    audioDuration: 12,
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
   },
   {
@@ -597,6 +658,70 @@ export const DEFAULT_USER_CONVERSATIONS: Omit<FirestoreConversation, "id">[] = [
   { title: "Feeling anxious", category: "Emotional Wellbeing", day: "Yesterday", folderId: 3, reportAllowed: true, updatedAt: new Date(Date.now() - 86400000).toISOString(), messages: [{ from: "user", text: "I’m feeling anxious." }, { from: "ony", text: "I’m here. Would something calming help, or would you like to talk it through?" }] },
 ];
 
+export const DEFAULT_COMMUNITY_MESSAGES: Omit<FirestoreCommunityMessage, "id">[] = [
+  {
+    toUserId: "0",
+    toUserMood: "Calm",
+    fromUserId: "system_anon_92",
+    senderAnonymous: "Anonymous Member #928",
+    recipientAnonymous: "You (Anonymous Traveler)",
+    kind: "voice",
+    text: "Encouraging voice note · 0:08",
+    audioDuration: 8,
+    createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
+  },
+  {
+    toUserId: "0",
+    toUserMood: "Calm",
+    fromUserId: "system_anon_71",
+    senderAnonymous: "Anonymous Member #714",
+    recipientAnonymous: "You (Anonymous Traveler)",
+    kind: "text",
+    text: "Thinking of you today! Remember that you don't have to carry everything all at once. Just this one breath right now is more than enough 🌱",
+    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+  },
+  {
+    toUserId: "0",
+    toUserMood: "Calm",
+    fromUserId: "system_anon_30",
+    senderAnonymous: "Anonymous Friend #304",
+    recipientAnonymous: "You (Anonymous Traveler)",
+    kind: "text",
+    text: "Sending gentle warmth across the globe ☕ Hope today brings you a moment of genuine ease and comfort.",
+    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
+  },
+  {
+    toUserId: "1",
+    toUserMood: "Good",
+    fromUserId: "system_anon_1",
+    senderAnonymous: "Anonymous Member #482",
+    recipientAnonymous: "Anonymous Traveler (Globe #1)",
+    kind: "text",
+    text: "Sending you gentle energy for your day 🌱 Remember that one small breath changes everything.",
+    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+  },
+  {
+    toUserId: "3",
+    toUserMood: "Low",
+    fromUserId: "system_anon_2",
+    senderAnonymous: "Anonymous Member #195",
+    recipientAnonymous: "Anonymous Traveler (Globe #3)",
+    kind: "text",
+    text: "Hope today gets a little lighter for you. You are never as alone as you might feel 💫",
+    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+  },
+  {
+    toUserId: "6",
+    toUserMood: "Very low",
+    fromUserId: "system_anon_3",
+    senderAnonymous: "Anonymous Member #312",
+    recipientAnonymous: "Anonymous Traveler (Globe #6)",
+    kind: "text",
+    text: "Sending quiet support your way. Take all the time and space you need today 🍵",
+    createdAt: new Date(Date.now() - 3600000 * 7).toISOString(),
+  },
+];
+
 /**
  * Seeds initial shared data into Firestore (globeUsers, communityPosts, merchants)
  * if the database collections are currently empty.
@@ -605,6 +730,7 @@ export async function seedInitialDatabaseData(): Promise<{
   globeUsersCount: number;
   communityPostsCount: number;
   merchantsCount: number;
+  communityMessagesCount: number;
 }> {
   // 1. Globe Users
   let globeUsers = await listGlobeUsers().catch(() => []);
@@ -642,10 +768,22 @@ export async function seedInitialDatabaseData(): Promise<{
     merchants = await listMerchants().catch(() => DEFAULT_MERCHANTS);
   }
 
+  // 4. Community Support Messages
+  let messages = await listCommunityMessages().catch(() => []);
+  if (messages.length === 0) {
+    for (const msg of DEFAULT_COMMUNITY_MESSAGES) {
+      await createCommunityMessage(msg).catch((e) =>
+        console.warn("[ONY Seed] communityMessage seed warning:", e),
+      );
+    }
+    messages = await listCommunityMessages().catch(() => []);
+  }
+
   return {
     globeUsersCount: globeUsers.length,
     communityPostsCount: posts.length,
     merchantsCount: merchants.length,
+    communityMessagesCount: messages.length,
   };
 }
 

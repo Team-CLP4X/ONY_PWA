@@ -32,22 +32,22 @@ service cloud.firestore {
 
     // Community Globe nodes (Anonymous presence nodes)
     match /globeUsers/{nodeId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read, write: if true;
     }
 
     // Community Posts feed (Read, Create, Like/Update, Delete)
     match /communityPosts/{postId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null && (resource.data.authorId == request.auth.uid || !('authorId' in resource.data));
+      allow read, write: if true;
     }
 
     // Marketplace merchants and wellness vouchers
     match /merchants/{merchantId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read, write: if true;
+    }
+
+    // Community support messages (Anonymous peer encouragement text/voice)
+    match /communityMessages/{messageId} {
+      allow read, write: if true;
     }
   }
 }

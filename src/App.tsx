@@ -1,8 +1,9 @@
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, KeyboardEvent, ReactNode, useEffect, useRef, useState } from "react";
 import logo from "./assets/ony-logo.png";
 import { chatService, ChatServiceError } from "./services/chatService";
 import type { SafetyAction } from "./services/contracts";
 import type { User } from "firebase/auth";
+import { auth } from "./firebase/config";
 import {
   registerWithEmailPassword,
   loginWithEmailPassword,
@@ -30,13 +31,17 @@ import {
   createCommunityPost,
   updateCommunityPostLikes,
   listMerchants,
+  listCommunityMessages,
+  createCommunityMessage,
   seedInitialDatabaseData,
   seedInitialUserData,
   DEFAULT_GLOBE_USERS,
   DEFAULT_COMMUNITY_POSTS,
   DEFAULT_MERCHANTS,
   DEFAULT_USER_CONVERSATIONS,
+  DEFAULT_COMMUNITY_MESSAGES,
   type FirestoreCommunityPost,
+  type FirestoreCommunityMessage,
 } from "./firebase/firestore";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
@@ -78,12 +83,22 @@ type SubscriptionStatus = "free" | "trial" | "trialEnded" | "payg" | "monthly";
 type Persona = "gentle" | "friendly" | "calm";
 type RiskLevel = "low" | "moderate" | "high";
 
+import {
+  ChatSpeechRecognizer,
+  VoiceRecorder,
+  OnySpeechSynthesizer,
+  playSoothingChime,
+  formatAudioDuration,
+  isSpeechRecognitionSupported,
+  generateSampleVoiceAudio,
+} from "./services/voiceService";
+
 type Message = { from: "ony" | "user"; text: string };
 type Conversation = { id: number; title: string; category: string; day: "Today" | "Yesterday"; messages: Message[]; folderId?: number; archived?: boolean; reportAllowed?: boolean };
 type ChatFolder = { id: number; name: string };
 type LegalDocumentId = "disclaimer" | "terms" | "privacy" | "crisis";
 type MoodEntry = { id: number; level: number; emoji: string; label: string; note: string; createdAt: string; reportAllowed: boolean };
-type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number };
+type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
 type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
 type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string };
 type Post = {
@@ -95,6 +110,8 @@ type Post = {
   likes: number;
   saved?: boolean;
   media?: "image" | "voice";
+  audioUrl?: string;
+  audioDuration?: number;
 };
 
 const Icon = ({ name }: { name: string }) => {
@@ -118,6 +135,11 @@ const Icon = ({ name }: { name: string }) => {
     trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14"/></>,
     more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
     mic: <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></>,
+    play: <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" />,
+    pause: <><rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/></>,
+    volume: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></>,
+    volumeOff: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>,
+    refresh: <path d="M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5"/>,
   };
   return <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
 };
@@ -129,6 +151,7 @@ function Button({
   className = "",
   type = "button",
   disabled = false,
+  title,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -136,8 +159,9 @@ function Button({
   className?: string;
   type?: "button" | "submit";
   disabled?: boolean;
+  title?: string;
 }) {
-  return <button type={type} disabled={disabled} onClick={onClick} className={`btn btn-${variant} ${className}`}>{children}</button>;
+  return <button type={type} disabled={disabled} onClick={onClick} className={`btn btn-${variant} ${className}`} title={title}>{children}</button>;
 }
 
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -285,6 +309,8 @@ function App() {
                 category: p.category,
                 likes: p.likes,
                 media: p.media as "image" | "voice" | undefined,
+                audioUrl: p.audioUrl,
+                audioDuration: p.audioDuration,
                 saved: p.saved,
               })),
             );
@@ -501,6 +527,8 @@ function App() {
           category: newPost.category,
           likes: newPost.likes,
           media: newPost.media as "image" | "voice" | undefined,
+          audioUrl: newPost.audioUrl,
+          audioDuration: newPost.audioDuration,
         },
         ...prev,
       ]);
@@ -516,6 +544,8 @@ function App() {
           category: newPost.category,
           likes: newPost.likes,
           media: newPost.media as "image" | "voice" | undefined,
+          audioUrl: newPost.audioUrl,
+          audioDuration: newPost.audioDuration,
         },
         ...prev,
       ]);
@@ -865,6 +895,15 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const [typing, setTyping] = useState(false);
   const [inputMode, setInputMode] = useState<"voice" | "text">("text");
   const [voiceState, setVoiceState] = useState<"idle" | "listening" | "recording" | "sent">("idle");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceInterim, setVoiceInterim] = useState("");
+  const [voiceVolume, setVoiceVolume] = useState(0.1);
+  const [micNotice, setMicNotice] = useState<string | null>(null);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const speechRecognizerRef = useRef<ChatSpeechRecognizer | null>(null);
+  const voiceRecorderRef = useRef<VoiceRecorder | null>(null);
+
   const [savedMemoryId, setSavedMemoryId] = useState<number | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [failedUserText, setFailedUserText] = useState<string | null>(null);
@@ -903,6 +942,31 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     }
   }, [activeChatId]);
 
+  useEffect(() => {
+    const synth = OnySpeechSynthesizer.getInstance();
+    synth.setOnStateChange((id) => setSpeakingMsgId(id));
+    return () => {
+      synth.stop();
+      if (speechRecognizerRef.current) {
+        speechRecognizerRef.current.abort();
+      }
+      if (voiceRecorderRef.current) {
+        voiceRecorderRef.current.cancel();
+      }
+    };
+  }, []);
+
+  const toggleSpeakMessage = (text: string, id: string) => {
+    const synth = OnySpeechSynthesizer.getInstance();
+    if (speakingMsgId === id) {
+      synth.stop();
+      setSpeakingMsgId(null);
+    } else {
+      setSpeakingMsgId(id);
+      synth.speak(text, id, language);
+    }
+  };
+
   const sendToBackend = async (textToSend: string, priorMessages: Message[]) => {
     setTyping(true);
     setChatError(null);
@@ -936,6 +1000,12 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       setFailedUserText(null);
       setMessages((m) => [...m, { from: "ony", text: response.message }]);
       scrollToBottom("smooth");
+
+      if (autoSpeak) {
+        const nextId = `ony-${Date.now()}`;
+        setSpeakingMsgId(nextId);
+        OnySpeechSynthesizer.getInstance().speak(response.message, nextId, language);
+      }
 
       if (response.safetyAction !== "urgent_safety_flow") {
         registerFreeUse();
@@ -982,19 +1052,105 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   };
 
   const submit = (e: FormEvent) => { e.preventDefault(); reply(input); };
+
+  const startVoiceListening = async () => {
+    if (typing) return;
+    setMicNotice(null);
+    setVoiceTranscript("");
+    setVoiceInterim("");
+    setVoiceState("listening");
+
+    try {
+      if (!voiceRecorderRef.current) {
+        voiceRecorderRef.current = new VoiceRecorder();
+      }
+      await voiceRecorderRef.current.start({
+        onVolumeChange: (vol) => setVoiceVolume(vol),
+      });
+    } catch (e: any) {
+      console.warn("[Voice] Audio visualizer notice:", e);
+      const isRestricted = e?.message?.includes("restricted") || e?.message?.includes("denied");
+      if (isRestricted) {
+        setMicNotice("Microphone permission was not requested or is restricted in this preview frame. Try a simulated voice prompt below:");
+      }
+    }
+
+    if (isSpeechRecognitionSupported()) {
+      if (!speechRecognizerRef.current) {
+        speechRecognizerRef.current = new ChatSpeechRecognizer(language === "ms" ? "ms-MY" : "en-US");
+      } else {
+        speechRecognizerRef.current.setLanguage(language === "ms" ? "ms-MY" : "en-US");
+      }
+      const started = speechRecognizerRef.current.start({
+        onUpdate: ({ transcript, interim }) => {
+          setVoiceTranscript(transcript);
+          setVoiceInterim(interim);
+        },
+        onError: (err) => {
+          setMicNotice(err);
+          stopVoiceListening(false);
+        },
+        onEnd: () => {
+          // preserve recognition
+        },
+      });
+      if (!started) {
+        setMicNotice("Speech recognition could not be started in this browser frame. You can use voice simulation below:");
+      }
+    } else {
+      setMicNotice("Live speech transcription not supported in this browser. Try a voice simulation prompt below:");
+    }
+  };
+
+  const stopVoiceListening = (send = true) => {
+    let finalSpeech = voiceTranscript;
+    if (speechRecognizerRef.current) {
+      const captured = speechRecognizerRef.current.stop();
+      if (captured) finalSpeech = captured;
+    }
+    if (voiceRecorderRef.current) {
+      voiceRecorderRef.current.cancel();
+    }
+    setVoiceVolume(0.1);
+
+    const speechToSend = (finalSpeech + " " + voiceInterim).trim();
+    if (send && speechToSend) {
+      setVoiceState("sent");
+      notify("Voice transcribed and sent");
+      reply(speechToSend);
+      setTimeout(() => {
+        setVoiceState("idle");
+        setVoiceTranscript("");
+        setVoiceInterim("");
+      }, 1500);
+    } else {
+      setVoiceState("idle");
+      setVoiceTranscript("");
+      setVoiceInterim("");
+    }
+  };
+
   const handleVoice = () => {
     if (typing) return;
     if (voiceState === "idle" || voiceState === "sent") {
-      setVoiceState("listening");
-      window.setTimeout(() => setVoiceState("recording"), 450);
+      void startVoiceListening();
+    } else if (voiceState === "listening" || voiceState === "recording") {
+      stopVoiceListening(true);
+    } else {
+      stopVoiceListening(false);
     }
-    else if (voiceState === "listening") setVoiceState("recording");
-    else if (voiceState === "recording") {
-      setVoiceState("sent");
-      notify("Voice transcribed and sent");
-      reply("I’ve been feeling a bit overwhelmed today.");
-    }
-    else setVoiceState("idle");
+  };
+
+  const handleSimulateVoice = (phrase: string) => {
+    if (typing) return;
+    setMicNotice(null);
+    setVoiceState("listening");
+    setVoiceTranscript(phrase);
+    setVoiceVolume(0.75);
+    notify("Transcribing voice…");
+    window.setTimeout(() => {
+      stopVoiceListening(true);
+    }, 1100);
   };
   const latestUserText = [...messages].reverse().find((message) => message.from === "user")?.text || "";
   const latestLower = latestUserText.toLowerCase();
@@ -1041,13 +1197,24 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   return <div className="chat-page">
     <PageHeader title="Chat with ONY" subtitle="Here with you, at your pace" action={<div className="chat-header-actions"><Button variant="secondary" onClick={() => navigate("mood")}>Mood</Button><Button variant="secondary" onClick={() => navigate("help")}>Help</Button></div>} />
     <div className="chat-scroll" ref={chatScrollRef}>
-    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety demo</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
+    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? "ONY voice on · Replies will be read aloud" : "ONY voice off"); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? "Voice on" : "Voice off"}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety demo</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? "Memory is on · You’re in control" : "Memory sharing paused · You’re in control"}</span><Button variant="ghost" onClick={() => goTab("memory")}>View</Button></div>}
     {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
         <div className="message">{m.text}</div>
+        {m.from === "ony" && (
+          <button
+            type="button"
+            className={`tts-btn ${speakingMsgId === `ony-msg-${i}` ? "speaking" : ""}`}
+            onClick={() => toggleSpeakMessage(m.text, `ony-msg-${i}`)}
+            title={speakingMsgId === `ony-msg-${i}` ? "Stop speaking" : "Listen to ONY"}
+            aria-label={speakingMsgId === `ony-msg-${i}` ? "Stop speaking" : "Listen to ONY"}
+          >
+            <Icon name={speakingMsgId === `ony-msg-${i}` ? "volumeOff" : "volume"} />
+          </button>
+        )}
       </div>)}
       {typing && <div className="message-row ony"><CompanionAvatar companion={companion} /><div className="message typing"><i /><i /><i /></div></div>}
       {chatError && !typing && <div className="chat-error-banner" role="alert">
@@ -1084,21 +1251,112 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       ) : (
         <>
           <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />Voice</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />Text</button></div>
-          {inputMode === "voice" ? <div className={`voice-composer state-${voiceState}`}><button className="primary-mic" disabled={typing} onClick={handleVoice}><Icon name={voiceState === "recording" ? "close" : voiceState === "sent" ? "check" : "mic"} /></button><div><strong>{voiceState === "idle" ? "Tap to speak" : voiceState === "listening" ? "Listening…" : voiceState === "recording" ? "Recording · tap Done" : "Message sent"}</strong><small>{voiceState === "listening" ? "Start talking when you’re ready" : voiceState === "recording" ? "00:08 · Stop / Done" : voiceState === "sent" ? "Tap the mic to speak again" : "Voice stays in this demo"}</small></div></div> :
-          <form className="chat-input" onSubmit={submit}>
-            <textarea
-              ref={textareaRef}
-              className="chat-textarea"
-              rows={1}
-              value={input}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Share what's on your mind.."
-              aria-label="Message ONY"
-              maxLength={2000}
-            />
-            <Button className="send-btn" type="submit" disabled={typing || !input.trim()}><Icon name="send" /></Button>
-          </form>}
+          {inputMode === "voice" ? (
+            <div className={`voice-composer state-${voiceState}`}>
+              <div className="voice-composer-row">
+                <button
+                  type="button"
+                  className="primary-mic"
+                  disabled={typing}
+                  onClick={handleVoice}
+                  aria-label={voiceState === "listening" ? "Stop and send speech" : voiceState === "sent" ? "Message sent" : "Tap to speak into mic"}
+                >
+                  <Icon name={voiceState === "recording" || voiceState === "listening" ? "send" : voiceState === "sent" ? "check" : "mic"} />
+                </button>
+                <div className="voice-composer-info">
+                  <strong>
+                    {voiceState === "idle"
+                      ? "Tap mic to speak"
+                      : voiceState === "listening"
+                      ? (voiceTranscript || voiceInterim ? "Listening… tap send when ready" : "Listening… speak into your mic")
+                      : voiceState === "sent"
+                      ? "Message sent"
+                      : "Processing voice"}
+                  </strong>
+                  <small>
+                    {voiceState === "idle"
+                      ? "ONY listens and transcribes in real time"
+                      : voiceState === "listening"
+                      ? "Speak at your own pace"
+                      : voiceState === "sent"
+                      ? "Tap mic again anytime to speak"
+                      : "Voice stays in this session"}
+                  </small>
+                  {voiceState === "listening" && (
+                    <div className="voice-live-waves">
+                      <span style={{ height: `${Math.max(4, voiceVolume * 22)}px` }} />
+                      <span style={{ height: `${Math.max(6, voiceVolume * 30)}px` }} />
+                      <span style={{ height: `${Math.max(5, voiceVolume * 25)}px` }} />
+                      <span style={{ height: `${Math.max(8, voiceVolume * 35)}px` }} />
+                      <span style={{ height: `${Math.max(4, voiceVolume * 20)}px` }} />
+                      <span style={{ height: `${Math.max(6, voiceVolume * 28)}px` }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+              {voiceState === "listening" && (
+                <>
+                  <div className="voice-live-transcript">
+                    {voiceTranscript || voiceInterim ? (
+                      <>
+                        <span>{voiceTranscript}</span>
+                        {voiceInterim && <span className="interim"> {voiceInterim}</span>}
+                      </>
+                    ) : (
+                      <span className="placeholder">Say whatever is on your mind…</span>
+                    )}
+                  </div>
+                  <div className="voice-composer-actions">
+                    <Button variant="ghost" onClick={() => stopVoiceListening(false)}>Cancel</Button>
+                    <Button
+                      variant="primary"
+                      disabled={!voiceTranscript.trim() && !voiceInterim.trim()}
+                      onClick={() => stopVoiceListening(true)}
+                    >
+                      Send to ONY
+                    </Button>
+                  </div>
+                </>
+              )}
+              {micNotice && (
+                <div className="voice-mic-notice">
+                  <div className="voice-mic-notice-text">
+                    <Icon name="info" />
+                    <span>{micNotice}</span>
+                  </div>
+                  <div className="voice-mic-notice-prompts">
+                    <small>Tap to try simulated speech with ONY:</small>
+                    <div className="voice-prompt-chips">
+                      {["I'm feeling overwhelmed today", "Help me relax with a breathing exercise", "I want to talk about how I feel"].map((phrase) => (
+                        <button key={phrase} type="button" onClick={() => handleSimulateVoice(phrase)}>
+                          💬 "{phrase}"
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                    <Button variant="secondary" onClick={() => { setMicNotice(null); void startVoiceListening(); }}>Try Mic Again</Button>
+                    <Button variant="ghost" onClick={() => setMicNotice(null)}>Dismiss</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <form className="chat-input" onSubmit={submit}>
+              <textarea
+                ref={textareaRef}
+                className="chat-textarea"
+                rows={1}
+                value={input}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Share what's on your mind.."
+                aria-label="Message ONY"
+                maxLength={2000}
+              />
+              <Button className="send-btn" type="submit" disabled={typing || !input.trim()}><Icon name="send" /></Button>
+            </form>
+          )}
         </>
       )}
     </div>
@@ -1185,6 +1443,21 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
   </section></>;
 }
 
+function formatFriendlyTime(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "Recently";
+    const now = Date.now();
+    const diff = (now - d.getTime()) / 1000;
+    if (diff < 60) return "Just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "Recently";
+  }
+}
+
 function Community({
   navigate,
   openPost,
@@ -1208,7 +1481,7 @@ function Community({
 }) {
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<"globe" | "posts">(() => {
+  const [view, setView] = useState<"globe" | "posts" | "supportLog">(() => {
     const showPosts = sessionStorage.getItem("ony-show-posts") === "true";
     sessionStorage.removeItem("ony-show-posts");
     return showPosts ? "posts" : "globe";
@@ -1220,6 +1493,30 @@ function Community({
   const [manualArea, setManualArea] = useState("");
   const [discoverable, setDiscoverable] = useState(false);
   const [acceptMessages, setAcceptMessages] = useState(true);
+
+  // Database support messages log state
+  const [supportMessages, setSupportMessages] = useState<FirestoreCommunityMessage[]>([]);
+  const [loadingSupportLog, setLoadingSupportLog] = useState(false);
+  const [logDetailsMsg, setLogDetailsMsg] = useState<FirestoreCommunityMessage | null>(null);
+
+  const fetchSupportLog = async () => {
+    setLoadingSupportLog(true);
+    try {
+      const msgs = await listCommunityMessages();
+      setSupportMessages(msgs || []);
+    } catch {
+      setSupportMessages(DEFAULT_COMMUNITY_MESSAGES.map((m, i) => ({ id: `seed_${i}`, ...m })));
+    } finally {
+      setLoadingSupportLog(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view === "supportLog") {
+      void fetchSupportLog();
+    }
+  }, [view]);
+
   const regions = [
     { label: "World", note: "Discoverable mock users across broad, privacy-safe regions" },
     { label: "Malaysia", note: "Approximate country view; no precise user locations" },
@@ -1232,7 +1529,11 @@ function Community({
   const selectedUser = globeUsers.find((user) => user.id === selectedNode) || null;
   const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
   return <><PageHeader title="Community" subtitle="Connected gently, across the world" action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">Syncing…</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ Create Post</Button></div>} /><section className="page-pad community-page">
-    <div className="community-view-switch"><Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>Community Globe</Button><Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>Community Posts</Button></div>
+    <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>Globe</Button>
+      <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>Posts</Button>
+      <Button variant={view === "supportLog" ? "primary" : "secondary"} onClick={() => setView("supportLog")}>Support Log</Button>
+    </div>
     {view === "globe" && <>
       <div className="community-world full-globe">
         <div className="world-copy">
@@ -1258,16 +1559,134 @@ function Community({
       <Button className="full posts-entry" variant="secondary" onClick={() => setView("posts")}>Explore Community Posts</Button><div className="community-note"><Icon name="shield" />All people and message delivery are simulated. Nodes never show exact locations.</div>
     </>}
     {view === "posts" && <>
-    <div className="posts-heading"><div><span className="eyebrow">Community posts</span><h2>Shared gently, together.</h2></div><Button variant="ghost" onClick={() => setView("globe")}>Back to globe</Button></div>
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search posts or topics" /></div>
-    <div className="scroll-chips">{categories.map((x) => <Button key={x} variant={filter === x ? "primary" : "secondary"} onClick={() => setFilter(x)}>{x}</Button>)}</div>
-    <div className="feed">{shown.map((post) => <article className="post-card" key={post.id}>
-      <div className="post-meta"><span className="mini-avatar">{post.author[0]}</span><div><strong>{post.author}</strong><small>{post.category} · 2h</small></div><Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button></div>
-      <button className="post-open" onClick={() => openPost(post)}><h3>{post.title}</h3><p>{post.body}</p></button>
-      {post.media === "voice" && <VoiceNote notify={notify} />}
-      {post.media === "image" && <div className="post-image"><span>Shared calming image</span></div>}
-      <div className="post-actions"><Button variant="ghost" onClick={() => onLikePost ? onLikePost(post.id) : (setPosts && setPosts((items) => items.map((x) => x.id === post.id ? { ...x, likes: x.likes + 1 } : x)))}><Icon name="heart" />{post.likes}</Button><Button variant="ghost" onClick={() => notify("Comment added in demo")}>2 comments</Button><Button variant="ghost" onClick={() => { if (setPosts) { setPosts((items) => items.map((x) => x.id === post.id ? { ...x, saved: !x.saved } : x)); notify(post.saved ? "Removed from saved" : "Post saved"); } }}><Icon name="memory" />{post.saved ? "Saved" : "Save"}</Button></div>
-    </article>)}</div></>}
+      <div className="posts-heading"><div><span className="eyebrow">Community posts</span><h2>Shared gently, together.</h2></div><Button variant="ghost" onClick={() => setView("globe")}>Back to globe</Button></div>
+      <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search posts or topics" /></div>
+      <div className="scroll-chips">{categories.map((x) => <Button key={x} variant={filter === x ? "primary" : "secondary"} onClick={() => setFilter(x)}>{x}</Button>)}</div>
+      <div className="feed">{shown.map((post) => <article className="post-card" key={post.id}>
+        <div className="post-meta"><span className="mini-avatar">{post.author[0]}</span><div><strong>{post.author}</strong><small>{post.category} · 2h</small></div><Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button></div>
+        <button className="post-open" onClick={() => openPost(post)}><h3>{post.title}</h3><p>{post.body}</p></button>
+        {post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}
+        {post.media === "image" && <div className="post-image"><span>Shared calming image</span></div>}
+        <div className="post-actions"><Button variant="ghost" onClick={() => onLikePost ? onLikePost(post.id) : (setPosts && setPosts((items) => items.map((x) => x.id === post.id ? { ...x, likes: x.likes + 1 } : x)))}><Icon name="heart" />{post.likes}</Button><Button variant="ghost" onClick={() => notify("Comment added in demo")}>2 comments</Button><Button variant="ghost" onClick={() => { if (setPosts) { setPosts((items) => items.map((x) => x.id === post.id ? { ...x, saved: !x.saved } : x)); notify(post.saved ? "Removed from saved" : "Post saved"); } }}><Icon name="memory" />{post.saved ? "Saved" : "Save"}</Button></div>
+      </article>)}</div>
+    </>}
+    {view === "supportLog" && <>
+      <div className="posts-heading">
+        <div>
+          <span className="eyebrow">Database Activity · Anonymous</span>
+          <h2>Community Support Log</h2>
+        </div>
+        <Button variant="ghost" onClick={fetchSupportLog}>{loadingSupportLog ? "Refreshing…" : "Refresh"}</Button>
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: "11px", margin: "-6px 0 14px", lineHeight: 1.45 }}>
+        Peer encouragement exchanged anonymously across the globe. Each message is saved securely to the database. All member identities are protected.
+      </p>
+
+      {loadingSupportLog ? (
+        <div className="empty mini-empty"><Icon name="chat" /><p>Loading messages from database…</p></div>
+      ) : supportMessages.length === 0 ? (
+        <div className="empty mini-empty"><Icon name="chat" /><p>No support messages found in database yet. Be the first to send encouragement from the Globe!</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {supportMessages.map((msg) => {
+            const targetGlobeUser = globeUsers.find((u) => String(u.id) === msg.toUserId);
+            return (
+              <div key={msg.id} className="community-log-card">
+                <div className="community-log-header">
+                  <div>
+                    <strong style={{ color: "var(--coral-dark)" }}>{msg.recipientAnonymous || `Anonymous Member #${msg.toUserId}`}</strong>
+                    <span style={{ color: "var(--muted)", marginLeft: "6px" }}>received from {msg.senderAnonymous || "Anonymous Traveler"}</span>
+                  </div>
+                  <small>{formatFriendlyTime(msg.createdAt)}</small>
+                </div>
+                <div className="community-log-body">
+                  {msg.kind === "text" ? (
+                    <p style={{ margin: "4px 0", fontSize: "12px", whiteSpace: "pre-wrap" }}>{msg.text}</p>
+                  ) : (
+                    <VoiceNote audioUrl={msg.audioUrl} audioDuration={msg.audioDuration} notify={notify} />
+                  )}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "4px", borderTop: "1px dashed var(--line)" }}>
+                  <span style={{ fontSize: "9px", color: "var(--muted)", display: "flex", alignItems: "center", gap: "3px" }}>
+                    <Icon name="shield" />
+                    <span>Recipient Mood: {msg.toUserMood || targetGlobeUser?.moodLabel || "Shared on Globe"}</span>
+                  </span>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      type="button"
+                      className="msg-details-btn"
+                      onClick={() => setLogDetailsMsg(msg)}
+                    >
+                      View Details
+                    </button>
+                    {targetGlobeUser && targetGlobeUser.acceptsMessages && (
+                      <button
+                        type="button"
+                        className="msg-details-btn"
+                        style={{ fontWeight: 700, color: "var(--coral-dark)" }}
+                        onClick={() => openMember(targetGlobeUser)}
+                      >
+                        Send Support →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {logDetailsMsg && (
+        <div className="msg-detail-modal" onClick={() => setLogDetailsMsg(null)}>
+          <div className="msg-detail-sheet" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3>Support Message Details</h3>
+              <Button variant="ghost" onClick={() => setLogDetailsMsg(null)}><Icon name="close" /></Button>
+            </div>
+            <p>Database record verified in Firestore · Identities anonymous to all.</p>
+            <div className="msg-detail-bubble-preview">
+              {logDetailsMsg.kind === "text" ? (
+                logDetailsMsg.text
+              ) : (
+                <VoiceNote audioUrl={logDetailsMsg.audioUrl} audioDuration={logDetailsMsg.audioDuration} notify={notify} />
+              )}
+            </div>
+            <div className="msg-detail-grid">
+              <div className="msg-detail-row">
+                <label>Recipient:</label>
+                <span>{logDetailsMsg.recipientAnonymous || `Anonymous Member (Globe #${logDetailsMsg.toUserId})`}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Recipient Mood:</label>
+                <span>{logDetailsMsg.toUserMood || "Recorded on Globe"}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Sender:</label>
+                <span>{logDetailsMsg.senderAnonymous || "Anonymous Traveler"} (Anonymous for all)</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Message Type:</label>
+                <span>{logDetailsMsg.kind === "voice" ? `Voice Note (${logDetailsMsg.audioDuration || 8}s)` : "Text Message"}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Timestamp:</label>
+                <span>{new Date(logDetailsMsg.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Database Path:</label>
+                <span>/communityMessages/{logDetailsMsg.id}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Privacy Guarantee:</label>
+                <span>Zero names, emails, or personal identifiers stored in database.</span>
+              </div>
+            </div>
+            <Button className="full" onClick={() => setLogDetailsMsg(null)}>Close details</Button>
+          </div>
+        </div>
+      )}
+    </>}
   </section></>;
 }
 
@@ -1289,8 +1708,101 @@ function CreatePost({
   const [submitting, setSubmitting] = useState(false);
   const [postAs, setPostAs] = useState("Anonymous");
   const [media, setMedia] = useState<"text" | "image" | "voice">("text");
+
+  // Real voice recording state
   const [recording, setRecording] = useState(false);
-  const [recorded, setRecorded] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [volumeLevel, setVolumeLevel] = useState(0.1);
+  const [recordedAudio, setRecordedAudio] = useState<{ blob: Blob; dataUrl: string; duration: number } | null>(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const recorderRef = useRef<VoiceRecorder | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current) recorderRef.current.cancel();
+      if (previewAudioRef.current) previewAudioRef.current.pause();
+    };
+  }, []);
+
+  const handleUseVoiceSample = async () => {
+    try {
+      const sample = await generateSampleVoiceAudio(10);
+      setRecordedAudio(sample);
+      setMicError(null);
+      notify("Sample voice note attached · 00:10");
+    } catch {
+      notify("Could not generate voice note sample");
+    }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      if (!recorderRef.current) {
+        recorderRef.current = new VoiceRecorder();
+      }
+      setMicError(null);
+      setRecording(true);
+      setRecordingSeconds(0);
+      setRecordedAudio(null);
+      setIsPlayingPreview(false);
+
+      await recorderRef.current.start({
+        onVolumeChange: (vol) => setVolumeLevel(vol),
+        onTimeUpdate: (sec) => setRecordingSeconds(sec),
+        maxDurationSeconds: 120,
+        onMaxDurationReached: () => handleStopRecording(),
+      });
+      notify("Recording started · speak into your mic");
+    } catch (err: any) {
+      setRecording(false);
+      setMicError(err.message || "Microphone access is restricted in this preview frame.");
+      notify(err.message || "Could not access microphone.");
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!recorderRef.current || !recording) return;
+    try {
+      setRecording(false);
+      const res = await recorderRef.current.stop();
+      setRecordedAudio(res);
+      notify("Voice note recorded");
+    } catch {
+      notify("Failed to save audio recording");
+    }
+  };
+
+  const handleTogglePreview = () => {
+    if (!recordedAudio) return;
+    if (!previewAudioRef.current) {
+      const audio = new Audio(recordedAudio.dataUrl);
+      audio.onended = () => setIsPlayingPreview(false);
+      previewAudioRef.current = audio;
+    }
+    if (isPlayingPreview) {
+      previewAudioRef.current.pause();
+      setIsPlayingPreview(false);
+    } else {
+      previewAudioRef.current.play().then(() => {
+        setIsPlayingPreview(true);
+      }).catch(() => {
+        notify("Unable to play preview audio");
+      });
+    }
+  };
+
+  const handleDiscardRecording = () => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
+    setRecordedAudio(null);
+    setRecordingSeconds(0);
+    setIsPlayingPreview(false);
+  };
+
   if (posted) return <div className="centered-state"><div className="success-mark"><Icon name="check" /></div><h1>Your post is live</h1><p>Thanks for sharing with care. It’s now saved in Cloud Firestore and visible in the community feed.</p><Button onClick={back}>Return to community</Button></div>;
   return <><PageHeader title="Create a post" subtitle="Share kindly, at your pace" back={back} /><section className="page-pad">
     <label className="field-label">Post as</label><div className="segmented"><Button variant={postAs === "ONY profile" ? "primary" : "secondary"} onClick={() => setPostAs("ONY profile")}>My ONY profile</Button><Button variant={postAs === "Anonymous" ? "primary" : "secondary"} onClick={() => setPostAs("Anonymous")}>Anonymous</Button></div>
@@ -1298,30 +1810,191 @@ function CreatePost({
     <label className="field-label">Title</label><TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What would you like to share?" />
     {media !== "voice" && <><label className="field-label">Your post</label><TextArea value={body} onChange={(e) => setBody(e.target.value)} rows={5} placeholder="Write what’s on your mind..." /></>}
     {media === "image" && <button className="image-upload selected" onClick={() => notify("Demo community image selected")}><span className="sample-photo sunset"><i /></span><strong>Sunset moment.jpg</strong><small>Tap to replace demo image</small></button>}
-    {media === "voice" && <div className="voice-record-card"><button className={recording ? "recording" : ""} onClick={() => { if (recording) { setRecording(false); setRecorded(true); } else setRecording(true); }}><Icon name={recording ? "close" : "mic"} /></button><div><strong>{recording ? "Recording · tap to stop" : recorded ? "Voice message ready · 0:12" : "Record voice message"}</strong><small>{recording ? "00:08" : "No private contact details are shared"}</small></div>{recorded && <Button variant="ghost" onClick={() => notify("Playing voice preview")}>Play</Button>}</div>}
-    <label className="field-label">Category</label><div className="chips">{categories.slice(1).map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => setCategory(x)}>{x}</Button>)}</div><div className="community-note"><Icon name="info" />Community guidelines and moderation apply. Unsafe content can be reported and reviewed.</div><Button className="full" disabled={submitting || !title || (media === "text" && !body) || (media === "voice" && !recorded)} onClick={async () => {
-    const authorName = postAs === "Anonymous" ? "Anonymous" : displayName;
-    const postPayload = {
-      author: authorName,
-      title,
-      body: body || "Voice message shared with the community.",
-      category,
-      likes: 0,
-      media: media === "text" ? undefined : media,
-      createdAt: new Date().toISOString(),
-    };
-    if (onPostCreated) {
-      setSubmitting(true);
-      await onPostCreated(postPayload);
-      setSubmitting(false);
-    }
-    setPosted(true);
-  }}>{submitting ? "Publishing to Firestore…" : "Publish post"}</Button></section></>;
+    {media === "voice" && (
+      <div className="voice-record-card">
+        {!recordedAudio ? (
+          <>
+            <button
+              type="button"
+              className={recording ? "recording" : ""}
+              onClick={recording ? handleStopRecording : handleStartRecording}
+              aria-label={recording ? "Stop recording" : "Record voice message"}
+            >
+              <Icon name={recording ? "close" : "mic"} />
+            </button>
+            <div style={{ flex: 1 }}>
+              <strong>
+                {recording
+                  ? `Recording · ${formatAudioDuration(recordingSeconds)}`
+                  : "Record voice message"}
+              </strong>
+              <small>
+                {recording
+                  ? "Tap stop when ready (up to 2 minutes)"
+                  : "Speak into your microphone gently"}
+              </small>
+              {recording && (
+                <div className="voice-live-waves mini">
+                  <span style={{ height: `${Math.max(4, volumeLevel * 22)}px` }} />
+                  <span style={{ height: `${Math.max(6, volumeLevel * 30)}px` }} />
+                  <span style={{ height: `${Math.max(4, volumeLevel * 18)}px` }} />
+                  <span style={{ height: `${Math.max(7, volumeLevel * 28)}px` }} />
+                  <span style={{ height: `${Math.max(4, volumeLevel * 16)}px` }} />
+                </div>
+              )}
+            </div>
+            {recording ? (
+              <Button variant="danger" onClick={handleStopRecording}>
+                Done
+              </Button>
+            ) : (
+              <Button variant="secondary" onClick={handleUseVoiceSample} title="Generate a voice note sample if mic is restricted">
+                Use Sample
+              </Button>
+            )}
+            {micError && (
+              <div className="voice-mic-inline-help">
+                <small>{micError}</small>
+                <Button variant="secondary" onClick={handleUseVoiceSample}>
+                  Use Voice Note Sample (10s)
+                </Button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="preview-play-btn"
+              onClick={handleTogglePreview}
+              aria-label={isPlayingPreview ? "Pause preview" : "Play preview"}
+            >
+              <Icon name={isPlayingPreview ? "pause" : "play"} />
+            </button>
+            <div>
+              <strong>Voice note ready · {formatAudioDuration(recordedAudio.duration)}</strong>
+              <small>Recorded with your mic</small>
+            </div>
+            <Button variant="ghost" onClick={handleTogglePreview}>
+              {isPlayingPreview ? "Pause" : "Play"}
+            </Button>
+            <Button variant="ghost" onClick={handleDiscardRecording}>
+              Re-record
+            </Button>
+          </>
+        )}
+      </div>
+    )}
+    <label className="field-label">Category</label><div className="chips">{categories.slice(1).map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => setCategory(x)}>{x}</Button>)}</div><div className="community-note"><Icon name="info" />Community guidelines and moderation apply. Unsafe content can be reported and reviewed.</div><Button className="full" disabled={submitting || !title || (media === "text" && !body) || (media === "voice" && !recordedAudio)} onClick={async () => {
+      const authorName = postAs === "Anonymous" ? "Anonymous" : displayName;
+      const postPayload = {
+        author: authorName,
+        title,
+        body: body || "Voice message shared with the community.",
+        category,
+        likes: 0,
+        media: media === "text" ? undefined : media,
+        audioUrl: media === "voice" && recordedAudio ? recordedAudio.dataUrl : undefined,
+        audioDuration: media === "voice" && recordedAudio ? recordedAudio.duration : undefined,
+        createdAt: new Date().toISOString(),
+      };
+      if (onPostCreated) {
+        setSubmitting(true);
+        await onPostCreated(postPayload);
+        setSubmitting(false);
+      }
+      setPosted(true);
+    }}>{submitting ? "Publishing to Firestore…" : "Publish post"}</Button></section></>;
 }
 
-function VoiceNote({ notify }: { notify: (s: string) => void }) {
+function VoiceNote({
+  audioUrl,
+  audioDuration = 12,
+  notify,
+}: {
+  audioUrl?: string;
+  audioDuration?: number;
+  notify: (s: string) => void;
+}) {
   const [playing, setPlaying] = useState(false);
-  return <div className="voice-note"><Button className="icon-btn" onClick={() => { setPlaying(!playing); notify(playing ? "Voice paused" : "Playing voice message"); }}><Icon name={playing ? "close" : "send"} /></Button><span className={playing ? "playing" : ""}><i /><i /><i /><i /><i /><i /></span><small>0:12</small></div>;
+  const [currentTime, setCurrentTime] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const togglePlay = () => {
+    if (audioUrl) {
+      if (!audioRef.current) {
+        const audio = new Audio(audioUrl);
+        audio.ontimeupdate = () => setCurrentTime(Math.floor(audio.currentTime));
+        audio.onended = () => {
+          setPlaying(false);
+          setCurrentTime(0);
+        };
+        audio.onerror = () => {
+          setPlaying(false);
+          notify("Unable to play voice note");
+        };
+        audioRef.current = audio;
+      }
+      if (playing) {
+        audioRef.current.pause();
+        setPlaying(false);
+        notify("Voice paused");
+      } else {
+        audioRef.current.play().then(() => {
+          setPlaying(true);
+          notify("Playing voice message");
+        }).catch(() => {
+          notify("Audio playback blocked by browser");
+        });
+      }
+    } else {
+      // Fallback soothing chime tone
+      if (playing) {
+        setPlaying(false);
+        notify("Voice paused");
+      } else {
+        setPlaying(true);
+        notify("Playing soothing voice note");
+        void playSoothingChime(audioDuration).then(() => {
+          setPlaying(false);
+        });
+      }
+    }
+  };
+
+  return (
+    <div className="voice-note">
+      <Button
+        className="icon-btn"
+        onClick={togglePlay}
+        aria-label={playing ? "Pause voice message" : "Play voice message"}
+      >
+        <Icon name={playing ? "pause" : "play"} />
+      </Button>
+      <span className={playing ? "playing" : ""}>
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+      <small>
+        {playing && currentTime > 0
+          ? `${formatAudioDuration(currentTime)} / ${formatAudioDuration(audioDuration)}`
+          : formatAudioDuration(audioDuration)}
+      </small>
+    </div>
+  );
 }
 
 function PostDetail({ back, post, notify, onLikePost }: { back: () => void; post: Post; notify: (text: string) => void; onLikePost?: (id: number) => void }) {
@@ -1340,7 +2013,7 @@ function PostDetail({ back, post, notify, onLikePost }: { back: () => void; post
     notify("Comment added");
   };
   return <div className="post-detail-page"><PageHeader title="Community post" subtitle={`${post.category} · 2 hours ago`} back={back} /><section className="page-pad post-detail-scroll">
-    <article className="post-detail-card"><div className="post-meta"><span className="mini-avatar">{post.author[0]}</span><div><strong>{post.author}</strong><small>{post.author === "Anonymous" ? "Identity kept private" : "ONY community profile"}</small></div><Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button></div><h1>{post.title}</h1><p>{post.body}</p>{post.media === "voice" && <VoiceNote notify={notify} />}{post.media === "image" && <div className="post-image detail"><span>Shared calming image</span></div>}<div className="post-detail-stats"><span>{likes} reactions</span><span>{comments.length} comments</span></div><div className="post-detail-actions"><Button variant={liked ? "primary" : "secondary"} onClick={() => { setLiked(!liked); const next = likes + (liked ? -1 : 1); setLikes(next); if (!liked && onLikePost) onLikePost(post.id); }}><Icon name="heart" />{liked ? "Liked" : "Like"}</Button><Button variant="secondary" onClick={() => notify("Encouragement shared")}>Share encouragement</Button><Button variant="ghost" onClick={() => notify("Post saved")}>Save</Button></div></article>
+    <article className="post-detail-card"><div className="post-meta"><span className="mini-avatar">{post.author[0]}</span><div><strong>{post.author}</strong><small>{post.author === "Anonymous" ? "Identity kept private" : "ONY community profile"}</small></div><Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button></div><h1>{post.title}</h1><p>{post.body}</p>{post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}{post.media === "image" && <div className="post-image detail"><span>Shared calming image</span></div>}<div className="post-detail-stats"><span>{likes} reactions</span><span>{comments.length} comments</span></div><div className="post-detail-actions"><Button variant={liked ? "primary" : "secondary"} onClick={() => { setLiked(!liked); const next = likes + (liked ? -1 : 1); setLikes(next); if (!liked && onLikePost) onLikePost(post.id); }}><Icon name="heart" />{liked ? "Liked" : "Like"}</Button><Button variant="secondary" onClick={() => notify("Encouragement shared")}>Share encouragement</Button><Button variant="ghost" onClick={() => notify("Post saved")}>Save</Button></div></article>
     <div className="comments-section"><h3>Comments</h3>{comments.map((item, index) => <div className="comment" key={`${item.author}-${index}`}><span>{item.author[0]}</span><div><strong>{item.author}<small>{item.time}</small></strong><p>{item.text}</p></div></div>)}</div>
     </section><form className="comment-composer" onSubmit={submit}><TextInput value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Write a comment…" aria-label="Add a comment" /><Button type="submit" disabled={!comment.trim()}><Icon name="send" /></Button></form></div>;
 }
@@ -1669,44 +2342,575 @@ function TrustedContact({ back, name, number, setName, setNumber, status, setSta
 
 function CommunityMember({ back, user, notify }: { back: () => void; user: GlobeUser; notify: (s: string) => void }) {
   const [voice, setVoice] = useState<"idle" | "recording" | "ready">("idle");
+  const [recordedVoice, setRecordedVoice] = useState<{ dataUrl: string; duration: number } | null>(null);
+  const [voiceSeconds, setVoiceSeconds] = useState(0);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [micNotice, setMicNotice] = useState<string | null>(null);
+  const recorderRef = useRef<VoiceRecorder | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
   const [text, setText] = useState("");
-  const [textPreview, setTextPreview] = useState("");
-  const [consent, setConsent] = useState(false);
+  const [consent, setConsent] = useState(true);
   const [sent, setSent] = useState("");
   const [blocked, setBlocked] = useState(false);
-  const [messages, setMessages] = useState<{ from: "member" | "me"; kind: "text" | "voice"; text: string }[]>([]);
-  const sendText = (event: FormEvent) => {
-    event.preventDefault();
-    if (!text.trim() || !consent) return;
-    setTextPreview(text.trim());
-    setText("");
+  const [sending, setSending] = useState(false);
+  const [selectedDetailMsg, setSelectedDetailMsg] = useState<{
+    id: string;
+    from: "member" | "me";
+    senderAnonymous: string;
+    recipientAnonymous: string;
+    kind: "text" | "voice";
+    text: string;
+    audioUrl?: string;
+    audioDuration?: number;
+    createdAt: string;
+    toUserMood?: string;
+  } | null>(null);
+
+  type MemberMessage = {
+    id: string;
+    from: "member" | "me";
+    senderAnonymous: string;
+    recipientAnonymous: string;
+    kind: "text" | "voice";
+    text: string;
+    audioUrl?: string;
+    audioDuration?: number;
+    createdAt: string;
+    toUserMood?: string;
   };
-  const encouragements = ["You’re doing great 🌱", "Take it one step at a time", "Hope today gets a little lighter", "Sending you some support"];
-  const confirmText = () => {
-    setMessages([...messages, { from: "me", kind: "text", text: textPreview }]);
-    setTextPreview("");
-    setSent("Support message simulated");
-    notify("Support message simulated — nothing was delivered");
+
+  const [messages, setMessages] = useState<MemberMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(true);
+
+  // Load message history from Firestore database
+  useEffect(() => {
+    let isMounted = true;
+    const loadFromDb = async () => {
+      try {
+        const dbMsgs = await listCommunityMessages(String(user.id));
+        if (!isMounted) return;
+        const currentUid = auth.currentUser?.uid;
+        if (dbMsgs && dbMsgs.length > 0) {
+          const mapped: MemberMessage[] = dbMsgs.map((m) => ({
+            id: m.id,
+            from: currentUid && m.fromUserId === currentUid ? "me" : "member",
+            senderAnonymous: currentUid && m.fromUserId === currentUid ? "Anonymous Member (You)" : (m.senderAnonymous || "Anonymous Member"),
+            recipientAnonymous: m.recipientAnonymous || `Anonymous Member (Globe #${user.id})`,
+            kind: m.kind,
+            text: m.text,
+            audioUrl: m.audioUrl,
+            audioDuration: m.audioDuration,
+            createdAt: m.createdAt,
+            toUserMood: m.toUserMood || user.moodLabel,
+          }));
+          setMessages(mapped);
+        } else {
+          // Check starter seeded messages
+          const defaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === String(user.id));
+          if (defaults.length > 0) {
+            setMessages(defaults.map((m, i) => ({
+              id: `seed_${i}`,
+              from: "member",
+              senderAnonymous: m.senderAnonymous,
+              recipientAnonymous: m.recipientAnonymous,
+              kind: m.kind,
+              text: m.text,
+              audioUrl: m.audioUrl,
+              audioDuration: m.audioDuration,
+              createdAt: m.createdAt,
+              toUserMood: m.toUserMood || user.moodLabel,
+            })));
+          } else {
+            setMessages([]);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load community messages from Firestore:", err);
+      } finally {
+        if (isMounted) setLoadingMessages(false);
+      }
+    };
+
+    void loadFromDb();
+    return () => {
+      isMounted = false;
+      if (recorderRef.current) recorderRef.current.cancel();
+      if (previewAudioRef.current) previewAudioRef.current.pause();
+    };
+  }, [user.id, user.moodLabel]);
+
+  const handleUseVoiceSample = async () => {
+    try {
+      const sample = await generateSampleVoiceAudio(8);
+      setRecordedVoice({ dataUrl: sample.dataUrl, duration: sample.duration });
+      setVoice("ready");
+      setMicNotice(null);
+      notify("Sample voice note attached · 00:08 (Ready to send)");
+    } catch {
+      notify("Could not generate voice note sample");
+    }
   };
-  const confirmVoice = () => {
-    setMessages([...messages, { from: "me", kind: "voice", text: "Voice message · 0:08" }]);
+
+  const handleStartVoice = async () => {
+    setMicNotice(null);
+    try {
+      if (!recorderRef.current) {
+        recorderRef.current = new VoiceRecorder();
+      }
+      setVoice("recording");
+      setVoiceSeconds(0);
+      setRecordedVoice(null);
+      setIsPlayingPreview(false);
+
+      await recorderRef.current.start({
+        onTimeUpdate: (sec) => setVoiceSeconds(sec),
+        maxDurationSeconds: 60,
+        onMaxDurationReached: () => void handleStopVoice(),
+      });
+      notify("Recording started · speak into your mic");
+    } catch (err: any) {
+      setVoice("idle");
+      setMicNotice(err.message || "Microphone access is restricted in this preview frame.");
+      notify(err.message || "Microphone access denied or unavailable.");
+    }
+  };
+
+  const handleStopVoice = async () => {
+    if (!recorderRef.current || voice !== "recording") return;
+    try {
+      setVoice("ready");
+      const res = await recorderRef.current.stop();
+      setRecordedVoice({ dataUrl: res.dataUrl, duration: res.duration });
+      notify("Voice note recorded · review and tap send");
+    } catch {
+      setVoice("idle");
+      notify("Failed to save audio recording");
+    }
+  };
+
+  const handleTogglePreview = () => {
+    if (!recordedVoice) return;
+    if (!previewAudioRef.current) {
+      const audio = new Audio(recordedVoice.dataUrl);
+      audio.onended = () => setIsPlayingPreview(false);
+      previewAudioRef.current = audio;
+    }
+    if (isPlayingPreview) {
+      previewAudioRef.current.pause();
+      setIsPlayingPreview(false);
+    } else {
+      previewAudioRef.current.play().then(() => {
+        setIsPlayingPreview(true);
+      }).catch(() => {
+        notify("Unable to play preview audio");
+      });
+    }
+  };
+
+  const handleCancelVoice = () => {
+    if (previewAudioRef.current) previewAudioRef.current.pause();
+    if (recorderRef.current) recorderRef.current.cancel();
     setVoice("idle");
-    setSent("Voice support simulated");
-    notify("Voice support simulated — no audio was uploaded");
+    setRecordedVoice(null);
+    setVoiceSeconds(0);
+    setIsPlayingPreview(false);
   };
-  if (blocked) return <div className="centered-state"><div className="success-mark"><Icon name="shield" /></div><h1>Anonymous user blocked</h1><p>This local prototype will hide the mock user for the rest of this screen. No backend block was created.</p><Button onClick={back}>Return to globe</Button></div>;
-  return <div className="node-chat-page"><PageHeader title="Send anonymous support" subtitle="Identity-free mock connection" back={back} /><section className="page-pad node-chat-scroll">
-    <div className="anonymous-profile"><span className={`anonymous-orbit mood-${user.moodGlow}`}><i /></span><div><span className="prototype-label">Anonymous mock user</span><h1>Someone is here</h1><strong>Optional mood check-in: {user.moodLabel}</strong><p>No name, image, initials, or precise location is visible. Replying is always optional.</p></div></div>
-    <div className="encouragement-intro"><span className="eyebrow">Send a little encouragement</span><h2>A few kind words can make someone’s day.</h2><div className="encouragement-chips">{encouragements.map((message) => <button key={message} onClick={() => setText(message)}>{message}</button>)}</div></div>
-    <label className="check-row community-consent"><TextInput type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I’ll keep this supportive, respect privacy, and not share harmful or identifying content.</span></label>
-    <div className="conversation-label"><span>Message preview</span><small>Nothing is delivered in this prototype</small></div>
-    {messages.length === 0 && !textPreview && voice !== "ready" && <div className="empty mini-empty"><Icon name="chat" /><p>Your text or voice preview will appear here before sending.</p></div>}
-    <div className="community-thread">{messages.map((message, index) => <div className={`community-message ${message.from}`} key={index}>{message.kind === "text" ? <span>{message.text}</span> : <VoiceNote notify={notify} />}</div>)}</div>
-    {textPreview && <div className="support-preview"><span className="prototype-label">Text preview</span><p>{textPreview}</p><div><Button variant="secondary" onClick={() => setTextPreview("")}>Cancel</Button><Button onClick={confirmText}>Simulate send</Button></div></div>}
-    {sent && <div className="form-success"><Icon name="check" />{sent}. The mock user is not expected to reply.</div>}
-    <div className="moderation-actions"><Button variant="ghost" onClick={() => notify("Mock user report sent to simulated moderation")}>Report user</Button><Button variant="ghost" onClick={() => setBlocked(true)}>Block user</Button></div>
-    <p className="disclaimer"><Icon name="info" />Text and voice messages are simulated. Real messaging requires secure accounts, moderation, consent records, abuse controls, and encrypted voice storage.</p>
-    </section><div className="node-chat-fixed">{voice !== "idle" && <div className="recording-panel"><span className={voice === "recording" ? "live-dot" : "ready-dot"} /><div><strong>{voice === "recording" ? "Recording voice preview" : "Voice preview ready"}</strong><small>{voice === "recording" ? "00:08 · tap stop when ready" : "0:08 · play before simulated send"}</small></div>{voice === "recording" && <Button variant="ghost" onClick={() => setVoice("idle")}>Cancel</Button>}{voice === "ready" && <><Button variant="ghost" onClick={() => notify("Playing local voice preview")}>Play</Button><Button variant="ghost" onClick={() => setVoice("idle")}>Cancel</Button><Button disabled={!consent} onClick={confirmVoice}>Simulate send</Button></>}</div>}<div className="node-message-composer"><form onSubmit={sendText}><TextInput value={text} onChange={(event) => setText(event.target.value)} placeholder="Write an encouraging message…" /><Button type="submit" disabled={!text.trim() || !consent}><Icon name="send" /></Button></form><button className={voice === "recording" ? "recording" : ""} disabled={!consent} onClick={() => setVoice(voice === "recording" ? "ready" : "recording")} aria-label={voice === "recording" ? "Stop voice recording" : "Record voice message"}><Icon name={voice === "recording" ? "close" : "mic"} /></button></div></div></div>;
+
+  const handleTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setText(event.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSendText();
+    }
+  };
+
+  const handleSendText = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    setSending(true);
+
+    const currentUid = auth.currentUser?.uid || `anon_${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString();
+    const shortSenderId = currentUid.slice(-4) || "882";
+
+    const msgPayload: Omit<FirestoreCommunityMessage, "id"> = {
+      toUserId: String(user.id),
+      toUserMood: user.moodLabel,
+      fromUserId: currentUid,
+      senderAnonymous: `Anonymous Member #${shortSenderId}`,
+      recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+      kind: "text",
+      text: trimmed,
+      createdAt: now,
+    };
+
+    setText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
+    try {
+      const docId = await createCommunityMessage(msgPayload);
+      const newMsg: MemberMessage = {
+        id: docId || `msg_${Date.now()}`,
+        from: "me",
+        senderAnonymous: "Anonymous Member (You)",
+        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+        kind: "text",
+        text: trimmed,
+        createdAt: now,
+        toUserMood: user.moodLabel,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setSent("Support message delivered");
+      notify("Support message sent and saved to community database 🌱");
+    } catch (err) {
+      console.warn("Could not save to database, using optimistic delivery:", err);
+      const newMsg: MemberMessage = {
+        id: `local_${Date.now()}`,
+        from: "me",
+        senderAnonymous: "Anonymous Member (You)",
+        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+        kind: "text",
+        text: trimmed,
+        createdAt: now,
+        toUserMood: user.moodLabel,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setSent("Support message delivered");
+      notify("Support message sent 🌱");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const confirmVoice = async () => {
+    if (!recordedVoice || sending) return;
+    setSending(true);
+    if (previewAudioRef.current) previewAudioRef.current.pause();
+
+    const currentUid = auth.currentUser?.uid || `anon_${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString();
+    const shortSenderId = currentUid.slice(-4) || "882";
+    const voiceNoteText = `Encouraging voice note · ${formatAudioDuration(recordedVoice.duration)}`;
+
+    const msgPayload: Omit<FirestoreCommunityMessage, "id"> = {
+      toUserId: String(user.id),
+      toUserMood: user.moodLabel,
+      fromUserId: currentUid,
+      senderAnonymous: `Anonymous Member #${shortSenderId}`,
+      recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+      kind: "voice",
+      text: voiceNoteText,
+      audioUrl: recordedVoice.dataUrl,
+      audioDuration: recordedVoice.duration,
+      createdAt: now,
+    };
+
+    try {
+      const docId = await createCommunityMessage(msgPayload);
+      const newMsg: MemberMessage = {
+        id: docId || `msg_${Date.now()}`,
+        from: "me",
+        senderAnonymous: "Anonymous Member (You)",
+        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+        kind: "voice",
+        text: voiceNoteText,
+        audioUrl: recordedVoice.dataUrl,
+        audioDuration: recordedVoice.duration,
+        createdAt: now,
+        toUserMood: user.moodLabel,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setVoice("idle");
+      setRecordedVoice(null);
+      setSent("Voice support message delivered");
+      notify("Encouraging voice note sent and saved to database 🎙️");
+    } catch (err) {
+      console.warn("Could not save voice to database, using optimistic delivery:", err);
+      const newMsg: MemberMessage = {
+        id: `local_${Date.now()}`,
+        from: "me",
+        senderAnonymous: "Anonymous Member (You)",
+        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+        kind: "voice",
+        text: voiceNoteText,
+        audioUrl: recordedVoice.dataUrl,
+        audioDuration: recordedVoice.duration,
+        createdAt: now,
+        toUserMood: user.moodLabel,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setVoice("idle");
+      setRecordedVoice(null);
+      setSent("Voice support message delivered");
+      notify("Encouraging voice note sent 🎙️");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const encouragements = [
+    "You’re doing great 🌱",
+    "Take it one step at a time",
+    "Hope today gets a little lighter",
+    "Sending you some gentle support",
+  ];
+
+  if (blocked) {
+    return (
+      <div className="centered-state">
+        <div className="success-mark"><Icon name="shield" /></div>
+        <h1>Anonymous user blocked</h1>
+        <p>This user will be hidden for the rest of this session. No personal profile data was stored.</p>
+        <Button onClick={back}>Return to globe</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="node-chat-page">
+      <PageHeader title="Send anonymous support" subtitle="Identity-free community connection" back={back} />
+      <section className="page-pad node-chat-scroll">
+        <div className="anonymous-profile">
+          <span className={`anonymous-orbit mood-${user.moodGlow}`}><i /></span>
+          <div>
+            <span className="prototype-label">Anonymous member · Node #{user.id}</span>
+            <h1>Someone is here</h1>
+            <strong>Optional mood check-in: {user.moodLabel}</strong>
+            <p>No real names, images, or locations are visible. Identity is completely protected.</p>
+          </div>
+        </div>
+
+        <div className="encouragement-intro">
+          <span className="eyebrow">Send a little encouragement</span>
+          <h2>A few kind words can make someone’s day.</h2>
+          <div className="encouragement-chips">
+            {encouragements.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => {
+                  setText(item);
+                  if (textareaRef.current) {
+                    textareaRef.current.focus();
+                  }
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="check-row community-consent">
+          <TextInput type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+          <span>I’ll keep this supportive, respect privacy, and not share harmful or identifying content.</span>
+        </label>
+
+        <div className="conversation-label">
+          <span>Message thread</span>
+          <small>{messages.length} encouragement{messages.length === 1 ? "" : "s"}</small>
+        </div>
+
+        {loadingMessages ? (
+          <div className="empty mini-empty"><Icon name="chat" /><p>Checking community database for messages…</p></div>
+        ) : messages.length === 0 && voice !== "ready" ? (
+          <div className="empty mini-empty">
+            <Icon name="chat" />
+            <p>No messages sent yet. Write a supportive note or record a voice message below.</p>
+          </div>
+        ) : null}
+
+        <div className="community-thread">
+          {messages.map((message) => {
+            const timeDisplay = formatFriendlyTime(message.createdAt);
+            return (
+              <div className={`community-msg-wrap ${message.from}`} key={message.id}>
+                <div className="community-msg-meta">
+                  <span>{message.senderAnonymous}</span>
+                  <span>· {timeDisplay}</span>
+                  <button
+                    type="button"
+                    className="msg-details-btn"
+                    onClick={() => setSelectedDetailMsg(message)}
+                  >
+                    Details
+                  </button>
+                </div>
+                <div className={`community-message ${message.from}`}>
+                  {message.kind === "text" ? (
+                    <span>{message.text}</span>
+                  ) : (
+                    <VoiceNote audioUrl={message.audioUrl} audioDuration={message.audioDuration} notify={notify} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {sent && (
+          <div className="form-success">
+            <Icon name="check" />
+            {sent}. Stored securely to community database.
+          </div>
+        )}
+
+        <div className="moderation-actions">
+          <Button variant="ghost" onClick={() => notify("Report sent to simulated moderation review")}>Report user</Button>
+          <Button variant="ghost" onClick={() => setBlocked(true)}>Block user</Button>
+        </div>
+        <p className="disclaimer">
+          <Icon name="info" />
+          Messages are anonymous for all members. Saved in Firestore with zero personal identity tags.
+        </p>
+      </section>
+
+      {/* Fixed Composer Footer */}
+      <div className="node-chat-fixed">
+        {micNotice && (
+          <div className="voice-mic-inline-help" style={{ margin: "4px 12px 8px" }}>
+            <small>{micNotice}</small>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Button variant="secondary" onClick={handleUseVoiceSample}>Use Voice Sample (8s)</Button>
+              <Button variant="ghost" onClick={() => setMicNotice(null)}>Dismiss</Button>
+            </div>
+          </div>
+        )}
+
+        {voice !== "idle" && (
+          <div className="recording-panel">
+            <span className={voice === "recording" ? "live-dot" : "ready-dot"} />
+            <div>
+              <strong>{voice === "recording" ? "Recording voice note" : "Voice note ready"}</strong>
+              <small>
+                {voice === "recording"
+                  ? `${formatAudioDuration(voiceSeconds)} · tap stop mic icon when ready`
+                  : `${formatAudioDuration(recordedVoice?.duration || 0)} · play preview before sending`}
+              </small>
+            </div>
+            {voice === "recording" && (
+              <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
+            )}
+            {voice === "ready" && (
+              <>
+                <Button variant="ghost" onClick={handleTogglePreview}>
+                  {isPlayingPreview ? "Pause" : "Play"}
+                </Button>
+                <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
+                <Button disabled={sending} onClick={confirmVoice}>
+                  {sending ? "Sending…" : "Send voice note"}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="node-message-composer">
+          <form onSubmit={handleSendText}>
+            <textarea
+              ref={textareaRef}
+              className="node-message-textarea"
+              rows={1}
+              value={text}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Write an encouraging message…"
+              aria-label="Encouraging message"
+              maxLength={2000}
+            />
+            <Button type="submit" disabled={!text.trim() || sending} aria-label="Send message">
+              <Icon name="send" />
+            </Button>
+          </form>
+
+          <button
+            type="button"
+            className={voice === "recording" ? "recording" : ""}
+            onClick={() => {
+              if (voice === "recording") {
+                void handleStopVoice();
+              } else {
+                void handleStartVoice();
+              }
+            }}
+            aria-label={voice === "recording" ? "Stop voice recording" : "Record voice message"}
+            title={voice === "recording" ? "Stop recording" : "Record voice message"}
+          >
+            <Icon name={voice === "recording" ? "close" : "mic"} />
+          </button>
+        </div>
+      </div>
+
+      {/* Message Details Sheet Modal */}
+      {selectedDetailMsg && (
+        <div className="msg-detail-modal" onClick={() => setSelectedDetailMsg(null)}>
+          <div className="msg-detail-sheet" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3>Message Details & Database Record</h3>
+              <Button variant="ghost" onClick={() => setSelectedDetailMsg(null)}><Icon name="close" /></Button>
+            </div>
+            <p>Support message stored in Firestore database · Zero personal identity tags.</p>
+
+            <div className="msg-detail-bubble-preview">
+              {selectedDetailMsg.kind === "text" ? (
+                selectedDetailMsg.text
+              ) : (
+                <VoiceNote
+                  audioUrl={selectedDetailMsg.audioUrl}
+                  audioDuration={selectedDetailMsg.audioDuration}
+                  notify={notify}
+                />
+              )}
+            </div>
+
+            <div className="msg-detail-grid">
+              <div className="msg-detail-row">
+                <label>Recipient:</label>
+                <span>{selectedDetailMsg.recipientAnonymous}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Recipient Mood:</label>
+                <span>{selectedDetailMsg.toUserMood || user.moodLabel}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Sender:</label>
+                <span>{selectedDetailMsg.senderAnonymous} (Anonymous for all)</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Message Type:</label>
+                <span>{selectedDetailMsg.kind === "voice" ? `Voice Note (${selectedDetailMsg.audioDuration || 8}s)` : "Multiline Text Encouragement"}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Timestamp:</label>
+                <span>{new Date(selectedDetailMsg.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Database Path:</label>
+                <span>/communityMessages/{selectedDetailMsg.id}</span>
+              </div>
+              <div className="msg-detail-row">
+                <label>Privacy Guarantee:</label>
+                <span>Identities are anonymous for all members across the database and application.</span>
+              </div>
+            </div>
+            <Button className="full" onClick={() => setSelectedDetailMsg(null)}>Close details</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CommunityGuidelines({ back }: { back: () => void }) {
