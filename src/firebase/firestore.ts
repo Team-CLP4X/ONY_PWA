@@ -130,6 +130,33 @@ export interface FirestoreGlobeUser {
   isMe?: boolean;
 }
 
+export interface PostLikeRecord {
+  userId: string;
+  userName: string;
+  createdAt: string;
+}
+
+export interface PostCommentReplyRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface PostCommentRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: string;
+  updatedAt?: string;
+  likes: number;
+  likeRecords: PostLikeRecord[];
+  replies: PostCommentReplyRecord[];
+}
+
 export interface FirestoreCommunityPost {
   id: string;
   author: string;
@@ -138,7 +165,8 @@ export interface FirestoreCommunityPost {
   body: string;
   category: string;
   likes: number;
-  saved?: boolean;
+  likeRecords: PostLikeRecord[];
+  comments: PostCommentRecord[];
   media?: "image" | "voice";
   audioUrl?: string;
   audioDuration?: number;
@@ -610,6 +638,194 @@ export async function listGlobeUsers(): Promise<FirestoreGlobeUser[]> {
 }
 
 // ==========================================
+// Community Guideline & Profanity Validation
+// ==========================================
+
+const PROFANITY_WORDS = [
+  "fuck",
+  "fucking",
+  "fucked",
+  "fucker",
+  "fck",
+  "fuk",
+  "shit",
+  "shitty",
+  "bullshit",
+  "sht",
+  "bitch",
+  "bitches",
+  "asshole",
+  "arsehole",
+  "bastard",
+  "dick",
+  "cock",
+  "pussy",
+  "cunt",
+  "slut",
+  "whore",
+  "motherfucker",
+  "wtf",
+  "stfu",
+  "idiot",
+  "idiotic",
+  "stupid",
+  "moron",
+  "dumbass",
+  "jackass",
+  "loser",
+  "pathetic",
+  "worthless",
+  "useless",
+  "retard",
+  "retarded",
+  "scumbag",
+  "bodoh",
+  "babi",
+  "sial",
+  "celaka",
+  "lancau",
+  "pukimak",
+  "bangang",
+  "ampang",
+  "mampus",
+];
+
+const PROFANITY_PHRASES = [
+  "kill yourself",
+  "kys",
+  "go die",
+  "i hate you",
+  "you should die",
+  "nobody likes you",
+  "shut up",
+  "screw you",
+  "damn you",
+  "fuck off",
+  "piss off",
+  "pergi mati",
+  "kepala bapak",
+];
+
+export function validateCommunityCommentText(text: string): {
+  valid: boolean;
+  reason?: string;
+  matchedTerm?: string;
+} {
+  const trimmed = (text || "").trim();
+  if (!trimmed) {
+    return { valid: false, reason: "Please write a message before sending." };
+  }
+
+  const normalized = trimmed.toLowerCase();
+
+  for (const phrase of PROFANITY_PHRASES) {
+    if (normalized.includes(phrase)) {
+      return {
+        valid: false,
+        matchedTerm: phrase,
+        reason: `Community Guideline Violation: Your comment contains unkind or prohibited language ("${phrase}"). Please keep all comments supportive, kind, and free of profanity.`,
+      };
+    }
+  }
+
+  const tokens = normalized
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  for (const word of PROFANITY_WORDS) {
+    if (tokens.includes(word)) {
+      return {
+        valid: false,
+        matchedTerm: word,
+        reason: `Community Guideline Violation: Profanity or disrespectful language ("${word}") is not allowed in ONY Community. Please edit your comment to be supportive.`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === "object") {
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) {
+        cleaned[k] = stripUndefinedDeep(v);
+      }
+    }
+    return cleaned as T;
+  }
+  return value;
+}
+
+function normalizeLikeRecords(raw: unknown): PostLikeRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const seenUsers = new Set<string>();
+  const list: PostLikeRecord[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") {
+      const rec = item as Partial<PostLikeRecord>;
+      const userId = String(rec.userId || "").trim();
+      const userName = String(rec.userName || "Community Member").trim();
+      const createdAt = String(rec.createdAt || new Date().toISOString());
+      const key = userId || userName.toLowerCase();
+      if (key && !seenUsers.has(key)) {
+        seenUsers.add(key);
+        list.push({
+          userId: userId || `user_${userName.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
+          userName,
+          createdAt,
+        });
+      }
+    }
+  }
+  return list;
+}
+
+function normalizeCommentReplies(raw: unknown): PostCommentReplyRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item) => item && typeof item === "object")
+    .map((item, idx) => {
+      const r = item as Partial<PostCommentReplyRecord>;
+      return {
+        id: String(r.id || `reply_${idx + 1}`),
+        userId: String(r.userId || "community_member"),
+        userName: String(r.userName || "Community Member"),
+        text: String(r.text || ""),
+        createdAt: String(r.createdAt || new Date().toISOString()),
+        ...(r.updatedAt ? { updatedAt: String(r.updatedAt) } : {}),
+      };
+    });
+}
+
+function normalizePostComments(raw: unknown): PostCommentRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item) => item && typeof item === "object")
+    .map((item, idx) => {
+      const c = item as Partial<PostCommentRecord>;
+      const likeRecords = normalizeLikeRecords(c.likeRecords);
+      const replies = normalizeCommentReplies(c.replies);
+      return {
+        id: String(c.id || `comment_${idx + 1}`),
+        userId: String(c.userId || "community_member"),
+        userName: String(c.userName || "Community Member"),
+        text: String(c.text || ""),
+        createdAt: String(c.createdAt || new Date().toISOString()),
+        ...(c.updatedAt ? { updatedAt: String(c.updatedAt) } : {}),
+        likeRecords,
+        likes: likeRecords.length,
+        replies,
+      };
+    });
+}
+
+// ==========================================
 // Community Posts Operations
 // ==========================================
 
@@ -619,10 +835,65 @@ export async function listCommunityPosts(): Promise<FirestoreCommunityPost[]> {
     const colRef = collection(db, "communityPosts");
     const q = query(colRef, orderBy("createdAt", "desc"), limit(50));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<FirestoreCommunityPost, "id">),
-    }));
+
+    const results: FirestoreCommunityPost[] = [];
+    for (const d of snap.docs) {
+      const raw = d.data() as Record<string, unknown>;
+      const title = String(raw.title || "");
+      const matchingDefault = DEFAULT_COMMUNITY_POSTS.find(
+        (def) => def.title.toLowerCase() === title.toLowerCase(),
+      );
+
+      const hasLikeRecordsField = Array.isArray(raw.likeRecords);
+      const hasCommentsField = Array.isArray(raw.comments);
+
+      const likeRecords = hasLikeRecordsField
+        ? normalizeLikeRecords(raw.likeRecords)
+        : matchingDefault
+          ? matchingDefault.likeRecords
+          : [];
+
+      const comments = hasCommentsField
+        ? normalizePostComments(raw.comments)
+        : matchingDefault
+          ? matchingDefault.comments
+          : [];
+
+      const likesCount = likeRecords.length;
+
+      const postObj: FirestoreCommunityPost = {
+        id: d.id,
+        author: String(raw.author || "Anonymous"),
+        ...(raw.authorId ? { authorId: String(raw.authorId) } : {}),
+        title,
+        body: String(raw.body || ""),
+        category: String(raw.category || "General"),
+        likes: likesCount,
+        likeRecords,
+        comments,
+        ...(raw.media === "image" || raw.media === "voice" ? { media: raw.media } : {}),
+        ...(raw.audioUrl ? { audioUrl: String(raw.audioUrl) } : {}),
+        ...(typeof raw.audioDuration === "number" ? { audioDuration: raw.audioDuration } : {}),
+        createdAt: String(raw.createdAt || new Date().toISOString()),
+      };
+
+      // Backfill older Firestore post documents so the database holds the full enhanced schema
+      if (!hasLikeRecordsField || !hasCommentsField || raw.likes !== likesCount) {
+        setDoc(
+          doc(db, "communityPosts", d.id),
+          stripUndefinedDeep({
+            likes: likesCount,
+            likeRecords,
+            comments,
+          }),
+          { merge: true },
+        ).catch(() => {});
+      }
+
+      results.push(postObj);
+    }
+
+    return results;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
@@ -630,16 +901,296 @@ export async function listCommunityPosts(): Promise<FirestoreCommunityPost[]> {
 
 export async function createCommunityPost(
   post: Omit<FirestoreCommunityPost, "id">,
+  customId?: string,
 ): Promise<string> {
   const path = "communityPosts";
   try {
     const colRef = collection(db, "communityPosts");
-    const newDocRef = doc(colRef);
-    await setDoc(newDocRef, post);
+    const newDocRef = customId ? doc(db, "communityPosts", customId) : doc(colRef);
+    const likeRecords = normalizeLikeRecords(post.likeRecords);
+    const comments = normalizePostComments(post.comments);
+    const payload = stripUndefinedDeep({
+      ...post,
+      likes: likeRecords.length,
+      likeRecords,
+      comments,
+    });
+    await setDoc(newDocRef, payload, { merge: true });
     return newDocRef.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
+}
+
+export async function saveCommunityPostInteractionState(
+  post: FirestoreCommunityPost,
+): Promise<FirestoreCommunityPost> {
+  const path = `communityPosts/${post.id}`;
+  const likeRecords = normalizeLikeRecords(post.likeRecords);
+  const comments = normalizePostComments(post.comments);
+  const updatedPost: FirestoreCommunityPost = {
+    ...post,
+    likes: likeRecords.length,
+    likeRecords,
+    comments,
+  };
+  try {
+    const docRef = doc(db, "communityPosts", String(post.id));
+    await setDoc(
+      docRef,
+      stripUndefinedDeep({
+        author: updatedPost.author,
+        authorId: updatedPost.authorId,
+        title: updatedPost.title,
+        body: updatedPost.body,
+        category: updatedPost.category,
+        likes: updatedPost.likes,
+        likeRecords: updatedPost.likeRecords,
+        comments: updatedPost.comments,
+        media: updatedPost.media,
+        audioUrl: updatedPost.audioUrl,
+        audioDuration: updatedPost.audioDuration,
+        createdAt: updatedPost.createdAt,
+      }),
+      { merge: true },
+    );
+    return updatedPost;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function toggleCommunityPostLike(
+  post: FirestoreCommunityPost,
+  user: { uid: string; name: string },
+): Promise<FirestoreCommunityPost> {
+  const cleanUid = user.uid.trim() || "anonymous_user";
+  const cleanName = user.name.trim() || "ONY Member";
+  const currentLikes = normalizeLikeRecords(post.likeRecords);
+  const alreadyLiked = currentLikes.some(
+    (item) =>
+      item.userId === cleanUid ||
+      item.userName.trim().toLowerCase() === cleanName.toLowerCase(),
+  );
+
+  const nextLikeRecords = alreadyLiked
+    ? currentLikes.filter(
+        (item) =>
+          item.userId !== cleanUid &&
+          item.userName.trim().toLowerCase() !== cleanName.toLowerCase(),
+      )
+    : [
+        ...currentLikes,
+        {
+          userId: cleanUid,
+          userName: cleanName,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+
+  return saveCommunityPostInteractionState({
+    ...post,
+    likes: nextLikeRecords.length,
+    likeRecords: nextLikeRecords,
+  });
+}
+
+export async function addCommunityPostComment(
+  post: FirestoreCommunityPost,
+  params: { userId: string; userName: string; text: string },
+): Promise<FirestoreCommunityPost> {
+  const validation = validateCommunityCommentText(params.text);
+  if (!validation.valid) {
+    throw new Error(validation.reason || "Comment violates community guidelines.");
+  }
+
+  const now = new Date().toISOString();
+  const newComment: PostCommentRecord = {
+    id: `comment_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    userId: params.userId.trim() || "anonymous_user",
+    userName: params.userName.trim() || "ONY Member",
+    text: params.text.trim(),
+    createdAt: now,
+    likes: 0,
+    likeRecords: [],
+    replies: [],
+  };
+
+  const nextComments = [...normalizePostComments(post.comments), newComment];
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
+}
+
+export async function editCommunityPostComment(
+  post: FirestoreCommunityPost,
+  commentId: string,
+  newText: string,
+): Promise<FirestoreCommunityPost> {
+  const validation = validateCommunityCommentText(newText);
+  if (!validation.valid) {
+    throw new Error(validation.reason || "Comment violates community guidelines.");
+  }
+
+  const now = new Date().toISOString();
+  const nextComments = normalizePostComments(post.comments).map((c) =>
+    c.id === commentId
+      ? {
+          ...c,
+          text: newText.trim(),
+          updatedAt: now,
+        }
+      : c,
+  );
+
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
+}
+
+export async function deleteCommunityPostComment(
+  post: FirestoreCommunityPost,
+  commentId: string,
+): Promise<FirestoreCommunityPost> {
+  const nextComments = normalizePostComments(post.comments).filter((c) => c.id !== commentId);
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
+}
+
+export async function toggleCommunityCommentLike(
+  post: FirestoreCommunityPost,
+  commentId: string,
+  user: { uid: string; name: string },
+): Promise<FirestoreCommunityPost> {
+  const cleanUid = user.uid.trim() || "anonymous_user";
+  const cleanName = user.name.trim() || "ONY Member";
+
+  const nextComments = normalizePostComments(post.comments).map((c) => {
+    if (c.id !== commentId) return c;
+    const currentLikes = normalizeLikeRecords(c.likeRecords);
+    const alreadyLiked = currentLikes.some(
+      (item) =>
+        item.userId === cleanUid ||
+        item.userName.trim().toLowerCase() === cleanName.toLowerCase(),
+    );
+    const updatedLikes = alreadyLiked
+      ? currentLikes.filter(
+          (item) =>
+            item.userId !== cleanUid &&
+            item.userName.trim().toLowerCase() !== cleanName.toLowerCase(),
+        )
+      : [
+          ...currentLikes,
+          {
+            userId: cleanUid,
+            userName: cleanName,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+    return {
+      ...c,
+      likeRecords: updatedLikes,
+      likes: updatedLikes.length,
+    };
+  });
+
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
+}
+
+export async function addCommunityCommentReply(
+  post: FirestoreCommunityPost,
+  commentId: string,
+  params: { userId: string; userName: string; text: string },
+): Promise<FirestoreCommunityPost> {
+  const validation = validateCommunityCommentText(params.text);
+  if (!validation.valid) {
+    throw new Error(validation.reason || "Reply violates community guidelines.");
+  }
+
+  const now = new Date().toISOString();
+  const newReply: PostCommentReplyRecord = {
+    id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    userId: params.userId.trim() || "anonymous_user",
+    userName: params.userName.trim() || "ONY Member",
+    text: params.text.trim(),
+    createdAt: now,
+  };
+
+  const nextComments = normalizePostComments(post.comments).map((c) =>
+    c.id === commentId
+      ? {
+          ...c,
+          replies: [...normalizeCommentReplies(c.replies), newReply],
+        }
+      : c,
+  );
+
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
+}
+
+export async function editCommunityCommentReply(
+  post: FirestoreCommunityPost,
+  commentId: string,
+  replyId: string,
+  newText: string,
+): Promise<FirestoreCommunityPost> {
+  const validation = validateCommunityCommentText(newText);
+  if (!validation.valid) {
+    throw new Error(validation.reason || "Reply violates community guidelines.");
+  }
+
+  const now = new Date().toISOString();
+  const nextComments = normalizePostComments(post.comments).map((c) =>
+    c.id === commentId
+      ? {
+          ...c,
+          replies: normalizeCommentReplies(c.replies).map((r) =>
+            r.id === replyId
+              ? {
+                  ...r,
+                  text: newText.trim(),
+                  updatedAt: now,
+                }
+              : r,
+          ),
+        }
+      : c,
+  );
+
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
+}
+
+export async function deleteCommunityCommentReply(
+  post: FirestoreCommunityPost,
+  commentId: string,
+  replyId: string,
+): Promise<FirestoreCommunityPost> {
+  const nextComments = normalizePostComments(post.comments).map((c) =>
+    c.id === commentId
+      ? {
+          ...c,
+          replies: normalizeCommentReplies(c.replies).filter((r) => r.id !== replyId),
+        }
+      : c,
+  );
+
+  return saveCommunityPostInteractionState({
+    ...post,
+    comments: nextComments,
+  });
 }
 
 export async function updateCommunityPostLikes(
@@ -740,31 +1291,174 @@ export const DEFAULT_GLOBE_USERS: FirestoreGlobeUser[] = [
   { id: 11, moodGlow: "soft", moodLabel: "Okay", discoverable: false, acceptsMessages: true, minLevel: 3, lon: 118, lat: 18 },
 ];
 
-export const DEFAULT_COMMUNITY_POSTS: Omit<FirestoreCommunityPost, "id">[] = [
+export const DEFAULT_COMMUNITY_POSTS: FirestoreCommunityPost[] = [
   {
+    id: "post_1",
     author: "Nadia · 21",
+    authorId: "ony_user_nadia",
     title: "One tiny win during finals week",
     body: "I put my phone away for 25 minutes and finished one page. Sharing because small still counts.",
     category: "Study",
-    likes: 34,
+    likes: 3,
+    likeRecords: [
+      {
+        userId: "ony_user_alex",
+        userName: "Alex Tan",
+        createdAt: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+      },
+      {
+        userId: "ony_user_jia",
+        userName: "Jia · 24",
+        createdAt: new Date(Date.now() - 62 * 60 * 1000).toISOString(),
+      },
+      {
+        userId: "ony_user_amir",
+        userName: "Amirul",
+        createdAt: new Date(Date.now() - 28 * 60 * 1000).toISOString(),
+      },
+    ],
+    comments: [
+      {
+        id: "comment_seed_101",
+        userId: "ony_user_alex",
+        userName: "Alex Tan",
+        text: "Small absolutely counts. Putting the phone away is honestly the hardest part!",
+        createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+        likes: 2,
+        likeRecords: [
+          {
+            userId: "ony_user_nadia",
+            userName: "Nadia · 21",
+            createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+          },
+          {
+            userId: "ony_user_mei",
+            userName: "Mei · ONY",
+            createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+          },
+        ],
+        replies: [
+          {
+            id: "reply_seed_201",
+            userId: "ony_user_nadia",
+            userName: "Nadia · 21",
+            text: "Thank you Alex! Trying one more 25-minute block after dinner 🌱",
+            createdAt: new Date(Date.now() - 36 * 60 * 1000).toISOString(),
+          },
+        ],
+      },
+      {
+        id: "comment_seed_102",
+        userId: "ony_user_mei",
+        userName: "Mei · ONY",
+        text: "Proud of you for starting with one page. Wishing you calm focus for the rest of finals.",
+        createdAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+        likes: 1,
+        likeRecords: [
+          {
+            userId: "ony_user_amir",
+            userName: "Amirul",
+            createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+          },
+        ],
+        replies: [],
+      },
+    ],
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
   },
   {
+    id: "post_2",
     author: "Anonymous",
+    authorId: "ony_user_anon_work",
     title: "Starting over at a new job",
     body: "Week two and I still feel out of place. Today a colleague invited me for lunch, and it helped.",
     category: "Work",
-    likes: 21,
+    likes: 2,
+    likeRecords: [
+      {
+        userId: "ony_user_nadia",
+        userName: "Nadia · 21",
+        createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        userId: "ony_user_alex",
+        userName: "Alex Tan",
+        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      },
+    ],
+    comments: [
+      {
+        id: "comment_seed_103",
+        userId: "ony_user_amir",
+        userName: "Amirul",
+        text: "Those small lunch invitations make such a big difference in the first month. Take it one day at a time!",
+        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        likes: 1,
+        likeRecords: [
+          {
+            userId: "ony_user_jia",
+            userName: "Jia · 24",
+            createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+          },
+        ],
+        replies: [
+          {
+            id: "reply_seed_202",
+            userId: "ony_user_jia",
+            userName: "Jia · 24",
+            text: "Agreed! By week three or four the routine starts feeling much gentler.",
+            createdAt: new Date(Date.now() - 80 * 60 * 1000).toISOString(),
+          },
+        ],
+      },
+    ],
     media: "voice",
     audioDuration: 12,
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
   },
   {
+    id: "post_3",
     author: "Jia · 24",
+    authorId: "ony_user_jia",
     title: "A low-energy self-care list",
     body: "Water, shower, clean shirt, one message to a friend. That is enough for some days.",
     category: "Self-care",
-    likes: 56,
+    likes: 3,
+    likeRecords: [
+      {
+        userId: "ony_user_mei",
+        userName: "Mei · ONY",
+        createdAt: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        userId: "ony_user_alex",
+        userName: "Alex Tan",
+        createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        userId: "ony_user_nadia",
+        userName: "Nadia · 21",
+        createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+      },
+    ],
+    comments: [
+      {
+        id: "comment_seed_104",
+        userId: "ony_user_nadia",
+        userName: "Nadia · 21",
+        text: "Water + clean shirt resets my whole mood on low-energy days.",
+        createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+        likes: 1,
+        likeRecords: [
+          {
+            userId: "ony_user_jia",
+            userName: "Jia · 24",
+            createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+          },
+        ],
+        replies: [],
+      },
+    ],
     media: "image",
     createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
   },
@@ -1256,7 +1950,7 @@ export async function seedInitialDatabaseData(): Promise<{
   let posts = await listCommunityPosts().catch(() => []);
   if (posts.length === 0) {
     for (const post of DEFAULT_COMMUNITY_POSTS) {
-      await createCommunityPost(post).catch((e) =>
+      await createCommunityPost(post, post.id).catch((e) =>
         console.warn("[ONY Seed] communityPost seed warning:", e),
       );
     }

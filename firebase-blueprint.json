@@ -92,7 +92,7 @@
     },
     "CommunityPost": {
       "title": "CommunityPost",
-      "description": "Community posts shared gently across categories.",
+      "description": "Community posts shared gently across categories, including likes with user and timestamp, comments with user, timestamp, and likes, and replies to comments with user and timestamp.",
       "type": "object",
       "properties": {
         "author": { "type": "string", "maxLength": 50 },
@@ -101,6 +101,61 @@
         "body": { "type": "string", "maxLength": 2000 },
         "category": { "type": "string", "maxLength": 50 },
         "likes": { "type": "number", "minimum": 0 },
+        "likeRecords": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userId": { "type": "string" },
+              "userName": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["userId", "userName", "createdAt"]
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "userId": { "type": "string" },
+              "userName": { "type": "string" },
+              "text": { "type": "string", "maxLength": 1000 },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "updatedAt": { "type": "string", "format": "date-time" },
+              "likes": { "type": "number", "minimum": 0 },
+              "likeRecords": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": { "type": "string" },
+                    "userName": { "type": "string" },
+                    "createdAt": { "type": "string", "format": "date-time" }
+                  },
+                  "required": ["userId", "userName", "createdAt"]
+                }
+              },
+              "replies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "userId": { "type": "string" },
+                    "userName": { "type": "string" },
+                    "text": { "type": "string", "maxLength": 1000 },
+                    "createdAt": { "type": "string", "format": "date-time" },
+                    "updatedAt": { "type": "string", "format": "date-time" }
+                  },
+                  "required": ["id", "userId", "userName", "text", "createdAt"]
+                }
+              }
+            },
+            "required": ["id", "userId", "userName", "text", "createdAt"]
+          }
+        },
         "media": { "type": "string", "enum": ["image", "voice", "text"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },

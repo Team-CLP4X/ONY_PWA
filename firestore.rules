@@ -35,9 +35,12 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Community Posts feed (Read, Create, Like/Update, Delete)
+    // Community Posts feed (Read, Create, Like/Update, Comment, Reply, Delete)
     match /communityPosts/{postId} {
       allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
     }
 
     // Marketplace merchants and wellness vouchers

@@ -31,7 +31,15 @@ import {
   listGlobeUsers,
   listCommunityPosts,
   createCommunityPost,
-  updateCommunityPostLikes,
+  toggleCommunityPostLike,
+  addCommunityPostComment,
+  editCommunityPostComment,
+  deleteCommunityPostComment,
+  toggleCommunityCommentLike,
+  addCommunityCommentReply,
+  editCommunityCommentReply,
+  deleteCommunityCommentReply,
+  validateCommunityCommentText,
   listMerchants,
   listCommunityMessages,
   createCommunityMessage,
@@ -49,6 +57,9 @@ import {
   DEFAULT_MERCHANTS,
   DEFAULT_USER_CONVERSATIONS,
   DEFAULT_COMMUNITY_MESSAGES,
+  type PostLikeRecord,
+  type PostCommentRecord,
+  type PostCommentReplyRecord,
   type FirestoreCommunityPost,
   type FirestoreCommunityMessage,
   type FirestoreTrustedContactRequest,
@@ -160,18 +171,7 @@ function deduplicateMoodEntriesByDay(entries: MoodEntry[]): MoodEntry[] {
 type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
 type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
 type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string };
-type Post = {
-  id: number;
-  author: string;
-  title: string;
-  body: string;
-  category: string;
-  likes: number;
-  saved?: boolean;
-  media?: "image" | "voice";
-  audioUrl?: string;
-  audioDuration?: number;
-};
+type Post = FirestoreCommunityPost;
 
 const Icon = ({ name }: { name: string }) => {
   const paths: Record<string, ReactNode> = {
@@ -381,17 +381,7 @@ function App() {
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [globeUsers, setGlobeUsers] = useState<GlobeUser[]>(DEFAULT_GLOBE_USERS);
-  const [posts, setPosts] = useState<Post[]>(
-    DEFAULT_COMMUNITY_POSTS.map((p, idx) => ({
-      id: idx + 1,
-      author: p.author,
-      title: p.title,
-      body: p.body,
-      category: p.category,
-      likes: p.likes,
-      media: p.media as "image" | "voice" | undefined,
-    })),
-  );
+  const [posts, setPosts] = useState<Post[]>(DEFAULT_COMMUNITY_POSTS);
   const [merchants, setMerchants] = useState<Merchant[]>(DEFAULT_MERCHANTS);
   const [dbSyncing, setDbSyncing] = useState(false);
   const [folders, setFolders] = useState<ChatFolder[]>([
@@ -480,20 +470,7 @@ function App() {
             setGlobeUsers(loadedGlobe);
           }
           if (loadedPosts && loadedPosts.length > 0) {
-            setPosts(
-              loadedPosts.map((p, idx) => ({
-                id: Number(p.id) || idx + 1,
-                author: p.author,
-                title: p.title,
-                body: p.body,
-                category: p.category,
-                likes: p.likes,
-                media: p.media as "image" | "voice" | undefined,
-                audioUrl: p.audioUrl,
-                audioDuration: p.audioDuration,
-                saved: p.saved,
-              })),
-            );
+            setPosts(loadedPosts);
           }
           if (loadedMerchants && loadedMerchants.length > 0) {
             setMerchants(loadedMerchants);
@@ -886,51 +863,71 @@ function App() {
     });
   };
 
+  const syncUpdatedPostInState = (updatedPost: Post) => {
+    setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
+    setSelectedPost((prev) => (prev && prev.id === updatedPost.id ? updatedPost : prev));
+  };
+
   const handleCreatePost = async (newPost: Omit<FirestoreCommunityPost, "id">) => {
     try {
       const id = await createCommunityPost(newPost);
-      setPosts((prev) => [
-        {
-          id: Number(id) || Date.now(),
-          author: newPost.author,
-          title: newPost.title,
-          body: newPost.body,
-          category: newPost.category,
-          likes: newPost.likes,
-          media: newPost.media as "image" | "voice" | undefined,
-          audioUrl: newPost.audioUrl,
-          audioDuration: newPost.audioDuration,
-        },
-        ...prev,
-      ]);
+      const created: Post = {
+        ...newPost,
+        id: id || String(Date.now()),
+        likes: newPost.likeRecords?.length || 0,
+        likeRecords: newPost.likeRecords || [],
+        comments: newPost.comments || [],
+      };
+      setPosts((prev) => [created, ...prev]);
       notify("Post published to Cloud Firestore");
     } catch (e) {
       console.warn("[ONY] Post save warning:", e);
-      setPosts((prev) => [
-        {
-          id: Date.now(),
-          author: newPost.author,
-          title: newPost.title,
-          body: newPost.body,
-          category: newPost.category,
-          likes: newPost.likes,
-          media: newPost.media as "image" | "voice" | undefined,
-          audioUrl: newPost.audioUrl,
-          audioDuration: newPost.audioDuration,
-        },
-        ...prev,
-      ]);
+      const fallbackCreated: Post = {
+        ...newPost,
+        id: String(Date.now()),
+        likes: newPost.likeRecords?.length || 0,
+        likeRecords: newPost.likeRecords || [],
+        comments: newPost.comments || [],
+      };
+      setPosts((prev) => [fallbackCreated, ...prev]);
       notify("Post published");
     }
   };
 
-  const handleLikePost = async (postId: number) => {
-    const post = posts.find((p) => p.id === postId);
+  const handleLikePost = async (postId: string) => {
+    const post = posts.find((p) => p.id === postId) || (selectedPost?.id === postId ? selectedPost : undefined);
     if (!post) return;
-    const newLikes = post.likes + 1;
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, likes: newLikes } : p)));
+    const cleanUid = effectiveUid.trim() || "anonymous_user";
+    const cleanName = (displayName || "ONY Member").trim();
+    const currentLikes = Array.isArray(post.likeRecords) ? post.likeRecords : [];
+    const alreadyLiked = currentLikes.some(
+      (item) =>
+        item.userId === cleanUid ||
+        item.userName.trim().toLowerCase() === cleanName.toLowerCase(),
+    );
+    const optimisticLikeRecords: PostLikeRecord[] = alreadyLiked
+      ? currentLikes.filter(
+          (item) =>
+            item.userId !== cleanUid &&
+            item.userName.trim().toLowerCase() !== cleanName.toLowerCase(),
+        )
+      : [
+          ...currentLikes,
+          {
+            userId: cleanUid,
+            userName: cleanName,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+    const optimisticPost: Post = {
+      ...post,
+      likes: optimisticLikeRecords.length,
+      likeRecords: optimisticLikeRecords,
+    };
+    syncUpdatedPostInState(optimisticPost);
     try {
-      await updateCommunityPostLikes(String(postId), newLikes);
+      const saved = await toggleCommunityPostLike(post, { uid: cleanUid, name: cleanName });
+      syncUpdatedPostInState(saved);
     } catch (e) {
       console.warn("[ONY] Like post update notice:", e);
     }
@@ -1010,7 +1007,7 @@ function App() {
                 if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
               }} notify={notify} />}
               {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
-              {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} />}
+              {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} />}
               {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
               {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} pendingIncomingCount={pendingIncomingTrusted.length} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
             </main>
@@ -1038,7 +1035,7 @@ function App() {
             {screen === "subscription" && <Subscription back={back} openHelp={() => navigate("help")} status={subscriptionStatus} setStatus={setSubscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} resetFreeUsage={() => setFreeUsage(0)} notify={notify} />}
             {screen === "merchant" && <MerchantDetail back={back} navigate={navigate} merchants={merchants} merchantName={selectedMerchantName} notify={notify} />}
             {screen === "voucher" && <Voucher back={back} merchants={merchants} merchantName={selectedMerchantName} />}
-            {screen === "post" && <CreatePost back={back} notify={notify} displayName={displayName} onPostCreated={handleCreatePost} />}
+            {screen === "post" && <CreatePost back={back} notify={notify} displayName={displayName} currentUid={effectiveUid} onPostCreated={handleCreatePost} />}
             {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} reviewMemories={() => goTab("memory")} clearMemories={handleClearMemories} onDeleteAccount={handleDeleteAccount} />}
             {screen === "about" && <About back={back} />}
             {screen === "addMemory" && <AddMemory back={back} memories={memories} setMemories={handleSetMemories} editing={editingMemory} notify={notify} />}
@@ -1098,7 +1095,20 @@ function App() {
             {screen === "guidelines" && <CommunityGuidelines back={back} />}
             {screen === "chatHistory" && <ChatHistory back={back} navigate={navigate} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} folders={folders} setFolders={setFolders} selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} />}
             {screen === "monthlyReport" && <MonthlyReport back={back} moodEntries={moodEntries} setMoodEntries={handleSetMoodEntries} conversations={conversations} setConversations={setConversations} memories={memories} />}
-            {screen === "postDetail" && selectedPost && <PostDetail back={() => { sessionStorage.setItem("ony-show-posts", "true"); back(); }} post={selectedPost} onLikePost={handleLikePost} notify={notify} />}
+            {screen === "postDetail" && selectedPost && (
+              <PostDetail
+                back={() => {
+                  sessionStorage.setItem("ony-show-posts", "true");
+                  back();
+                }}
+                post={posts.find((p) => p.id === selectedPost.id) || selectedPost}
+                currentUid={effectiveUid}
+                currentUserName={displayName}
+                onLikePost={handleLikePost}
+                onPostUpdated={syncUpdatedPostInState}
+                notify={notify}
+              />
+            )}
             {screen === "riskDemo" && <RiskDemo back={back} navigate={navigate} persona={persona} companion={companion} />}
             {screen === "resources" && <ResourceLibrary back={back} navigate={navigate} notify={notify} />}
             {screen === "legal" && <LegalHub back={back} navigate={navigate} />}
@@ -2042,7 +2052,8 @@ function Community({
   notify,
   globeUsers = DEFAULT_GLOBE_USERS,
   posts = [],
-  setPosts,
+  currentUid = "guest_local_user",
+  currentUserName = "ONY Member",
   onLikePost,
   dbSyncing,
   latestMood,
@@ -2054,7 +2065,9 @@ function Community({
   globeUsers?: GlobeUser[];
   posts?: Post[];
   setPosts?: React.Dispatch<React.SetStateAction<Post[]>>;
-  onLikePost?: (postId: number) => void;
+  currentUid?: string;
+  currentUserName?: string;
+  onLikePost?: (postId: string) => void;
   dbSyncing?: boolean;
   latestMood?: MoodEntry;
 }) {
@@ -2281,13 +2294,47 @@ function Community({
       <div className="posts-heading"><div><span className="eyebrow">Community posts</span><h2>Shared gently, together.</h2></div><Button variant="ghost" onClick={() => setView("globe")}>Back to globe</Button></div>
       <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search posts or topics" /></div>
       <div className="scroll-chips">{categories.map((x) => <Button key={x} variant={filter === x ? "primary" : "secondary"} onClick={() => setFilter(x)}>{x}</Button>)}</div>
-      <div className="feed">{shown.map((post) => <article className="post-card" key={post.id}>
-        <div className="post-meta"><span className="mini-avatar">{post.author[0]}</span><div><strong>{post.author}</strong><small>{post.category} · 2h</small></div><Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button></div>
-        <button className="post-open" onClick={() => openPost(post)}><h3>{post.title}</h3><p>{post.body}</p></button>
-        {post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}
-        {post.media === "image" && <div className="post-image"><span>Shared calming image</span></div>}
-        <div className="post-actions"><Button variant="ghost" onClick={() => onLikePost ? onLikePost(post.id) : (setPosts && setPosts((items) => items.map((x) => x.id === post.id ? { ...x, likes: x.likes + 1 } : x)))}><Icon name="heart" />{post.likes}</Button><Button variant="ghost" onClick={() => notify("Comment added in demo")}>2 comments</Button><Button variant="ghost" onClick={() => { if (setPosts) { setPosts((items) => items.map((x) => x.id === post.id ? { ...x, saved: !x.saved } : x)); notify(post.saved ? "Removed from saved" : "Post saved"); } }}><Icon name="memory" />{post.saved ? "Saved" : "Save"}</Button></div>
-      </article>)}</div>
+      <div className="feed">{shown.map((post) => {
+        const likeList = Array.isArray(post.likeRecords) ? post.likeRecords : [];
+        const commentList = Array.isArray(post.comments) ? post.comments : [];
+        const totalReplies = commentList.reduce((acc, c) => acc + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
+        const likedByMe = likeList.some(
+          (l) =>
+            l.userId === currentUid ||
+            l.userName.trim().toLowerCase() === currentUserName.trim().toLowerCase(),
+        );
+        return (
+          <article className="post-card" key={post.id}>
+            <div className="post-meta">
+              <span className="mini-avatar">{post.author[0]}</span>
+              <div>
+                <strong>{post.author}</strong>
+                <small>{post.category} · {formatFriendlyTime(post.createdAt)}</small>
+              </div>
+              <Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button>
+            </div>
+            <button className="post-open" onClick={() => openPost(post)}>
+              <h3>{post.title}</h3>
+              <p>{post.body}</p>
+            </button>
+            {post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}
+            {post.media === "image" && <div className="post-image"><span>Shared calming image</span></div>}
+            <div className="post-actions">
+              <Button
+                variant={likedByMe ? "primary" : "ghost"}
+                onClick={() => onLikePost && onLikePost(post.id)}
+              >
+                <Icon name="heart" />
+                {likedByMe ? "Liked" : "Like"} ({post.likes})
+              </Button>
+              <Button variant="ghost" onClick={() => openPost(post)}>
+                <Icon name="chat" />
+                {commentList.length} {commentList.length === 1 ? "comment" : "comments"}
+              </Button>
+            </div>
+          </article>
+        );
+      })}</div>
     </>}
     {view === "myNode" && <>
       <div className="posts-heading">
@@ -2377,11 +2424,13 @@ function CreatePost({
   back,
   notify,
   displayName = "Anonymous",
+  currentUid = "guest_local_user",
   onPostCreated,
 }: {
   back: () => void;
   notify: (s: string) => void;
   displayName?: string;
+  currentUid?: string;
   onPostCreated?: (post: Omit<FirestoreCommunityPost, "id">) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
@@ -2391,6 +2440,7 @@ function CreatePost({
   const [submitting, setSubmitting] = useState(false);
   const [postAs, setPostAs] = useState("Anonymous");
   const [media, setMedia] = useState<"text" | "image" | "voice">("text");
+  const [guidelineError, setGuidelineError] = useState<string | null>(null);
 
   // Real voice recording state
   const [recording, setRecording] = useState(false);
@@ -2490,8 +2540,8 @@ function CreatePost({
   return <><PageHeader title="Create a post" subtitle="Share kindly, at your pace" back={back} /><section className="page-pad">
     <label className="field-label">Post as</label><div className="segmented"><Button variant={postAs === "ONY profile" ? "primary" : "secondary"} onClick={() => setPostAs("ONY profile")}>My ONY profile</Button><Button variant={postAs === "Anonymous" ? "primary" : "secondary"} onClick={() => setPostAs("Anonymous")}>Anonymous</Button></div>
     <label className="field-label">Format</label><div className="segmented"><Button variant={media === "text" ? "primary" : "secondary"} onClick={() => setMedia("text")}>Text</Button><Button variant={media === "image" ? "primary" : "secondary"} onClick={() => setMedia("image")}>Image</Button><Button variant={media === "voice" ? "primary" : "secondary"} onClick={() => setMedia("voice")}>Voice</Button></div>
-    <label className="field-label">Title</label><TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What would you like to share?" />
-    {media !== "voice" && <><label className="field-label">Your post</label><TextArea value={body} onChange={(e) => setBody(e.target.value)} rows={5} placeholder="Write what’s on your mind..." /></>}
+    <label className="field-label">Title</label><TextInput value={title} onChange={(e) => { setTitle(e.target.value); setGuidelineError(null); }} placeholder="What would you like to share?" />
+    {media !== "voice" && <><label className="field-label">Your post</label><TextArea value={body} onChange={(e) => { setBody(e.target.value); setGuidelineError(null); }} rows={5} placeholder="Write what’s on your mind..." /></>}
     {media === "image" && <button className="image-upload selected" onClick={() => notify("Demo community image selected")}><span className="sample-photo sunset"><i /></span><strong>Sunset moment.jpg</strong><small>Tap to replace demo image</small></button>}
     {media === "voice" && (
       <div className="voice-record-card">
@@ -2568,14 +2618,39 @@ function CreatePost({
         )}
       </div>
     )}
-    <label className="field-label">Category</label><div className="chips">{categories.slice(1).map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => setCategory(x)}>{x}</Button>)}</div><div className="community-note"><Icon name="info" />Community guidelines and moderation apply. Unsafe content can be reported and reviewed.</div><Button className="full" disabled={submitting || !title || (media === "text" && !body) || (media === "voice" && !recordedAudio)} onClick={async () => {
-      const authorName = postAs === "Anonymous" ? "Anonymous" : displayName;
-      const postPayload = {
+    <label className="field-label">Category</label><div className="chips">{categories.slice(1).map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => setCategory(x)}>{x}</Button>)}</div>
+    {guidelineError && (
+      <div className="form-error" role="alert">
+        <Icon name="info" />
+        <span>{guidelineError}</span>
+      </div>
+    )}
+    <div className="community-note"><Icon name="info" />Community guidelines and moderation apply. Profanity or unkind content is automatically blocked.</div>
+    <Button className="full" disabled={submitting || !title || (media === "text" && !body) || (media === "voice" && !recordedAudio)} onClick={async () => {
+      const titleCheck = validateCommunityCommentText(title);
+      if (!titleCheck.valid) {
+        setGuidelineError(titleCheck.reason || "Title violates community guidelines.");
+        notify("Post blocked: violates community guidelines");
+        return;
+      }
+      if (body.trim()) {
+        const bodyCheck = validateCommunityCommentText(body);
+        if (!bodyCheck.valid) {
+          setGuidelineError(bodyCheck.reason || "Post content violates community guidelines.");
+          notify("Post blocked: violates community guidelines");
+          return;
+        }
+      }
+      const authorName = postAs === "Anonymous" ? "Anonymous" : `${displayName} · ONY profile`;
+      const postPayload: Omit<FirestoreCommunityPost, "id"> = {
         author: authorName,
-        title,
-        body: body || "Voice message shared with the community.",
+        authorId: currentUid,
+        title: title.trim(),
+        body: (body || "Voice message shared with the community.").trim(),
         category,
         likes: 0,
+        likeRecords: [],
+        comments: [],
         media: media === "text" ? undefined : media,
         audioUrl: media === "voice" && recordedAudio ? recordedAudio.dataUrl : undefined,
         audioDuration: media === "voice" && recordedAudio ? recordedAudio.duration : undefined,
@@ -2680,25 +2755,551 @@ function VoiceNote({
   );
 }
 
-function PostDetail({ back, post, notify, onLikePost }: { back: () => void; post: Post; notify: (text: string) => void; onLikePost?: (id: number) => void }) {
-  const [likes, setLikes] = useState(post.likes);
-  const [liked, setLiked] = useState(false);
+function PostDetail({
+  back,
+  post,
+  currentUid = "guest_local_user",
+  currentUserName = "ONY Member",
+  notify,
+  onLikePost,
+  onPostUpdated,
+}: {
+  back: () => void;
+  post: Post;
+  currentUid?: string;
+  currentUserName?: string;
+  notify: (text: string) => void;
+  onLikePost?: (id: string) => void;
+  onPostUpdated?: (updated: Post) => void;
+}) {
   const [comment, setComment] = useState("");
-  const [comments, setComments] = useState([
-    { author: "Anonymous", text: "Small absolutely counts. I needed this reminder today.", time: "38m" },
-    { author: "Mei · ONY profile", text: "Proud of you for starting with one page.", time: "12m" },
-  ]);
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!comment.trim()) return;
-    setComments([...comments, { author: "My ONY profile", text: comment, time: "now" }]);
-    setComment("");
-    notify("Comment added");
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  // Editing comment state
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState("");
+  const [editingCommentError, setEditingCommentError] = useState<string | null>(null);
+
+  // Replying to a comment state
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyError, setReplyError] = useState<string | null>(null);
+
+  // Editing reply state
+  const [editingReplyTarget, setEditingReplyTarget] = useState<{ commentId: string; replyId: string } | null>(null);
+  const [editingReplyText, setEditingReplyText] = useState("");
+  const [editingReplyError, setEditingReplyError] = useState<string | null>(null);
+
+  const commentInputRef = useRef<HTMLInputElement | null>(null);
+
+  const cleanUid = currentUid.trim() || "anonymous_user";
+  const cleanName = currentUserName.trim() || "ONY Member";
+
+  const postLikes: PostLikeRecord[] = Array.isArray(post.likeRecords) ? post.likeRecords : [];
+  const comments: PostCommentRecord[] = Array.isArray(post.comments) ? post.comments : [];
+
+  const isPostLikedByMe = postLikes.some(
+    (l) =>
+      l.userId === cleanUid ||
+      l.userName.trim().toLowerCase() === cleanName.toLowerCase(),
+  );
+
+  const isOwnedByCurrentUser = (recordUserId?: string, recordUserName?: string) => {
+    if (recordUserId && recordUserId === cleanUid) return true;
+    const normRecord = (recordUserName || "").trim().toLowerCase();
+    const normCurrent = cleanName.toLowerCase();
+    return (
+      Boolean(normRecord) &&
+      (normRecord === normCurrent ||
+        normRecord === `${normCurrent} · ony profile` ||
+        normRecord === "my ony profile")
+    );
   };
-  return <div className="post-detail-page"><PageHeader title="Community post" subtitle={`${post.category} · 2 hours ago`} back={back} /><section className="page-pad post-detail-scroll">
-    <article className="post-detail-card"><div className="post-meta"><span className="mini-avatar">{post.author[0]}</span><div><strong>{post.author}</strong><small>{post.author === "Anonymous" ? "Identity kept private" : "ONY community profile"}</small></div><Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button></div><h1>{post.title}</h1><p>{post.body}</p>{post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}{post.media === "image" && <div className="post-image detail"><span>Shared calming image</span></div>}<div className="post-detail-stats"><span>{likes} reactions</span><span>{comments.length} comments</span></div><div className="post-detail-actions"><Button variant={liked ? "primary" : "secondary"} onClick={() => { setLiked(!liked); const next = likes + (liked ? -1 : 1); setLikes(next); if (!liked && onLikePost) onLikePost(post.id); }}><Icon name="heart" />{liked ? "Liked" : "Like"}</Button><Button variant="secondary" onClick={() => notify("Encouragement shared")}>Share encouragement</Button><Button variant="ghost" onClick={() => notify("Post saved")}>Save</Button></div></article>
-    <div className="comments-section"><h3>Comments</h3>{comments.map((item, index) => <div className="comment" key={`${item.author}-${index}`}><span>{item.author[0]}</span><div><strong>{item.author}<small>{item.time}</small></strong><p>{item.text}</p></div></div>)}</div>
-    </section><form className="comment-composer" onSubmit={submit}><TextInput value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Write a comment…" aria-label="Add a comment" /><Button type="submit" disabled={!comment.trim()}><Icon name="send" /></Button></form></div>;
+
+  const handleAddComment = async (event: FormEvent) => {
+    event.preventDefault();
+    const check = validateCommunityCommentText(comment);
+    if (!check.valid) {
+      setCommentError(check.reason || "Comment violates community guidelines.");
+      notify("Comment blocked: violates community guidelines");
+      return;
+    }
+    setCommentError(null);
+    setSubmittingComment(true);
+    try {
+      const updated = await addCommunityPostComment(post, {
+        userId: cleanUid,
+        userName: cleanName,
+        text: comment.trim(),
+      });
+      if (onPostUpdated) onPostUpdated(updated);
+      setComment("");
+      notify("Comment saved to Cloud Firestore");
+    } catch (err: any) {
+      setCommentError(err?.message || "Could not post comment.");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const handleSaveEditedComment = async (commentId: string) => {
+    const check = validateCommunityCommentText(editingCommentText);
+    if (!check.valid) {
+      setEditingCommentError(check.reason || "Comment violates community guidelines.");
+      notify("Edit blocked: violates community guidelines");
+      return;
+    }
+    setEditingCommentError(null);
+    try {
+      const updated = await editCommunityPostComment(post, commentId, editingCommentText.trim());
+      if (onPostUpdated) onPostUpdated(updated);
+      setEditingCommentId(null);
+      setEditingCommentText("");
+      notify("Comment updated");
+    } catch (err: any) {
+      setEditingCommentError(err?.message || "Could not update comment.");
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const updated = await deleteCommunityPostComment(post, commentId);
+      if (onPostUpdated) onPostUpdated(updated);
+      if (editingCommentId === commentId) setEditingCommentId(null);
+      if (replyingToCommentId === commentId) setReplyingToCommentId(null);
+      notify("Comment deleted");
+    } catch {
+      notify("Could not delete comment");
+    }
+  };
+
+  const handleToggleCommentLike = async (commentId: string, customLiker?: { uid: string; name: string }) => {
+    const liker = customLiker || { uid: cleanUid, name: cleanName };
+    try {
+      const updated = await toggleCommunityCommentLike(post, commentId, liker);
+      if (onPostUpdated) onPostUpdated(updated);
+      if (customLiker) {
+        notify(`${customLiker.name} liked the comment`);
+      }
+    } catch {
+      notify("Could not update comment like");
+    }
+  };
+
+  const handleSimulateOtherLikeOnComment = async (c: PostCommentRecord) => {
+    const samplePeers = [
+      { uid: "user_mei", name: "Mei · ONY profile" },
+      { uid: "user_harith", name: "Harith · ONY profile" },
+      { uid: "user_sofia", name: "Sofia · ONY profile" },
+      { uid: "user_daniel", name: "Daniel · ONY profile" },
+      { uid: "user_nina", name: "Nina · ONY profile" },
+    ];
+    const existingIds = new Set((c.likeRecords || []).map((l) => l.userId));
+    const availablePeer =
+      samplePeers.find((p) => !existingIds.has(p.uid)) || {
+        uid: `peer_${Date.now()}`,
+        name: `Community Member #${Math.floor(100 + Math.random() * 899)}`,
+      };
+    await handleToggleCommentLike(c.id, availablePeer);
+  };
+
+  const handleAddReply = async (commentId: string) => {
+    const check = validateCommunityCommentText(replyText);
+    if (!check.valid) {
+      setReplyError(check.reason || "Reply violates community guidelines.");
+      notify("Reply blocked: violates community guidelines");
+      return;
+    }
+    setReplyError(null);
+    try {
+      const updated = await addCommunityCommentReply(post, commentId, {
+        userId: cleanUid,
+        userName: cleanName,
+        text: replyText.trim(),
+      });
+      if (onPostUpdated) onPostUpdated(updated);
+      setReplyText("");
+      setReplyingToCommentId(null);
+      notify("Reply added");
+    } catch (err: any) {
+      setReplyError(err?.message || "Could not add reply.");
+    }
+  };
+
+  const handleSaveEditedReply = async (commentId: string, replyId: string) => {
+    const check = validateCommunityCommentText(editingReplyText);
+    if (!check.valid) {
+      setEditingReplyError(check.reason || "Reply violates community guidelines.");
+      notify("Edit blocked: violates community guidelines");
+      return;
+    }
+    setEditingReplyError(null);
+    try {
+      const updated = await editCommunityCommentReply(post, commentId, replyId, editingReplyText.trim());
+      if (onPostUpdated) onPostUpdated(updated);
+      setEditingReplyTarget(null);
+      setEditingReplyText("");
+      notify("Reply updated");
+    } catch (err: any) {
+      setEditingReplyError(err?.message || "Could not update reply.");
+    }
+  };
+
+  const handleDeleteReply = async (commentId: string, replyId: string) => {
+    try {
+      const updated = await deleteCommunityCommentReply(post, commentId, replyId);
+      if (onPostUpdated) onPostUpdated(updated);
+      setEditingReplyTarget(null);
+      notify("Reply deleted");
+    } catch {
+      notify("Could not delete reply");
+    }
+  };
+
+  return (
+    <div className="post-detail-page">
+      <PageHeader
+        title="Community post"
+        subtitle={`${post.category} · ${formatFriendlyTime(post.createdAt)}`}
+        back={back}
+      />
+      <section className="page-pad post-detail-scroll">
+        <article className="post-detail-card">
+          <div className="post-meta">
+            <span className="mini-avatar">{post.author[0]}</span>
+            <div>
+              <strong>{post.author}</strong>
+              <small>
+                {post.author === "Anonymous" ? "Identity kept private" : "ONY community profile"} ·{" "}
+                {formatFriendlyTime(post.createdAt)}
+              </small>
+            </div>
+            <Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>
+              Report
+            </Button>
+          </div>
+          <h1>{post.title}</h1>
+          <p>{post.body}</p>
+          {post.media === "voice" && (
+            <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />
+          )}
+          {post.media === "image" && (
+            <div className="post-image detail">
+              <span>Shared calming image</span>
+            </div>
+          )}
+
+          <div className="post-detail-stats">
+            <span>
+              {post.likes} {post.likes === 1 ? "like" : "likes"}
+            </span>
+            <span>
+              {comments.length} {comments.length === 1 ? "comment" : "comments"}
+            </span>
+          </div>
+
+          <div className="post-detail-actions">
+            <Button
+              variant={isPostLikedByMe ? "primary" : "secondary"}
+              onClick={() => onLikePost && onLikePost(post.id)}
+            >
+              <Icon name="heart" />
+              {isPostLikedByMe ? "Liked" : "Like"} ({post.likes})
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => commentInputRef.current?.focus()}
+            >
+              <Icon name="chat" />
+              Comment ({comments.length})
+            </Button>
+          </div>
+        </article>
+
+        <div className="comments-section">
+          <div className="comments-section-header">
+            <h3>Comments ({comments.length})</h3>
+          </div>
+
+          {comments.length === 0 ? (
+            <div className="empty mini-empty">
+              <p>No comments yet. Share a supportive note below.</p>
+            </div>
+          ) : (
+            comments.map((item) => {
+              const isMine = isOwnedByCurrentUser(item.userId, item.userName);
+              const commentLikes = Array.isArray(item.likeRecords) ? item.likeRecords : [];
+              const likedByMe = commentLikes.some(
+                (l) =>
+                  l.userId === cleanUid ||
+                  l.userName.trim().toLowerCase() === cleanName.toLowerCase(),
+              );
+              const replies = Array.isArray(item.replies) ? item.replies : [];
+
+              return (
+                <div className="comment" key={item.id}>
+                  <span>{(item.userName || "A")[0]}</span>
+                  <div>
+                    <strong>
+                      <span className="comment-author-wrap">
+                        {item.userName}
+                        {isMine && <b className="you-badge">You</b>}
+                      </span>
+                      <small>
+                        {formatFriendlyTime(item.createdAt)}
+                        {item.updatedAt ? " · edited" : ""}
+                      </small>
+                    </strong>
+
+                    {editingCommentId === item.id ? (
+                      <div className="comment-inline-editor">
+                        <TextArea
+                          rows={2}
+                          value={editingCommentText}
+                          onChange={(e) => {
+                            setEditingCommentText(e.target.value);
+                            setEditingCommentError(null);
+                          }}
+                          placeholder="Edit your comment…"
+                        />
+                        {editingCommentError && (
+                          <div className="form-error" role="alert">
+                            <Icon name="info" />
+                            <span>{editingCommentError}</span>
+                          </div>
+                        )}
+                        <div className="comment-inline-actions">
+                          <Button
+                            variant="primary"
+                            onClick={() => handleSaveEditedComment(item.id)}
+                            disabled={!editingCommentText.trim()}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingCommentId(null);
+                              setEditingCommentError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p>{item.text}</p>
+                    )}
+
+                    <div className="comment-action-bar">
+                      <button
+                        type="button"
+                        className={`comment-action-btn ${likedByMe ? "liked" : ""}`}
+                        onClick={() => handleToggleCommentLike(item.id)}
+                      >
+                        <Icon name="heart" />
+                        {likedByMe ? "Liked" : "Like"} ({commentLikes.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        className="comment-action-btn"
+                        onClick={() => {
+                          if (replyingToCommentId === item.id) {
+                            setReplyingToCommentId(null);
+                            setReplyError(null);
+                          } else {
+                            setReplyingToCommentId(item.id);
+                            setReplyText("");
+                            setReplyError(null);
+                          }
+                        }}
+                      >
+                        Reply ({replies.length})
+                      </button>
+
+                      {isMine && editingCommentId !== item.id && (
+                        <>
+                          <button
+                            type="button"
+                            className="comment-action-btn"
+                            onClick={() => {
+                              setEditingCommentId(item.id);
+                              setEditingCommentText(item.text);
+                              setEditingCommentError(null);
+                            }}
+                          >
+                            <Icon name="edit" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="comment-action-btn danger"
+                            onClick={() => handleDeleteComment(item.id)}
+                          >
+                            <Icon name="trash" /> Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {replies.length > 0 && (
+                      <div className="comment-replies-list">
+                        {replies.map((rep) => {
+                          const isMyReply = isOwnedByCurrentUser(rep.userId, rep.userName);
+                          const isEditingThisReply =
+                            editingReplyTarget?.commentId === item.id &&
+                            editingReplyTarget?.replyId === rep.id;
+
+                          return (
+                            <div key={rep.id} className="comment-reply-item">
+                              <div className="comment-reply-head">
+                                <strong>
+                                  {rep.userName}
+                                  {isMyReply && <b className="you-badge">You</b>}
+                                </strong>
+                                <small>
+                                  {formatFriendlyTime(rep.createdAt)}
+                                  {rep.updatedAt ? " · edited" : ""}
+                                </small>
+                              </div>
+
+                              {isEditingThisReply ? (
+                                <div className="comment-inline-editor">
+                                  <TextInput
+                                    value={editingReplyText}
+                                    onChange={(e) => {
+                                      setEditingReplyText(e.target.value);
+                                      setEditingReplyError(null);
+                                    }}
+                                    placeholder="Edit your reply…"
+                                  />
+                                  {editingReplyError && (
+                                    <div className="form-error" role="alert">
+                                      <Icon name="info" />
+                                      <span>{editingReplyError}</span>
+                                    </div>
+                                  )}
+                                  <div className="comment-inline-actions">
+                                    <Button
+                                      variant="primary"
+                                      onClick={() => handleSaveEditedReply(item.id, rep.id)}
+                                      disabled={!editingReplyText.trim()}
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button
+                                      variant="secondary"
+                                      onClick={() => {
+                                        setEditingReplyTarget(null);
+                                        setEditingReplyError(null);
+                                      }}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p>{rep.text}</p>
+                              )}
+
+                              {isMyReply && !isEditingThisReply && (
+                                <div className="comment-reply-actions">
+                                  <button
+                                    type="button"
+                                    className="comment-action-btn"
+                                    onClick={() => {
+                                      setEditingReplyTarget({ commentId: item.id, replyId: rep.id });
+                                      setEditingReplyText(rep.text);
+                                      setEditingReplyError(null);
+                                    }}
+                                  >
+                                    <Icon name="edit" /> Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="comment-action-btn danger"
+                                    onClick={() => handleDeleteReply(item.id, rep.id)}
+                                  >
+                                    <Icon name="trash" /> Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {replyingToCommentId === item.id && (
+                      <div className="comment-reply-composer">
+                        <TextInput
+                          value={replyText}
+                          onChange={(e) => {
+                            setReplyText(e.target.value);
+                            setReplyError(null);
+                          }}
+                          placeholder={`Reply to ${item.userName}…`}
+                        />
+                        {replyError && (
+                          <div className="form-error" role="alert">
+                            <Icon name="info" />
+                            <span>{replyError}</span>
+                          </div>
+                        )}
+                        <div className="comment-inline-actions">
+                          <Button
+                            variant="primary"
+                            onClick={() => handleAddReply(item.id)}
+                            disabled={!replyText.trim()}
+                          >
+                            Reply
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setReplyingToCommentId(null);
+                              setReplyError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      <div className="comment-composer-wrapper">
+        {commentError && (
+          <div className="comment-guideline-error" role="alert">
+            <Icon name="info" />
+            <span>{commentError}</span>
+          </div>
+        )}
+        <form className="comment-composer" onSubmit={handleAddComment}>
+          <input
+            ref={commentInputRef}
+            value={comment}
+            onChange={(event) => {
+              setComment(event.target.value);
+              if (commentError) setCommentError(null);
+            }}
+            placeholder={`Comment as ${cleanName}…`}
+            aria-label="Add a comment"
+          />
+          <Button type="submit" disabled={submittingComment}>
+            <Icon name="send" />
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 const fallbackMerchants: Merchant[] = DEFAULT_MERCHANTS;
