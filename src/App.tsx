@@ -37,6 +37,13 @@ import {
   createCommunityMessage,
   seedInitialDatabaseData,
   seedInitialUserData,
+  syncRegisteredAccount,
+  findRegisteredAccountByUid,
+  sendTrustedContactRequest,
+  sendTrustedContactRequestViaInviteLink,
+  listTrustedContactRequests,
+  respondToTrustedContactRequest,
+  deleteTrustedContactRequest,
   DEFAULT_GLOBE_USERS,
   DEFAULT_COMMUNITY_POSTS,
   DEFAULT_MERCHANTS,
@@ -44,6 +51,7 @@ import {
   DEFAULT_COMMUNITY_MESSAGES,
   type FirestoreCommunityPost,
   type FirestoreCommunityMessage,
+  type FirestoreTrustedContactRequest,
 } from "./firebase/firestore";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
@@ -80,7 +88,7 @@ type Screen =
 
 type Theme = "ocean" | "sunset" | "forest" | "lavender" | "peach" | "neutral";
 type Companion = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
-type ContactStatus = "none" | "accepted";
+type ContactStatus = "none" | "pending" | "accepted" | "rejected";
 type SubscriptionStatus = "free" | "trial" | "trialEnded" | "payg" | "monthly";
 type Persona = "gentle" | "friendly" | "calm";
 type RiskLevel = "low" | "moderate" | "high";
@@ -251,10 +259,85 @@ const personaOptions: { id: Persona; name: string; note: string; preview: string
   { id: "calm", name: "Calm & Thoughtful", note: "Reflective, patient, and composed", preview: "Let’s pause with what you’re feeling. Which part needs your attention first?" },
 ];
 
+export type TrustedInvitePayload = {
+  inviterUid: string;
+  inviterName: string;
+  inviterEmail: string;
+  inviterPhone?: string;
+};
+
+const PENDING_INVITE_STORAGE_KEY = "ony_pending_trusted_invite_v1";
+
+export function parseTrustedInviteFromUrl(rawInput?: string): TrustedInvitePayload | null {
+  try {
+    let searchStr = "";
+    if (rawInput !== undefined) {
+      const trimmed = rawInput.trim();
+      if (!trimmed) return null;
+      if (trimmed.includes("?")) {
+        searchStr = trimmed.slice(trimmed.indexOf("?"));
+      } else if (trimmed.includes("trustedInvite=")) {
+        searchStr = `?${trimmed}`;
+      } else {
+        return null;
+      }
+    } else if (typeof window !== "undefined") {
+      searchStr = window.location.search;
+    }
+    if (!searchStr) return null;
+    const params = new URLSearchParams(searchStr);
+    const inviterUid = (params.get("trustedInvite") || "").trim();
+    if (!inviterUid) return null;
+    const inviterName = (params.get("inviterName") || "ONY Friend").trim();
+    const inviterEmail = (params.get("inviterEmail") || "").trim();
+    const inviterPhone = (params.get("inviterPhone") || "").trim() || undefined;
+    return {
+      inviterUid,
+      inviterName,
+      inviterEmail,
+      inviterPhone,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function loadStoredPendingInvite(): TrustedInvitePayload | null {
+  try {
+    const fromUrl = parseTrustedInviteFromUrl();
+    if (fromUrl) {
+      sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, JSON.stringify(fromUrl));
+      return fromUrl;
+    }
+    const raw = sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as TrustedInvitePayload;
+    if (parsed && parsed.inviterUid) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredPendingInvite(invite: TrustedInvitePayload | null): void {
+  try {
+    if (!invite) {
+      sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
+    } else {
+      sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, JSON.stringify(invite));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 type AuthFlowProps = {
   theme: Theme;
   displayName: string;
   setDisplayName: (name: string) => void;
+  userPhone: string;
+  setUserPhone: (phone: string) => void;
+  pendingInvite?: TrustedInvitePayload | null;
   onComplete: () => void;
 };
 
@@ -266,6 +349,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [displayName, setDisplayName] = useState("Aina");
+  const [userPhone, setUserPhone] = useState("");
+  const [pendingInvite, setPendingInvite] = useState<TrustedInvitePayload | null>(() =>
+    loadStoredPendingInvite(),
+  );
   const [onboarding, setOnboarding] = useState(0);
   const [memoryConsent, setMemoryConsent] = useState("allow");
   const [useActiveMemories, setUseActiveMemories] = useState(true);
@@ -278,9 +365,12 @@ function App() {
   const [persona, setPersona] = useState<Persona>("gentle");
   const [soundOn, setSoundOn] = useState(false);
   const [volume, setVolume] = useState(55);
-  const [trustedName, setTrustedName] = useState("Alex");
+  const [trustedName, setTrustedName] = useState("Alex Tan");
+  const [trustedEmail, setTrustedEmail] = useState("alex@ony.app");
   const [trustedNumber, setTrustedNumber] = useState("012-345 6789");
   const [contactStatus, setContactStatus] = useState<ContactStatus>("none");
+  const [outgoingTrustedRequests, setOutgoingTrustedRequests] = useState<FirestoreTrustedContactRequest[]>([]);
+  const [incomingTrustedRequests, setIncomingTrustedRequests] = useState<FirestoreTrustedContactRequest[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [selectedMerchantName, setSelectedMerchantName] = useState("Ruang Rasa");
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
@@ -331,6 +421,45 @@ function App() {
   const back = () => { const prev = history[history.length - 1] || "main"; setHistory((h) => h.slice(0, -1)); setScreen(prev); };
   const notify = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
   const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); };
+
+  const handleSetPendingInvite = (nextInvite: TrustedInvitePayload | null) => {
+    setPendingInvite(nextInvite);
+    saveStoredPendingInvite(nextInvite);
+  };
+
+  // Detect ?trustedInvite=... link on load and hydrate inviter details if needed
+  useEffect(() => {
+    const fromUrl = parseTrustedInviteFromUrl();
+    if (fromUrl) {
+      handleSetPendingInvite(fromUrl);
+      if (typeof window !== "undefined" && window.location.search.includes("trustedInvite=")) {
+        const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!pendingInvite || (pendingInvite.inviterEmail && pendingInvite.inviterName !== "ONY Friend")) {
+      return;
+    }
+    let active = true;
+    findRegisteredAccountByUid(pendingInvite.inviterUid)
+      .then((acc) => {
+        if (active && acc) {
+          handleSetPendingInvite({
+            inviterUid: pendingInvite.inviterUid,
+            inviterName: acc.displayName || pendingInvite.inviterName,
+            inviterEmail: acc.email || pendingInvite.inviterEmail,
+            inviterPhone: acc.phoneNumber || pendingInvite.inviterPhone,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [pendingInvite?.inviterUid]);
 
   // Seed shared database collections (Globe, Community Posts, Merchants) and fetch live from Firestore
   useEffect(() => {
@@ -392,8 +521,23 @@ function App() {
         try {
           await seedInitialUserData(user.uid).catch((e) => console.warn("[ONY] User seed notice:", e));
           const profile = await getUserProfile(user.uid);
+          const resolvedName =
+            profile?.displayName || user.displayName || user.email?.split("@")[0] || "Friend";
+          const resolvedPhone = profile?.phoneNumber || "";
+          if (resolvedPhone) {
+            setUserPhone(resolvedPhone);
+          }
+          if (user.email) {
+            await syncRegisteredAccount({
+              uid: user.uid,
+              displayName: resolvedName,
+              email: user.email,
+              phoneNumber: resolvedPhone || undefined,
+            });
+          }
           if (profile) {
             if (profile.displayName) setDisplayName(profile.displayName);
+            if (profile.phoneNumber) setUserPhone(profile.phoneNumber);
             if (profile.theme) setTheme(profile.theme as Theme);
             if (profile.companion) setCompanion(profile.companion as Companion);
             if (profile.persona) setPersona(profile.persona as Persona);
@@ -479,6 +623,108 @@ function App() {
     return () => unsub();
   }, []);
 
+  // If the user opened an invite link from a friend, open the Trusted Contact screen automatically once signed in
+  useEffect(() => {
+    if (authenticated && pendingInvite) {
+      setOnboarding(9);
+      setScreen("trusted");
+    }
+  }, [authenticated, pendingInvite?.inviterUid]);
+
+  const effectiveUid = currentUser?.uid || "guest_local_user";
+  const effectiveEmail =
+    currentUser?.email || `${displayName.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "guest"}@ony.app`;
+
+  const refreshTrustedContactData = async () => {
+    try {
+      if (currentUser?.email) {
+        await syncRegisteredAccount({
+          uid: currentUser.uid,
+          displayName: displayName || currentUser.displayName || "ONY Member",
+          email: currentUser.email,
+          phoneNumber: userPhone || undefined,
+        });
+      }
+      const requests = await listTrustedContactRequests(effectiveUid, effectiveEmail).catch(() => ({
+        outgoing: [],
+        incoming: [],
+      }));
+      setOutgoingTrustedRequests(requests.outgoing);
+      setIncomingTrustedRequests(requests.incoming);
+
+      // Determine the user's own Emergency Contact:
+      // 1) Either a friend who clicked our invite link (`requestKind === "invite_link"`) and we ACCEPTED them
+      // 2) Or a direct invite we sent (`requestKind !== "invite_link"`)
+      const acceptedViaMyInviteLink = requests.incoming.find(
+        (r) => r.requestKind === "invite_link" && r.status === "accepted",
+      );
+      const directOutgoing = requests.outgoing.filter((r) => r.requestKind !== "invite_link");
+      const acceptedDirectOutgoing = directOutgoing.find((r) => r.status === "accepted");
+      const latestDirectOutgoing = directOutgoing[0];
+
+      if (acceptedViaMyInviteLink) {
+        setContactStatus("accepted");
+        setTrustedName(acceptedViaMyInviteLink.fromName);
+        setTrustedEmail(acceptedViaMyInviteLink.fromEmail);
+        if (acceptedViaMyInviteLink.contactPhone) {
+          setTrustedNumber(acceptedViaMyInviteLink.contactPhone);
+        }
+      } else if (acceptedDirectOutgoing) {
+        setContactStatus("accepted");
+        setTrustedName(acceptedDirectOutgoing.toName);
+        setTrustedEmail(acceptedDirectOutgoing.toEmail);
+        if (acceptedDirectOutgoing.contactPhone) {
+          setTrustedNumber(acceptedDirectOutgoing.contactPhone);
+        }
+      } else if (latestDirectOutgoing) {
+        setContactStatus(latestDirectOutgoing.status);
+        setTrustedName(latestDirectOutgoing.toName);
+        setTrustedEmail(latestDirectOutgoing.toEmail);
+        if (latestDirectOutgoing.contactPhone) {
+          setTrustedNumber(latestDirectOutgoing.contactPhone);
+        }
+      } else {
+        setContactStatus("none");
+      }
+    } catch (err) {
+      console.warn("[ONY Trusted Contact] Sync notice:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!authenticated) return;
+    void refreshTrustedContactData();
+    const timer = window.setInterval(() => {
+      void refreshTrustedContactData();
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [authenticated, currentUser?.uid, currentUser?.email, userPhone, screen, tab]);
+
+  const handleRespondToIncomingTrusted = async (
+    requestId: string,
+    decision: "accepted" | "rejected",
+    senderName: string,
+    requestKind?: "direct_invite" | "invite_link",
+  ) => {
+    try {
+      await respondToTrustedContactRequest(requestId, decision);
+      await refreshTrustedContactData();
+      if (decision === "accepted") {
+        notify(
+          requestKind === "invite_link"
+            ? `${senderName} is now your active Trusted Emergency Contact!`
+            : `You accepted ${senderName}’s Trusted Contact request`,
+        );
+      } else {
+        notify(`You declined ${senderName}’s request`);
+      }
+    } catch {
+      notify("Could not update request. Please try again.");
+    }
+  };
+
+  const pendingIncomingTrusted = incomingTrustedRequests.filter((r) => r.status === "pending");
+
   const handleLogout = async () => {
     try {
       await logoutUser();
@@ -511,6 +757,7 @@ function App() {
     if (nextStep >= 9 && currentUser) {
       await updateUserProfile(currentUser.uid, {
         displayName,
+        phoneNumber: userPhone || undefined,
         theme,
         companion,
         persona,
@@ -525,7 +772,17 @@ function App() {
   };
 
   if (!authenticated) {
-    return <AuthFlow theme={theme} displayName={displayName} setDisplayName={setDisplayName} onComplete={() => setAuthenticated(true)} />;
+    return (
+      <AuthFlow
+        theme={theme}
+        displayName={displayName}
+        setDisplayName={setDisplayName}
+        userPhone={userPhone}
+        setUserPhone={setUserPhone}
+        pendingInvite={pendingInvite}
+        onComplete={() => setAuthenticated(true)}
+      />
+    );
   }
 
   if (onboarding < 9) {
@@ -686,6 +943,66 @@ function App() {
         {screen === "main" ? (
           <>
             <main className="main-content">
+              {pendingIncomingTrusted.length > 0 && (
+                <div
+                  className="card"
+                  style={{
+                    margin: "12px 16px 0",
+                    padding: "12px 14px",
+                    border: "1px solid var(--accent, #e07a5f)",
+                    background: "var(--surface-strong, #fff8f5)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: "180px" }}>
+                      <span className="eyebrow">
+                        {pendingIncomingTrusted[0].requestKind === "invite_link"
+                          ? "Emergency Contact Request via Invite Link"
+                          : "Incoming Trusted Contact Request"}
+                      </span>
+                      <strong style={{ display: "block", fontSize: "14px", marginTop: "2px" }}>
+                        {pendingIncomingTrusted[0].fromName} ({pendingIncomingTrusted[0].fromEmail})
+                      </strong>
+                      <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
+                        {pendingIncomingTrusted[0].requestKind === "invite_link"
+                          ? `Clicked your invite link and requested to be your emergency contact${pendingIncomingTrusted[0].contactPhone ? ` · Phone: ${pendingIncomingTrusted[0].contactPhone}` : ""}.`
+                          : "Wants to add you as their Trusted Contact in ONY."}
+                      </small>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <Button
+                        variant="primary"
+                        onClick={() =>
+                          handleRespondToIncomingTrusted(
+                            pendingIncomingTrusted[0].id,
+                            "accepted",
+                            pendingIncomingTrusted[0].fromName,
+                            pendingIncomingTrusted[0].requestKind,
+                          )
+                        }
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          handleRespondToIncomingTrusted(
+                            pendingIncomingTrusted[0].id,
+                            "rejected",
+                            pendingIncomingTrusted[0].fromName,
+                            pendingIncomingTrusted[0].requestKind,
+                          )
+                        }
+                      >
+                        Reject
+                      </Button>
+                      <Button variant="ghost" onClick={() => navigate("trusted")}>
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                 if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                 const next = freeUsage + 1;
@@ -695,7 +1012,7 @@ function App() {
               {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
               {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} />}
               {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
-              {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
+              {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} pendingIncomingCount={pendingIncomingTrusted.length} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
             </main>
           </>
         ) : (
@@ -731,7 +1048,52 @@ function App() {
             {screen === "wellbeing" && <Wellbeing back={back} navigate={navigate} notify={notify} />}
             {screen === "professional" && <ProfessionalSupport back={back} navigate={navigate} />}
             {screen === "provider" && <ProviderDetail back={back} notify={notify} />}
-            {screen === "trusted" && <TrustedContact back={back} name={trustedName} number={trustedNumber} setName={setTrustedName} setNumber={setTrustedNumber} status={contactStatus} setStatus={setContactStatus} notify={notify} />}
+            {screen === "trusted" && (
+              <TrustedContact
+                back={back}
+                currentUid={effectiveUid}
+                currentName={displayName}
+                currentEmail={effectiveEmail}
+                currentPhone={userPhone}
+                setCurrentPhone={(nextPhone) => {
+                  setUserPhone(nextPhone);
+                  if (currentUser) {
+                    updateUserProfile(currentUser.uid, { phoneNumber: nextPhone }).catch(() => {});
+                    syncRegisteredAccount({
+                      uid: currentUser.uid,
+                      displayName: displayName || currentUser.displayName || "ONY Member",
+                      email: currentUser.email || effectiveEmail,
+                      phoneNumber: nextPhone,
+                    }).catch(() => {});
+                  }
+                }}
+                name={trustedName}
+                email={trustedEmail}
+                number={trustedNumber}
+                setName={setTrustedName}
+                setEmail={setTrustedEmail}
+                setNumber={setTrustedNumber}
+                status={contactStatus}
+                setStatus={setContactStatus}
+                outgoingRequests={outgoingTrustedRequests}
+                incomingRequests={incomingTrustedRequests}
+                pendingInvite={pendingInvite}
+                setPendingInvite={(inv) => {
+                  setPendingInvite(inv);
+                  if (!inv) {
+                    clearStoredTrustedInvite();
+                  } else {
+                    try {
+                      sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, JSON.stringify(inv));
+                    } catch {
+                      // ignore storage errors
+                    }
+                  }
+                }}
+                onRefresh={refreshTrustedContactData}
+                notify={notify}
+              />
+            )}
             {screen === "communityMember" && selectedCommunityUser && <CommunityMember back={back} user={selectedCommunityUser} notify={notify} />}
             {screen === "guidelines" && <CommunityGuidelines back={back} />}
             {screen === "chatHistory" && <ChatHistory back={back} navigate={navigate} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} folders={folders} setFolders={setFolders} selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} />}
@@ -749,7 +1111,15 @@ function App() {
   );
 }
 
-function AuthFlowContent({ theme, displayName, setDisplayName, onComplete }: AuthFlowProps) {
+function AuthFlowContent({
+  theme,
+  displayName,
+  setDisplayName,
+  userPhone,
+  setUserPhone,
+  pendingInvite,
+  onComplete,
+}: AuthFlowProps) {
   const [stage, setStage] = useState<"welcome" | "login" | "register" | "forgot" | "name" | "consent">("welcome");
   const [legal, setLegal] = useState<LegalDocumentId | null>(null);
   const [email, setEmail] = useState("");
@@ -793,6 +1163,9 @@ function AuthFlowContent({ theme, displayName, setDisplayName, onComplete }: Aut
   const handleRegisterStage1 = (event: FormEvent) => {
     event.preventDefault();
     if (!validEmail) return setError("Enter a valid email address.");
+    if (!userPhone.trim() || userPhone.trim().length < 6) {
+      return setError("Please enter a valid phone number so it can be saved for emergency contact.");
+    }
     if (password.length < 6) return setError("Password must be at least 6 characters.");
     if (password !== confirmPassword) return setError("Passwords do not match.");
     setError("");
@@ -802,6 +1175,9 @@ function AuthFlowContent({ theme, displayName, setDisplayName, onComplete }: Aut
   const handleNameStage = (event: FormEvent) => {
     event.preventDefault();
     if (displayName.trim().length < 2) return setError("Enter a display name with at least 2 characters.");
+    if (!userPhone.trim() || userPhone.trim().length < 6) {
+      return setError("Please enter a valid emergency phone number.");
+    }
     setError("");
     setStage("consent");
   };
@@ -811,7 +1187,7 @@ function AuthFlowContent({ theme, displayName, setDisplayName, onComplete }: Aut
     setLoading(true);
     setError("");
     try {
-      await registerWithEmailPassword(email, password, displayName);
+      await registerWithEmailPassword(email, password, displayName, userPhone.trim());
       onComplete();
     } catch (err) {
       setError(translateFirebaseError(err));
@@ -840,11 +1216,30 @@ function AuthFlowContent({ theme, displayName, setDisplayName, onComplete }: Aut
   return <div className={`app-shell theme-${theme}`}><div className="phone auth-phone"><div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
     <section className="auth-page">
       <div className="auth-brand"><img src={logo} alt="Official ONY logo" /><span className="secure-badge"><Icon name="shield" />Secure Firebase Auth</span></div>
+      {pendingInvite && (
+        <div
+          className="card"
+          style={{
+            marginBottom: "12px",
+            padding: "12px 14px",
+            border: "1px solid var(--accent, #e07a5f)",
+            background: "var(--surface-strong, #fff8f5)",
+          }}
+        >
+          <span className="eyebrow">Trusted Contact Invite Link</span>
+          <strong style={{ display: "block", marginTop: "2px" }}>
+            {pendingInvite.inviterName} invited you to be their Emergency Contact
+          </strong>
+          <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
+            Log in or create an ONY account to send your request to {pendingInvite.inviterName}.
+          </small>
+        </div>
+      )}
       {stage === "welcome" && <div className="auth-panel welcome-panel"><span className="eyebrow">Welcome to ONY</span><h1>A gentle space that starts with you.</h1><p>Private reflection, supportive conversation, and practical resources—at your pace.</p><Button className="full" onClick={() => setStage("register")}>Create account</Button><Button className="full" variant="secondary" onClick={() => setStage("login")}>Log in</Button><Button className="full" variant="ghost" onClick={onComplete}>Continue as guest (local only)</Button><small>Sign in to safely persist your reflections, check-ins, and personal settings.</small></div>}
       {stage === "login" && <form className="auth-panel" onSubmit={handleLogin}><div className="auth-heading"><Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}><Icon name="back" />Back</Button><span className="eyebrow">Welcome back</span></div><h1>Log in to ONY</h1><p className="muted">Your private space is secured with Firebase Authentication.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /><label className="field-label">Password</label><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="current-password" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit" disabled={loading}>{loading ? "Signing in…" : "Log in"}</Button><Button variant="ghost" className="full" onClick={() => { setStage("forgot"); setError(""); }}>Forgot password?</Button></form>}
-      {stage === "register" && <form className="auth-panel" onSubmit={handleRegisterStage1}><div className="auth-heading"><Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}><Icon name="back" />Back</Button><span className="eyebrow">Create your space</span></div><h1>Create an ONY account</h1><p className="muted">Start your journey with private reflections and secure cloud backup.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /><label className="field-label">Password</label><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="new-password" /><label className="field-label">Confirm password</label><TextInput type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit" disabled={loading}>Continue</Button></form>}
+      {stage === "register" && <form className="auth-panel" onSubmit={handleRegisterStage1}><div className="auth-heading"><Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}><Icon name="back" />Back</Button><span className="eyebrow">Create your space</span></div><h1>Create an ONY account</h1><p className="muted">Start your journey with private reflections and secure cloud backup.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /><label className="field-label">Phone number (saved for emergency contact)</label><TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" /><label className="field-label">Password</label><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="new-password" /><label className="field-label">Confirm password</label><TextInput type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit" disabled={loading}>Continue</Button></form>}
       {stage === "forgot" && <form className="auth-panel" onSubmit={handleForgotPassword}><Button variant="ghost" className="auth-back" onClick={() => setStage("login")}><Icon name="back" />Back</Button><span className="eyebrow">Account access</span><h1>Reset your password</h1><p className="muted">We will send a secure reset link to your email via Firebase Auth.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />{error && <div className="form-error"><Icon name="info" />{error}</div>}{notice ? <div className="form-success"><Icon name="check" />{notice}</div> : <Button className="full" type="submit" disabled={loading}>{loading ? "Sending reset link…" : "Send reset link"}</Button>}</form>}
-      {stage === "name" && <form className="auth-panel" onSubmit={handleNameStage}><span className="eyebrow">Your public name</span><h1>What should ONY call you?</h1><p className="muted">Use a preferred display name. Your legal or full name is not required.</p><label className="field-label">Display name</label><TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit">Continue</Button></form>}
+      {stage === "name" && <form className="auth-panel" onSubmit={handleNameStage}><span className="eyebrow">Your profile details</span><h1>What should ONY call you?</h1><p className="muted">Use a preferred display name and confirm your phone number for emergency support.</p><label className="field-label">Display name</label><TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} /><label className="field-label">Emergency contact phone number</label><TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit">Continue</Button></form>}
       {stage === "consent" && <div className="auth-panel consent-panel"><span className="eyebrow">Before you continue</span><h1>Understand ONY’s role.</h1><p>ONY is an AI-based emotional-support and reflection tool. It is not a psychologist, therapist, medical professional, or emergency service. AI responses may be inaccurate.</p><div className="legal-links"><Button variant="secondary" onClick={() => setLegal("disclaimer")}>Disclaimer & AI limitations</Button><Button variant="secondary" onClick={() => setLegal("terms")}>Terms & Conditions</Button><Button variant="secondary" onClick={() => setLegal("privacy")}>Privacy Policy</Button><Button variant="secondary" onClick={() => setLegal("crisis")}>Crisis information</Button></div><label className="check-row consent-check"><TextInput type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>I have read and accept the draft Terms and Privacy Policy, and understand ONY’s limitations.</span></label>{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" disabled={!accepted || loading} onClick={handleCompleteRegistration}>{loading ? "Creating space…" : "Accept and create space"}</Button><small>Draft documents require legal, privacy, and clinical-safety review before launch.</small></div>}
     </section>
   </div></div>;
@@ -2337,11 +2732,20 @@ function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: 
   return <div className="voucher-page"><PageHeader title="Voucher Redeemed!" subtitle="Mock redemption confirmation" back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">Your voucher is ready to use</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-DEMO-{merchant.name.slice(0, 2).toUpperCase()}</div><div className="barcode">|||| || ||| | |||| |||</div><small>Sample only · not valid for real redemption</small></div><div className="community-note"><Icon name="info" />Present this code only as part of the ONY prototype demonstration.</div><Button className="full" onClick={back}>Done</Button></section></div>;
 }
 
-function Profile({ navigate, displayName, language, persona, theme, companion, trustedName, contactStatus, subscriptionStatus, onLogout }: {
+function Profile({ navigate, displayName, language, persona, theme, companion, trustedName, contactStatus, pendingIncomingCount = 0, subscriptionStatus, onLogout }: {
   navigate: (s: Screen) => void; displayName: string; language: string; persona: Persona; theme: Theme; companion: Companion; trustedName: string;
-  contactStatus: ContactStatus; subscriptionStatus: SubscriptionStatus; onLogout: () => void;
+  contactStatus: ContactStatus; pendingIncomingCount?: number; subscriptionStatus: SubscriptionStatus; onLogout: () => void;
 }) {
-  const contactLabel = contactStatus === "accepted" ? `${trustedName} · Saved` : "No trusted contact saved";
+  const contactLabel =
+    pendingIncomingCount > 0
+      ? `${pendingIncomingCount} incoming request${pendingIncomingCount > 1 ? "s" : ""} to review`
+      : contactStatus === "accepted"
+        ? `${trustedName} · Accepted`
+        : contactStatus === "pending"
+          ? `${trustedName} · Pending approval`
+          : contactStatus === "rejected"
+            ? `${trustedName} · Request declined`
+            : "No trusted contact connected";
   const subscriptionLabel = subscriptionStatus === "trial"
     ? "ONY Premium Trial · 2 days remaining"
     : subscriptionStatus === "payg"
@@ -2615,17 +3019,814 @@ function ProviderDetail({ back, notify }: { back: () => void; notify: (s: string
   </section></>;
 }
 
-function TrustedContact({ back, name, number, setName, setNumber, status, setStatus, notify }: {
-  back: () => void; name: string; number: string; setName: (v: string) => void; setNumber: (v: string) => void;
-  status: ContactStatus; setStatus: (status: ContactStatus) => void; notify: (s: string) => void;
+function TrustedContact({
+  back,
+  currentUid,
+  currentName,
+  currentEmail,
+  currentPhone,
+  setCurrentPhone,
+  name,
+  email,
+  number,
+  setName,
+  setEmail,
+  setNumber,
+  status,
+  setStatus,
+  outgoingRequests,
+  incomingRequests,
+  pendingInvite,
+  setPendingInvite,
+  onRefresh,
+  notify,
+}: {
+  back: () => void;
+  currentUid: string;
+  currentName: string;
+  currentEmail: string;
+  currentPhone: string;
+  setCurrentPhone: (v: string) => void;
+  name: string;
+  email: string;
+  number: string;
+  setName: (v: string) => void;
+  setEmail: (v: string) => void;
+  setNumber: (v: string) => void;
+  status: ContactStatus;
+  setStatus: (status: ContactStatus) => void;
+  outgoingRequests: FirestoreTrustedContactRequest[];
+  incomingRequests: FirestoreTrustedContactRequest[];
+  pendingInvite: TrustedInvitePayload | null;
+  setPendingInvite: (inv: TrustedInvitePayload | null) => void;
+  onRefresh: () => Promise<void>;
+  notify: (s: string) => void;
 }) {
   const [callState, setCallState] = useState<"idle" | "calling" | "message">("idle");
-  if (callState !== "idle") return <div className="centered-state trusted-state"><div className={`call-pulse ${callState}`}><Icon name={callState === "calling" ? "profile" : "send"} /></div><span className="eyebrow">Simulated demo</span><h1>{callState === "calling" ? `Calling ${name}…` : `Message sent to ${name}`}</h1><p>{callState === "calling" ? "No real call is being placed." : "“I could use someone to talk to. Are you free?”"}</p><Button onClick={() => setCallState("idle")}>{callState === "calling" ? "End simulated call" : "Done"}</Button></div>;
-  return <><PageHeader title="Trusted contact" subtitle="Your optional safety support" back={back} /><section className="page-pad">
-    {status !== "accepted" ? <><div className="help-hero"><Icon name="profile" /><div><h2>Choose someone you can contact.</h2><p>This saves a prototype contact shortcut only. ONY will never contact them automatically.</p></div></div><label className="field-label">Contact name</label><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Someone you trust" /><label className="field-label">Phone number</label><TextInput value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Enter a number" /><Button className="full" disabled={!name.trim() || !number.trim()} onClick={() => { setStatus("accepted"); notify("Trusted contact saved in this demo"); }}>Save trusted contact</Button></> :
-      <><div className="trusted-card connected"><span className="trusted-avatar">{name[0]}</span><span className="status-pill accepted">Saved contact</span><h1>{name}</h1><p>{number}</p><div className="trusted-actions"><Button onClick={() => setCallState("calling")}>Simulate call</Button><Button variant="secondary" onClick={() => setCallState("message")}>Simulate message</Button></div></div><Button className="full" variant="secondary" onClick={() => setStatus("none")}>Edit contact</Button><Button className="full" variant="danger" onClick={() => { setStatus("none"); setName(""); setNumber(""); notify("Trusted contact removed"); }}>Remove contact</Button></>}
-    <p className="disclaimer"><Icon name="info" />No call, message, location, or personal data is sent. Real contact actions require explicit consent and platform integrations.</p>
-  </section></>;
+  const [recipientIdentifier, setRecipientIdentifier] = useState(email || "");
+  const [relationshipNote, setRelationshipNote] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+
+  // Invite link state
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [pasteLinkInput, setPasteLinkInput] = useState("");
+  const [showPasteLink, setShowPasteLink] = useState(false);
+  const [inviteFriendPhone, setInviteFriendPhone] = useState(currentPhone || "");
+  const [inviteFriendNote, setInviteFriendNote] = useState("");
+  const [inviteLinkError, setInviteLinkError] = useState<string | null>(null);
+  const [editingMyPhone, setEditingMyPhone] = useState(false);
+  const [myPhoneDraft, setMyPhoneDraft] = useState(currentPhone || "");
+
+  useEffect(() => {
+    if (currentPhone && !inviteFriendPhone) {
+      setInviteFriendPhone(currentPhone);
+    }
+    if (currentPhone && !myPhoneDraft) {
+      setMyPhoneDraft(currentPhone);
+    }
+  }, [currentPhone]);
+
+  // Separate direct requests vs invite-link requests:
+  // - If a friend clicked YOUR invite link (`requestKind === "invite_link"`), they are `fromUid` and you are `toUid` (so it appears in `incomingRequests`). When YOU accept it, they become YOUR emergency contact!
+  // - If YOU clicked a friend's invite link (`requestKind === "invite_link"`), you are `fromUid` and they are `toUid` (so it appears in `outgoingRequests`). When THEY accept it, you support THEM!
+  const directOutgoing = outgoingRequests.filter((r) => r.requestKind !== "invite_link");
+  const activeDirectOutgoing = directOutgoing[0] || null;
+  const inviteLinkOutgoing = outgoingRequests.filter((r) => r.requestKind === "invite_link");
+  const acceptedViaMyInviteLink =
+    incomingRequests.find((r) => r.requestKind === "invite_link" && r.status === "accepted") || null;
+
+  const pendingIncoming = incomingRequests.filter((r) => r.status === "pending");
+  const peopleYouSupport = [
+    ...incomingRequests
+      .filter((r) => r.requestKind !== "invite_link" && r.status === "accepted")
+      .map((r) => ({
+        id: r.id,
+        personName: r.fromName,
+        personEmail: r.fromEmail,
+        personPhone: r.contactPhone,
+        via: "Direct invite",
+      })),
+    ...inviteLinkOutgoing
+      .filter((r) => r.status === "accepted")
+      .map((r) => ({
+        id: r.id,
+        personName: r.toName,
+        personEmail: r.toEmail,
+        personPhone: r.contactPhone,
+        via: "Via invite link",
+      })),
+  ];
+
+  // Build personal shareable invite link
+  const inviteLinkUrl = (() => {
+    const base = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "https://ony.app/";
+    const params = new URLSearchParams();
+    params.set("inviteTrusted", currentUid);
+    params.set("inviterName", currentName);
+    params.set("inviterEmail", currentEmail);
+    if (currentPhone) {
+      params.set("inviterPhone", currentPhone);
+    }
+    return `${base}?${params.toString()}`;
+  })();
+
+  const handleCopyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLinkUrl);
+      setCopiedInvite(true);
+      notify("Invite link copied! Share it with your friend.");
+      window.setTimeout(() => setCopiedInvite(false), 3000);
+    } catch {
+      notify("Invite link ready below — copy and share it with your friend.");
+    }
+  };
+
+  const handleShareInviteLink = async () => {
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: `${currentName} invited you to be their Trusted Emergency Contact on ONY`,
+          text: `Click this link to request to be ${currentName}’s Trusted Emergency Contact on ONY:`,
+          url: inviteLinkUrl,
+        });
+        return;
+      } catch {
+        // Fallback to copy
+      }
+    }
+    await handleCopyInviteLink();
+  };
+
+  const handleParsePastedLink = (e: FormEvent) => {
+    e.preventDefault();
+    setInviteLinkError(null);
+    const raw = pasteLinkInput.trim();
+    if (!raw) return;
+    try {
+      const url = raw.startsWith("http")
+        ? new URL(raw)
+        : new URL(raw.startsWith("?") ? raw : `?${raw}`, window.location.origin);
+      const inviterUid = url.searchParams.get("inviteTrusted")?.trim();
+      const inviterName = url.searchParams.get("inviterName")?.trim() || "ONY Friend";
+      const inviterEmail = url.searchParams.get("inviterEmail")?.trim() || "";
+      const inviterPhone = url.searchParams.get("inviterPhone")?.trim() || "";
+      if (!inviterUid) {
+        setInviteLinkError("Invalid invite link. Please paste a full ONY Trusted Contact invite link.");
+        return;
+      }
+      setPendingInvite({
+        inviterUid,
+        inviterName,
+        inviterEmail,
+        inviterPhone: inviterPhone || undefined,
+      });
+      setPasteLinkInput("");
+      setShowPasteLink(false);
+      notify(`Opened invite link from ${inviterName}`);
+    } catch {
+      setInviteLinkError("Could not read that invite link. Please paste the full link shared by your friend.");
+    }
+  };
+
+  const handleRequestViaInviteLink = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!pendingInvite) return;
+    setInviteLinkError(null);
+    const phoneToUse = (inviteFriendPhone || currentPhone).trim();
+    if (!phoneToUse) {
+      setInviteLinkError("Please enter your emergency contact phone number so your friend can reach you.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (phoneToUse !== currentPhone) {
+        setCurrentPhone(phoneToUse);
+      }
+      const created = await sendTrustedContactRequestViaInviteLink({
+        friendUid: currentUid,
+        friendName: currentName,
+        friendEmail: currentEmail,
+        friendPhone: phoneToUse,
+        inviterUid: pendingInvite.inviterUid,
+        inviterName: pendingInvite.inviterName,
+        inviterEmail: pendingInvite.inviterEmail,
+        relationshipNote:
+          inviteFriendNote.trim() ||
+          `I clicked your invite link and requested to be your emergency contact.`,
+      });
+      setPendingInvite(null);
+      setInviteFriendNote("");
+      await onRefresh();
+      notify(`Request sent to ${created.toName}! They can now accept or reject in their app.`);
+    } catch (err: any) {
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      if (rawMsg.includes("SELF_REQUEST")) {
+        setInviteLinkError(
+          "This is your own invite link! Share this link with a friend so they can log into their account and request to be your emergency contact.",
+        );
+      } else {
+        setInviteLinkError("Could not send request from invite link. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendRequest = async (e: FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const trimmedTarget = recipientIdentifier.trim();
+    if (!trimmedTarget) {
+      setFormError("Please enter the email address or display name of your friend’s ONY account.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const created = await sendTrustedContactRequest({
+        fromUid: currentUid,
+        fromName: currentName,
+        fromEmail: currentEmail,
+        targetEmailOrName: trimmedTarget,
+        contactPhone: number.trim(),
+        relationshipNote: relationshipNote.trim(),
+      });
+      setName(created.toName);
+      setEmail(created.toEmail);
+      if (created.contactPhone) {
+        setNumber(created.contactPhone);
+      }
+      setStatus("pending");
+      await onRefresh();
+      notify(`Request sent to ${created.toName} (${created.toEmail})`);
+    } catch (err: any) {
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      if (rawMsg.includes("ACCOUNT_NOT_FOUND")) {
+        setFormError(
+          `No registered ONY account found for "${trimmedTarget}". You can also copy your Invite Link above and share it with your friend!`,
+        );
+      } else if (rawMsg.includes("SELF_REQUEST")) {
+        setFormError("You cannot send a trusted contact request to your own account.");
+      } else {
+        setFormError("Could not send request right now. Please verify the account details and try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDecision = async (
+    req: FirestoreTrustedContactRequest,
+    decision: "accepted" | "rejected",
+  ) => {
+    setRespondingId(req.id);
+    try {
+      await respondToTrustedContactRequest(req.id, decision);
+      await onRefresh();
+      if (decision === "accepted") {
+        notify(
+          req.requestKind === "invite_link"
+            ? `${req.fromName} is now your active Trusted Emergency Contact!`
+            : `Accepted ${req.fromName}’s trusted contact request`,
+        );
+      } else {
+        notify(`Declined request from ${req.fromName}`);
+      }
+    } catch {
+      notify("Failed to update request status");
+    } finally {
+      setRespondingId(null);
+    }
+  };
+
+  const handleCancelOrRemoveActiveContact = async () => {
+    const targetReq = acceptedViaMyInviteLink || activeDirectOutgoing;
+    if (!targetReq) {
+      setStatus("none");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await deleteTrustedContactRequest(targetReq.id);
+      setStatus("none");
+      await onRefresh();
+      notify("Trusted contact removed");
+    } catch {
+      notify("Could not remove trusted contact");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (callState !== "idle") {
+    return (
+      <div className="centered-state trusted-state">
+        <div className={`call-pulse ${callState}`}>
+          <Icon name={callState === "calling" ? "profile" : "send"} />
+        </div>
+        <span className="eyebrow">Connected Trusted Contact</span>
+        <h1>{callState === "calling" ? `Calling ${name}…` : `Message sent to ${name}`}</h1>
+        <p>{callState === "calling" ? `Dialing emergency number ${number || "saved on file"} (simulated demo call).` : "“I could use someone to talk to. Are you free?”"}</p>
+        <Button onClick={() => setCallState("idle")}>{callState === "calling" ? "End simulated call" : "Done"}</Button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Trusted contact"
+        subtitle="Emergency contact invite link & requests"
+        back={back}
+        action={
+          <Button variant="ghost" onClick={() => void onRefresh()}>
+            Refresh
+          </Button>
+        }
+      />
+      <section className="page-pad">
+        {/* 0. Your Saved Emergency Phone Number */}
+        <div className="card" style={{ marginBottom: "14px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+            <div>
+              <span className="eyebrow">Your Account & Emergency Phone</span>
+              <strong style={{ display: "block", fontSize: "14px", marginTop: "2px" }}>
+                {currentName} ({currentEmail})
+              </strong>
+              <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
+                Saved emergency number: <strong>{currentPhone || "Not set yet"}</strong>
+              </small>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMyPhoneDraft(currentPhone || "");
+                setEditingMyPhone((prev) => !prev);
+              }}
+            >
+              {editingMyPhone ? "Cancel" : currentPhone ? "Edit Phone" : "Add Phone"}
+            </Button>
+          </div>
+          {editingMyPhone && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!myPhoneDraft.trim()) return;
+                setCurrentPhone(myPhoneDraft.trim());
+                setInviteFriendPhone(myPhoneDraft.trim());
+                setEditingMyPhone(false);
+                notify("Emergency phone number saved to your profile");
+              }}
+              style={{ marginTop: "10px", display: "flex", gap: "8px" }}
+            >
+              <TextInput
+                type="tel"
+                value={myPhoneDraft}
+                onChange={(e) => setMyPhoneDraft(e.target.value)}
+                placeholder="e.g. 012-345 6789"
+              />
+              <Button type="submit" disabled={!myPhoneDraft.trim()}>
+                Save
+              </Button>
+            </form>
+          )}
+        </div>
+
+        {/* 1. If the user clicked a friend's Invite Link, show the prompt to request to be their Emergency Contact */}
+        {pendingInvite && (
+          <div
+            className="card"
+            style={{
+              marginBottom: "16px",
+              border: "2px solid var(--accent, #e07a5f)",
+              background: "var(--surface-strong, #fff8f5)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+              <span className="eyebrow">Invite Link Opened</span>
+              <Button variant="ghost" onClick={() => setPendingInvite(null)}>
+                Dismiss
+              </Button>
+            </div>
+            <h3 style={{ margin: "4px 0 6px" }}>
+              Request to be {pendingInvite.inviterName}’s Emergency Contact
+            </h3>
+            <p className="muted" style={{ marginBottom: "12px" }}>
+              <strong>{pendingInvite.inviterName}</strong> {pendingInvite.inviterEmail ? `(${pendingInvite.inviterEmail})` : ""} shared an invite link with you. Send a request below so {pendingInvite.inviterName} can accept or reject you as their Trusted Emergency Contact.
+            </p>
+            <form onSubmit={handleRequestViaInviteLink}>
+              <label className="field-label">Your emergency phone number (shared with {pendingInvite.inviterName})</label>
+              <TextInput
+                type="tel"
+                value={inviteFriendPhone}
+                onChange={(e) => {
+                  setInviteFriendPhone(e.target.value);
+                  setInviteLinkError(null);
+                }}
+                placeholder="e.g. 012-345 6789"
+              />
+              <label className="field-label">
+                Message to {pendingInvite.inviterName} <small>Optional</small>
+              </label>
+              <TextInput
+                value={inviteFriendNote}
+                onChange={(e) => setInviteFriendNote(e.target.value)}
+                placeholder={`Hi ${pendingInvite.inviterName}, I clicked your invite link to be your emergency contact.`}
+              />
+              {inviteLinkError && (
+                <div className="form-error" style={{ marginTop: "8px", marginBottom: "8px" }}>
+                  <Icon name="info" />
+                  <span>{inviteLinkError}</span>
+                </div>
+              )}
+              <Button className="full" type="submit" disabled={submitting} style={{ marginTop: "8px" }}>
+                {submitting
+                  ? "Sending Request…"
+                  : `Request to be ${pendingInvite.inviterName}’s Emergency Contact`}
+              </Button>
+            </form>
+          </div>
+        )}
+
+        {/* 2. Share Your Invite Link Card */}
+        <div className="card" style={{ marginBottom: "16px" }}>
+          <div className="card-title">
+            <h3>Invite a Friend via Link</h3>
+            <span className="prototype-label">Shareable Link</span>
+          </div>
+          <p className="muted" style={{ marginTop: "4px", marginBottom: "10px" }}>
+            Share this link with a friend. When your friend clicks the link, they can request to become your emergency contact, and you can accept or reject their request right here.
+          </p>
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: "12px",
+              background: "var(--surface, #f7f4f0)",
+              border: "1px solid var(--line)",
+              fontSize: "12px",
+              wordBreak: "break-all",
+              color: "var(--text)",
+              marginBottom: "10px",
+              userSelect: "all",
+            }}
+          >
+            {inviteLinkUrl}
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <Button className="full" onClick={() => void handleCopyInviteLink()}>
+              <Icon name="check" /> {copiedInvite ? "Invite Link Copied!" : "Copy Invite Link"}
+            </Button>
+            <Button variant="secondary" className="full" onClick={() => void handleShareInviteLink()}>
+              Share Invite Link
+            </Button>
+            <Button
+              variant="ghost"
+              className="full"
+              onClick={() => setShowPasteLink((prev) => !prev)}
+            >
+              {showPasteLink ? "Hide Paste Invite Link" : "Have a friend’s invite link? Paste it here"}
+            </Button>
+          </div>
+
+          {showPasteLink && (
+            <form onSubmit={handleParsePastedLink} style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
+              <label className="field-label">Paste a friend’s ONY Invite Link</label>
+              <TextInput
+                value={pasteLinkInput}
+                onChange={(e) => {
+                  setPasteLinkInput(e.target.value);
+                  setInviteLinkError(null);
+                }}
+                placeholder="Paste https://.../?inviteTrusted=... link here"
+              />
+              {inviteLinkError && (
+                <div className="form-error" style={{ marginTop: "8px" }}>
+                  <Icon name="info" />
+                  <span>{inviteLinkError}</span>
+                </div>
+              )}
+              <Button className="full" type="submit" disabled={!pasteLinkInput.trim()} style={{ marginTop: "8px" }}>
+                Open Friend’s Invite Link
+              </Button>
+            </form>
+          )}
+        </div>
+
+        {/* 3. Incoming Requests Section (For when a friend clicks your invite link OR sends you a direct request) */}
+        <div className="card" style={{ marginBottom: "16px" }}>
+          <div className="card-title">
+            <h3>Requests for Your Approval</h3>
+            <span>{pendingIncoming.length} pending</span>
+          </div>
+          <p className="muted" style={{ marginTop: "4px", marginBottom: "12px" }}>
+            When a friend clicks your invite link and requests to be your emergency contact (or when another user invites you), you can accept or reject their request here.
+          </p>
+
+          {pendingIncoming.length === 0 ? (
+            <div className="community-note" style={{ marginBottom: peopleYouSupport.length > 0 ? "12px" : 0 }}>
+              <Icon name="info" />
+              <span>No pending requests waiting for your approval right now.</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "12px" }}>
+              {pendingIncoming.map((req) => {
+                const isFromMyInviteLink = req.requestKind === "invite_link";
+                return (
+                  <div
+                    key={req.id}
+                    style={{
+                      padding: "12px",
+                      borderRadius: "14px",
+                      border: "1px solid var(--line)",
+                      background: "var(--surface-strong, #fff)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span className="trusted-avatar" style={{ width: "38px", height: "38px", fontSize: "15px" }}>
+                        {req.fromName[0]?.toUpperCase() || "O"}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ display: "block" }}>{req.fromName}</strong>
+                        <small style={{ color: "var(--muted)", display: "block" }}>
+                          {req.fromEmail} {req.contactPhone ? `· Emergency Phone: ${req.contactPhone}` : ""}
+                        </small>
+                        <small style={{ color: "var(--accent, #e07a5f)", display: "block", fontWeight: 600, marginTop: "2px" }}>
+                          {isFromMyInviteLink
+                            ? "Clicked your invite link · Wants to be your Emergency Contact"
+                            : "Wants to add you as their Trusted Contact"}
+                        </small>
+                      </div>
+                      <span className="prototype-label">Pending</span>
+                    </div>
+                    {req.relationshipNote && (
+                      <p style={{ margin: "8px 0 0", fontSize: "13px", fontStyle: "italic" }}>
+                        “{req.relationshipNote}”
+                      </p>
+                    )}
+                    <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                      <Button
+                        className="full"
+                        disabled={respondingId === req.id}
+                        onClick={() => void handleDecision(req, "accepted")}
+                      >
+                        <Icon name="check" /> {isFromMyInviteLink ? "Accept as My Emergency Contact" : "Accept Request"}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        className="full"
+                        disabled={respondingId === req.id}
+                        onClick={() => void handleDecision(req, "rejected")}
+                      >
+                        <Icon name="close" /> Reject
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {inviteLinkOutgoing.filter((r) => r.status === "pending").length > 0 && (
+            <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
+              <small style={{ fontWeight: 700, display: "block", marginBottom: "8px" }}>
+                Invite Link Requests You Sent (Waiting for friend to accept)
+              </small>
+              {inviteLinkOutgoing
+                .filter((r) => r.status === "pending")
+                .map((req) => (
+                  <div
+                    key={req.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      padding: "8px 0",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ display: "block", fontSize: "13px" }}>
+                        To {req.toName} ({req.toEmail})
+                      </strong>
+                      <small style={{ color: "var(--muted)" }}>
+                        Requested via invite link · Waiting for {req.toName}’s approval
+                      </small>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        await deleteTrustedContactRequest(req.id);
+                        await onRefresh();
+                        notify("Cancelled invite link request");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {peopleYouSupport.length > 0 && (
+            <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
+              <small style={{ fontWeight: 700, display: "block", marginBottom: "8px" }}>
+                People You Support as an Emergency Contact ({peopleYouSupport.length})
+              </small>
+              {peopleYouSupport.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    padding: "8px 0",
+                  }}
+                >
+                  <div>
+                    <strong style={{ display: "block", fontSize: "13px" }}>{item.personName}</strong>
+                    <small style={{ color: "var(--muted)" }}>
+                      {item.personEmail} · {item.via} · Accepted
+                    </small>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={async () => {
+                      await deleteTrustedContactRequest(item.id);
+                      await onRefresh();
+                      notify(`Removed ${item.personName}`);
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 4. Your Active Emergency Contact or Direct Invite Form */}
+        {status === "none" && (
+          <form onSubmit={handleSendRequest}>
+            <div className="help-hero">
+              <Icon name="profile" />
+              <div>
+                <h2>Or Invite Directly by Email / Name</h2>
+                <p>
+                  Know your friend’s registered ONY email or display name? Send them a request directly so they can accept or reject it in their app.
+                </p>
+              </div>
+            </div>
+
+            <label className="field-label">Friend’s ONY Account Email or Display Name</label>
+            <TextInput
+              value={recipientIdentifier}
+              onChange={(e) => {
+                setRecipientIdentifier(e.target.value);
+                setFormError(null);
+              }}
+              placeholder="Enter your friend’s email or display name"
+            />
+
+            <label className="field-label">
+              Emergency phone number <small>(Optional if saved on their account)</small>
+            </label>
+            <TextInput
+              type="tel"
+              value={number}
+              onChange={(e) => {
+                setNumber(e.target.value);
+                setFormError(null);
+              }}
+              placeholder="e.g. 012-345 6789"
+            />
+
+            <label className="field-label">
+              Note to recipient <small>Optional</small>
+            </label>
+            <TextInput
+              value={relationshipNote}
+              onChange={(e) => setRelationshipNote(e.target.value)}
+              placeholder="Hi, I’d like to add you as my trusted emergency contact on ONY."
+            />
+
+            {formError && (
+              <div className="form-error" style={{ marginTop: "10px", marginBottom: "10px" }}>
+                <Icon name="info" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <Button
+              className="full"
+              type="submit"
+              disabled={submitting || !recipientIdentifier.trim()}
+            >
+              {submitting ? "Sending request…" : "Send Trusted Contact Request"}
+            </Button>
+          </form>
+        )}
+
+        {status === "pending" && activeDirectOutgoing && (
+          <div className="card">
+            <div className="trusted-card">
+              <span className="trusted-avatar">{activeDirectOutgoing.toName[0]?.toUpperCase() || "T"}</span>
+              <span className="prototype-label">Request Pending · Waiting for Recipient</span>
+              <h1>{activeDirectOutgoing.toName}</h1>
+              <p style={{ margin: "4px 0" }}>
+                <strong>ONY Account:</strong> {activeDirectOutgoing.toEmail}
+              </p>
+              {activeDirectOutgoing.contactPhone && (
+                <p style={{ margin: "2px 0" }}>
+                  <strong>Emergency Phone:</strong> {activeDirectOutgoing.contactPhone}
+                </p>
+              )}
+              <p className="muted" style={{ marginTop: "10px" }}>
+                Invitation sent to <strong>{activeDirectOutgoing.toName}</strong>’s ONY account. They can open their ONY app to accept or reject your request.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
+              <Button variant="secondary" className="full" onClick={() => void onRefresh()}>
+                Check Request Status
+              </Button>
+              <Button
+                variant="danger"
+                className="full"
+                disabled={submitting}
+                onClick={handleCancelOrRemoveActiveContact}
+              >
+                Cancel Request
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {status === "accepted" && (
+          <>
+            <div className="trusted-card connected">
+              <span className="trusted-avatar">{name[0]?.toUpperCase() || "T"}</span>
+              <span className="status-pill accepted">Accepted · Active Emergency Contact</span>
+              <h1>{name}</h1>
+              <p>
+                {acceptedViaMyInviteLink
+                  ? acceptedViaMyInviteLink.fromEmail
+                  : activeDirectOutgoing?.toEmail || email}
+              </p>
+              <p>
+                <strong>Emergency Phone:</strong>{" "}
+                {acceptedViaMyInviteLink?.contactPhone ||
+                  activeDirectOutgoing?.contactPhone ||
+                  number ||
+                  "Saved on account"}
+              </p>
+              <div className="trusted-actions">
+                <Button onClick={() => setCallState("calling")}>Simulate call</Button>
+                <Button variant="secondary" onClick={() => setCallState("message")}>
+                  Simulate message
+                </Button>
+              </div>
+            </div>
+            <Button
+              className="full"
+              variant="danger"
+              disabled={submitting}
+              onClick={handleCancelOrRemoveActiveContact}
+            >
+              Remove trusted contact
+            </Button>
+          </>
+        )}
+
+        {status === "rejected" && (
+          <div className="card">
+            <div className="trusted-card">
+              <span className="trusted-avatar">{name[0]?.toUpperCase() || "T"}</span>
+              <span className="prototype-label">Request Declined</span>
+              <h1>{name}</h1>
+              <p className="muted">
+                {name} ({activeDirectOutgoing?.toEmail || email}) declined your trusted contact request in their app. You can share your invite link or send a new request anytime.
+              </p>
+            </div>
+            <Button
+              className="full"
+              disabled={submitting}
+              onClick={handleCancelOrRemoveActiveContact}
+            >
+              Invite Another Contact
+            </Button>
+          </div>
+        )}
+
+        <p className="disclaimer">
+          <Icon name="info" /> Trusted contact requests and emergency phone numbers are stored in Cloud Firestore. Registered user accounts are kept private and are never listed publicly.
+        </p>
+      </section>
+    </>
+  );
 }
 
 function CommunityMember({ back, user, notify }: { back: () => void; user: GlobeUser; notify: (s: string) => void }) {

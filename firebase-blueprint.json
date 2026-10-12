@@ -7,6 +7,7 @@
       "properties": {
         "displayName": { "type": "string", "maxLength": 50 },
         "email": { "type": "string", "format": "email" },
+        "phoneNumber": { "type": "string", "maxLength": 40 },
         "theme": { "type": "string", "enum": ["peach", "ocean", "sunset", "forest", "lavender", "neutral"] },
         "companion": { "type": "string", "enum": ["Cat", "Dog", "Bunny", "Bear", "Fox", "Panda"] },
         "persona": { "type": "string", "enum": ["gentle", "friendly", "calm"] },
@@ -137,6 +138,41 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["toUserId", "fromUserId", "senderAnonymous", "recipientAnonymous", "kind", "text", "createdAt"]
+    },
+    "UserDirectory": {
+      "title": "UserDirectory",
+      "description": "Directory of registered ONY accounts for verifying and looking up trusted contacts.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "format": "email" },
+        "emailLower": { "type": "string", "maxLength": 120 },
+        "phoneNumber": { "type": "string", "maxLength": 40 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "emailLower", "updatedAt"]
+    },
+    "TrustedContactRequest": {
+      "title": "TrustedContactRequest",
+      "description": "Trusted contact invitation or link-based emergency contact request between registered ONY users, supporting pending, accepted, and rejected states.",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string", "maxLength": 128 },
+        "fromName": { "type": "string", "maxLength": 50 },
+        "fromEmail": { "type": "string", "format": "email" },
+        "toUid": { "type": "string", "maxLength": 128 },
+        "toName": { "type": "string", "maxLength": 50 },
+        "toEmail": { "type": "string", "format": "email" },
+        "contactPhone": { "type": "string", "maxLength": 40 },
+        "relationshipNote": { "type": "string", "maxLength": 300 },
+        "requestKind": { "type": "string", "enum": ["direct_invite", "invite_link"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "respondedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromUid", "fromName", "fromEmail", "toUid", "toName", "toEmail", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -171,6 +207,14 @@
     "/communityMessages/{messageId}": {
       "schema": "CommunityMessage",
       "description": "Stores supportive anonymous messages between community members."
+    },
+    "/userDirectory/{userId}": {
+      "schema": "UserDirectory",
+      "description": "Stores registered ONY user directory entries so users can verify accounts when sending trusted contact requests."
+    },
+    "/trustedContactRequests/{requestId}": {
+      "schema": "TrustedContactRequest",
+      "description": "Stores trusted contact requests between registered ONY users with pending, accepted, and rejected statuses."
     }
   }
 }

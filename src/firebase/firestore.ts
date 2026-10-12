@@ -62,6 +62,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export interface UserProfileData {
   displayName: string;
   email: string;
+  phoneNumber?: string;
   theme?: string;
   companion?: string;
   persona?: string;
@@ -169,20 +170,78 @@ export interface FirestoreCommunityMessage {
   createdAt: string;
 }
 
+export interface FirestoreRegisteredAccount {
+  uid: string;
+  displayName: string;
+  email: string;
+  emailLower: string;
+  phoneNumber?: string;
+  updatedAt: string;
+}
+
+export interface FirestoreTrustedContactRequest {
+  id: string;
+  fromUid: string;
+  fromName: string;
+  fromEmail: string;
+  toUid: string;
+  toName: string;
+  toEmail: string;
+  contactPhone: string;
+  relationshipNote?: string;
+  requestKind?: "direct_invite" | "invite_link";
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+  respondedAt?: string;
+}
+
 // User Profile Operations
+export async function syncRegisteredAccount(account: {
+  uid: string;
+  displayName: string;
+  email: string;
+  phoneNumber?: string;
+}): Promise<void> {
+  if (!account.uid || !account.email) return;
+  const now = new Date().toISOString();
+  const cleanEmail = account.email.trim();
+  const cleanName = account.displayName.trim() || cleanEmail.split("@")[0] || "ONY Member";
+  const cleanPhone = account.phoneNumber ? account.phoneNumber.trim() : undefined;
+  try {
+    await setDoc(
+      doc(db, "globeUsers", `account_${account.uid}`),
+      {
+        recordType: "user_account",
+        uid: account.uid,
+        displayName: cleanName,
+        email: cleanEmail,
+        emailLower: cleanEmail.toLowerCase(),
+        ...(cleanPhone ? { phoneNumber: cleanPhone } : {}),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.warn("[ONY Directory] Could not sync registered account:", err);
+  }
+}
+
 export async function createUserProfileDoc(
   uid: string,
-  initial: { email: string; displayName: string },
+  initial: { email: string; displayName: string; phoneNumber?: string },
 ): Promise<void> {
   const path = `users/${uid}`;
   try {
     const userRef = doc(db, "users", uid);
     const now = new Date().toISOString();
+    const cleanPhone = (initial.phoneNumber || "").trim();
     await setDoc(
       userRef,
       {
         displayName: initial.displayName,
         email: initial.email,
+        phoneNumber: cleanPhone,
         theme: "peach",
         companion: "Cat",
         persona: "gentle",
@@ -197,6 +256,12 @@ export async function createUserProfileDoc(
       },
       { merge: true },
     );
+    await syncRegisteredAccount({
+      uid,
+      displayName: initial.displayName,
+      email: initial.email,
+      phoneNumber: cleanPhone,
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -512,8 +577,12 @@ export async function listGlobeUsers(): Promise<FirestoreGlobeUser[]> {
   try {
     const colRef = collection(db, "globeUsers");
     const snap = await getDocs(colRef);
-    if (snap.empty) return DEFAULT_GLOBE_USERS;
-    const loaded: FirestoreGlobeUser[] = snap.docs
+    const globeDocs = snap.docs.filter((d) => {
+      const raw = d.data() as Record<string, unknown>;
+      return /^\d+$/.test(d.id) && !raw.recordType && typeof raw.moodGlow === "string";
+    });
+    if (globeDocs.length === 0) return DEFAULT_GLOBE_USERS;
+    const loaded: FirestoreGlobeUser[] = globeDocs
       .map((d) => {
         const data = d.data() as FirestoreGlobeUser;
         const id = data.id ?? Number(d.id);
@@ -836,8 +905,318 @@ export const DEFAULT_COMMUNITY_MESSAGES: Omit<FirestoreCommunityMessage, "id">[]
   },
 ];
 
+export const DEFAULT_REGISTERED_ACCOUNTS: FirestoreRegisteredAccount[] = [
+  {
+    uid: "ony_user_alex",
+    displayName: "Alex Tan",
+    email: "alex@ony.app",
+    emailLower: "alex@ony.app",
+    phoneNumber: "012-345 6789",
+    updatedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+  },
+  {
+    uid: "ony_user_nadia",
+    displayName: "Nadia",
+    email: "nadia@ony.app",
+    emailLower: "nadia@ony.app",
+    phoneNumber: "017-882 3410",
+    updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    uid: "ony_user_amir",
+    displayName: "Amirul",
+    email: "amir@ony.app",
+    emailLower: "amir@ony.app",
+    phoneNumber: "019-410 9921",
+    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+  },
+];
+
+// ==========================================
+// Registered User Directory & Trusted Contact Requests
+// ==========================================
+
+export async function listRegisteredAccounts(
+  excludeUid?: string,
+  excludeEmail?: string | null,
+): Promise<FirestoreRegisteredAccount[]> {
+  const path = "globeUsers";
+  try {
+    const colRef = collection(db, "globeUsers");
+    const snap = await getDocs(colRef);
+    const byEmail = new Map<string, FirestoreRegisteredAccount>();
+
+    for (const d of snap.docs) {
+      const raw = d.data() as Record<string, unknown>;
+      if (d.id.startsWith("account_") || raw.recordType === "user_account") {
+        const email = String(raw.email || "").trim();
+        const emailLower = String(raw.emailLower || email).trim().toLowerCase();
+        const uid = String(raw.uid || d.id.replace(/^account_/, ""));
+        const displayName = String(raw.displayName || email.split("@")[0] || "ONY Member");
+        const phoneNumber = raw.phoneNumber ? String(raw.phoneNumber).trim() : undefined;
+        if (emailLower) {
+          byEmail.set(emailLower, {
+            uid,
+            displayName,
+            email,
+            emailLower,
+            phoneNumber,
+            updatedAt: String(raw.updatedAt || new Date().toISOString()),
+          });
+        }
+      }
+    }
+
+    // Also include seeded registered ONY accounts if not present yet
+    for (const acc of DEFAULT_REGISTERED_ACCOUNTS) {
+      if (!byEmail.has(acc.emailLower)) {
+        byEmail.set(acc.emailLower, acc);
+      }
+    }
+
+    const exEmailLower = excludeEmail ? excludeEmail.trim().toLowerCase() : "";
+    return Array.from(byEmail.values()).filter((acc) => {
+      if (excludeUid && acc.uid === excludeUid) return false;
+      if (exEmailLower && acc.emailLower === exEmailLower) return false;
+      return true;
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function findRegisteredAccount(
+  emailOrName: string,
+): Promise<FirestoreRegisteredAccount | null> {
+  const clean = emailOrName.trim().toLowerCase();
+  if (!clean) return null;
+  const allAccounts = await listRegisteredAccounts();
+  return (
+    allAccounts.find(
+      (acc) =>
+        acc.emailLower === clean ||
+        acc.displayName.trim().toLowerCase() === clean,
+    ) || null
+  );
+}
+
+export async function findRegisteredAccountByUid(
+  uid: string,
+): Promise<FirestoreRegisteredAccount | null> {
+  const cleanUid = uid.trim();
+  if (!cleanUid) return null;
+  const allAccounts = await listRegisteredAccounts();
+  return allAccounts.find((acc) => acc.uid === cleanUid) || null;
+}
+
+export async function sendTrustedContactRequest(params: {
+  fromUid: string;
+  fromName: string;
+  fromEmail: string;
+  targetEmailOrName: string;
+  contactPhone: string;
+  relationshipNote?: string;
+}): Promise<FirestoreTrustedContactRequest> {
+  const target = await findRegisteredAccount(params.targetEmailOrName);
+  if (!target) {
+    throw new Error(
+      "ACCOUNT_NOT_FOUND: This person does not have a registered account in ONY. Please enter the email of an existing ONY user or share your invite link with them.",
+    );
+  }
+
+  const senderEmailLower = params.fromEmail.trim().toLowerCase();
+  if (
+    target.uid === params.fromUid ||
+    (senderEmailLower && target.emailLower === senderEmailLower)
+  ) {
+    throw new Error("SELF_REQUEST: You cannot add your own account as your trusted contact.");
+  }
+
+  const requestId = `trusted_req_${params.fromUid}_${target.uid}`;
+  const path = `globeUsers/${requestId}`;
+  const now = new Date().toISOString();
+  const resolvedPhone = params.contactPhone.trim() || target.phoneNumber || "";
+  const requestData: FirestoreTrustedContactRequest = {
+    id: requestId,
+    fromUid: params.fromUid,
+    fromName: params.fromName.trim() || "ONY Member",
+    fromEmail: senderEmailLower || "member@ony.app",
+    toUid: target.uid,
+    toName: target.displayName,
+    toEmail: target.email,
+    contactPhone: resolvedPhone,
+    relationshipNote: (params.relationshipNote || "").trim(),
+    requestKind: "direct_invite",
+    status: "pending",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await setDoc(
+      doc(db, "globeUsers", requestId),
+      {
+        recordType: "trusted_contact_request",
+        ...requestData,
+      },
+      { merge: true },
+    );
+    return requestData;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 /**
- * Seeds initial shared data into Firestore (globeUsers, communityPosts, merchants)
+ * Used when a friend clicks a user's shared Trusted Contact Invite Link
+ * and requests to become the inviter's emergency contact.
+ * The inviter (`toUid`) will see this request in their Incoming Requests and can Accept or Reject.
+ */
+export async function sendTrustedContactRequestViaInviteLink(params: {
+  requesterUid: string;
+  requesterName: string;
+  requesterEmail: string;
+  requesterPhone: string;
+  inviterUid: string;
+  inviterName: string;
+  inviterEmail: string;
+  relationshipNote?: string;
+}): Promise<FirestoreTrustedContactRequest> {
+  const cleanRequesterEmail = params.requesterEmail.trim().toLowerCase();
+  const cleanInviterEmail = params.inviterEmail.trim().toLowerCase();
+  if (
+    params.requesterUid === params.inviterUid ||
+    (cleanRequesterEmail && cleanInviterEmail && cleanRequesterEmail === cleanInviterEmail)
+  ) {
+    throw new Error("SELF_REQUEST: You cannot request to be your own emergency contact.");
+  }
+
+  const requestId = `trusted_req_link_${params.requesterUid}_${params.inviterUid}`;
+  const path = `globeUsers/${requestId}`;
+  const now = new Date().toISOString();
+  const requestData: FirestoreTrustedContactRequest = {
+    id: requestId,
+    fromUid: params.requesterUid,
+    fromName: params.requesterName.trim() || "ONY Friend",
+    fromEmail: cleanRequesterEmail || "friend@ony.app",
+    toUid: params.inviterUid,
+    toName: params.inviterName.trim() || "ONY Member",
+    toEmail: cleanInviterEmail || "member@ony.app",
+    contactPhone: params.requesterPhone.trim(),
+    relationshipNote:
+      (params.relationshipNote || "").trim() ||
+      "Requested via your shared Trusted Contact invite link.",
+    requestKind: "invite_link",
+    status: "pending",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await setDoc(
+      doc(db, "globeUsers", requestId),
+      {
+        recordType: "trusted_contact_request",
+        ...requestData,
+      },
+      { merge: true },
+    );
+    return requestData;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function listTrustedContactRequests(
+  uid: string,
+  email?: string | null,
+): Promise<{
+  outgoing: FirestoreTrustedContactRequest[];
+  incoming: FirestoreTrustedContactRequest[];
+}> {
+  const path = "globeUsers";
+  try {
+    const colRef = collection(db, "globeUsers");
+    const snap = await getDocs(colRef);
+    const emailLower = email ? email.trim().toLowerCase() : "";
+
+    const allRequests: FirestoreTrustedContactRequest[] = [];
+    for (const d of snap.docs) {
+      const raw = d.data() as Record<string, unknown>;
+      if (d.id.startsWith("trusted_req_") || raw.recordType === "trusted_contact_request") {
+        allRequests.push({
+          id: d.id,
+          fromUid: String(raw.fromUid || ""),
+          fromName: String(raw.fromName || "ONY Member"),
+          fromEmail: String(raw.fromEmail || ""),
+          toUid: String(raw.toUid || ""),
+          toName: String(raw.toName || "ONY Member"),
+          toEmail: String(raw.toEmail || ""),
+          contactPhone: String(raw.contactPhone || ""),
+          relationshipNote: raw.relationshipNote ? String(raw.relationshipNote) : undefined,
+          requestKind: raw.requestKind === "invite_link" ? "invite_link" : "direct_invite",
+          status:
+            raw.status === "accepted" || raw.status === "rejected"
+              ? raw.status
+              : "pending",
+          createdAt: String(raw.createdAt || new Date().toISOString()),
+          updatedAt: String(raw.updatedAt || raw.createdAt || new Date().toISOString()),
+          respondedAt: raw.respondedAt ? String(raw.respondedAt) : undefined,
+        });
+      }
+    }
+
+    allRequests.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+
+    const outgoing = allRequests.filter(
+      (r) =>
+        (uid && r.fromUid === uid) ||
+        (emailLower && r.fromEmail.trim().toLowerCase() === emailLower),
+    );
+    const incoming = allRequests.filter(
+      (r) =>
+        (uid && r.toUid === uid) ||
+        (emailLower && r.toEmail.trim().toLowerCase() === emailLower),
+    );
+
+    return { outgoing, incoming };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function respondToTrustedContactRequest(
+  requestId: string,
+  decision: "accepted" | "rejected",
+): Promise<void> {
+  const path = `globeUsers/${requestId}`;
+  try {
+    const now = new Date().toISOString();
+    await setDoc(
+      doc(db, "globeUsers", requestId),
+      {
+        status: decision,
+        respondedAt: now,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteTrustedContactRequest(requestId: string): Promise<void> {
+  const path = `globeUsers/${requestId}`;
+  try {
+    await deleteDoc(doc(db, "globeUsers", requestId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+/**
+ * Seeds initial shared data into Firestore (globeUsers, communityPosts, merchants, registered accounts)
  * if the database collections are currently empty.
  */
 export async function seedInitialDatabaseData(): Promise<{
@@ -846,6 +1225,18 @@ export async function seedInitialDatabaseData(): Promise<{
   merchantsCount: number;
   communityMessagesCount: number;
 }> {
+  // 0. Ensure default registered ONY accounts exist in directory for Trusted Contact lookup
+  for (const acc of DEFAULT_REGISTERED_ACCOUNTS) {
+    await setDoc(
+      doc(db, "globeUsers", `account_${acc.uid}`),
+      {
+        recordType: "user_account",
+        ...acc,
+      },
+      { merge: true },
+    ).catch(() => {});
+  }
+
   // 1. Globe Users (always ensure node 0 / "You" exists)
   let globeUsers = await listGlobeUsers().catch(() => []);
   if (globeUsers.length <= 1) {
