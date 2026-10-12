@@ -1760,43 +1760,100 @@ export async function sendTrustedContactRequest(params: {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
+export interface SendInviteLinkRequestParams {
+  requesterUid?: string;
+  friendUid?: string;
+  requesterName?: string;
+  friendName?: string;
+  requesterEmail?: string;
+  friendEmail?: string;
+  requesterPhone?: string;
+  friendPhone?: string;
+  inviterUid: string;
+  inviterName?: string;
+  inviterEmail?: string;
+  relationshipNote?: string;
+}
 
 /**
  * Used when a friend clicks a user's shared Trusted Contact Invite Link
  * and requests to become the inviter's emergency contact.
  * The inviter (`toUid`) will see this request in their Incoming Requests and can Accept or Reject.
  */
-export async function sendTrustedContactRequestViaInviteLink(params: {
-  requesterUid: string;
-  requesterName: string;
-  requesterEmail: string;
-  requesterPhone: string;
-  inviterUid: string;
-  inviterName: string;
-  inviterEmail: string;
-  relationshipNote?: string;
-}): Promise<FirestoreTrustedContactRequest> {
-  const cleanRequesterEmail = params.requesterEmail.trim().toLowerCase();
-  const cleanInviterEmail = params.inviterEmail.trim().toLowerCase();
+export async function sendTrustedContactRequestViaInviteLink(
+  params: SendInviteLinkRequestParams,
+): Promise<FirestoreTrustedContactRequest> {
+  const resolvedRequesterUid = (
+    params.requesterUid ||
+    params.friendUid ||
+    auth.currentUser?.uid ||
+    ""
+  ).trim();
+  const resolvedRequesterName = (
+    params.requesterName ||
+    params.friendName ||
+    auth.currentUser?.displayName ||
+    "ONY Friend"
+  ).trim();
+  const resolvedRequesterEmail = (
+    params.requesterEmail ||
+    params.friendEmail ||
+    auth.currentUser?.email ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+  const resolvedRequesterPhone = (
+    params.requesterPhone ||
+    params.friendPhone ||
+    ""
+  ).trim();
+
+  const resolvedInviterUid = (params.inviterUid || "").trim();
+  let resolvedInviterName = (params.inviterName || "").trim();
+  let resolvedInviterEmail = (params.inviterEmail || "").trim().toLowerCase();
+
+  if (!resolvedInviterUid) {
+    throw new Error("INVALID_INVITE: Invalid invite link (missing inviter ID).");
+  }
+
+  // If inviterEmail or inviterName is missing, look up the account in registered accounts
+  if (!resolvedInviterEmail || !resolvedInviterName || resolvedInviterName === "ONY Friend") {
+    try {
+      const inviterAcc = await findRegisteredAccountByUid(resolvedInviterUid);
+      if (inviterAcc) {
+        if (!resolvedInviterEmail) {
+          resolvedInviterEmail = (inviterAcc.emailLower || inviterAcc.email || "").toLowerCase();
+        }
+        if (!resolvedInviterName || resolvedInviterName === "ONY Friend") {
+          resolvedInviterName = inviterAcc.displayName;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   if (
-    params.requesterUid === params.inviterUid ||
-    (cleanRequesterEmail && cleanInviterEmail && cleanRequesterEmail === cleanInviterEmail)
+    (resolvedRequesterUid && resolvedInviterUid && resolvedRequesterUid === resolvedInviterUid) ||
+    (resolvedRequesterEmail && resolvedInviterEmail && resolvedRequesterEmail === resolvedInviterEmail)
   ) {
     throw new Error("SELF_REQUEST: You cannot request to be your own emergency contact.");
   }
 
-  const requestId = `trusted_req_link_${params.requesterUid}_${params.inviterUid}`;
+  const effectiveSenderUid = resolvedRequesterUid || `user_${Date.now()}`;
+  const requestId = `trusted_req_link_${effectiveSenderUid}_${resolvedInviterUid}`;
   const path = `globeUsers/${requestId}`;
   const now = new Date().toISOString();
   const requestData: FirestoreTrustedContactRequest = {
     id: requestId,
-    fromUid: params.requesterUid,
-    fromName: params.requesterName.trim() || "ONY Friend",
-    fromEmail: cleanRequesterEmail || "friend@ony.app",
-    toUid: params.inviterUid,
-    toName: params.inviterName.trim() || "ONY Member",
-    toEmail: cleanInviterEmail || "member@ony.app",
-    contactPhone: params.requesterPhone.trim(),
+    fromUid: effectiveSenderUid,
+    fromName: resolvedRequesterName || "ONY Friend",
+    fromEmail: resolvedRequesterEmail || "friend@ony.app",
+    toUid: resolvedInviterUid,
+    toName: resolvedInviterName || "ONY Member",
+    toEmail: resolvedInviterEmail || "member@ony.app",
+    contactPhone: resolvedRequesterPhone,
     relationshipNote:
       (params.relationshipNote || "").trim() ||
       "Requested via your shared Trusted Contact invite link.",
@@ -1815,6 +1872,15 @@ export async function sendTrustedContactRequestViaInviteLink(params: {
       },
       { merge: true },
     );
+    // Also sync the sender's phone to their registered account in the directory
+    if (resolvedRequesterUid && resolvedRequesterPhone) {
+      await syncRegisteredAccount({
+        uid: resolvedRequesterUid,
+        displayName: resolvedRequesterName,
+        email: resolvedRequesterEmail || `${resolvedRequesterUid}@ony.app`,
+        phoneNumber: resolvedRequesterPhone,
+      }).catch(() => {});
+    }
     return requestData;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

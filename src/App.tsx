@@ -276,17 +276,22 @@ export function parseTrustedInviteFromUrl(rawInput?: string): TrustedInvitePaylo
       if (!trimmed) return null;
       if (trimmed.includes("?")) {
         searchStr = trimmed.slice(trimmed.indexOf("?"));
-      } else if (trimmed.includes("trustedInvite=")) {
+      } else if (trimmed.includes("inviteTrusted=") || trimmed.includes("trustedInvite=")) {
         searchStr = `?${trimmed}`;
       } else {
-        return null;
+        const urlMatch = trimmed.match(/https?:\/\/[^\s]+/);
+        if (urlMatch && urlMatch[0].includes("?")) {
+          searchStr = urlMatch[0].slice(urlMatch[0].indexOf("?"));
+        } else {
+          return null;
+        }
       }
     } else if (typeof window !== "undefined") {
       searchStr = window.location.search;
     }
     if (!searchStr) return null;
     const params = new URLSearchParams(searchStr);
-    const inviterUid = (params.get("trustedInvite") || "").trim();
+    const inviterUid = (params.get("inviteTrusted") || params.get("trustedInvite") || "").trim();
     if (!inviterUid) return null;
     const inviterName = (params.get("inviterName") || "ONY Friend").trim();
     const inviterEmail = (params.get("inviterEmail") || "").trim();
@@ -1077,15 +1082,7 @@ function App() {
                 pendingInvite={pendingInvite}
                 setPendingInvite={(inv) => {
                   setPendingInvite(inv);
-                  if (!inv) {
-                    clearStoredTrustedInvite();
-                  } else {
-                    try {
-                      sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, JSON.stringify(inv));
-                    } catch {
-                      // ignore storage errors
-                    }
-                  }
+                  saveStoredPendingInvite(inv);
                 }}
                 onRefresh={refreshTrustedContactData}
                 notify={notify}
@@ -3765,30 +3762,43 @@ function TrustedContact({
     setInviteLinkError(null);
     const raw = pasteLinkInput.trim();
     if (!raw) return;
-    try {
-      const url = raw.startsWith("http")
-        ? new URL(raw)
-        : new URL(raw.startsWith("?") ? raw : `?${raw}`, window.location.origin);
-      const inviterUid = url.searchParams.get("inviteTrusted")?.trim();
-      const inviterName = url.searchParams.get("inviterName")?.trim() || "ONY Friend";
-      const inviterEmail = url.searchParams.get("inviterEmail")?.trim() || "";
-      const inviterPhone = url.searchParams.get("inviterPhone")?.trim() || "";
-      if (!inviterUid) {
-        setInviteLinkError("Invalid invite link. Please paste a full ONY Trusted Contact invite link.");
-        return;
+    const parsed = parseTrustedInviteFromUrl(raw);
+    if (!parsed) {
+      try {
+        const urlMatch = raw.match(/https?:\/\/[^\s]+/);
+        const candidate = urlMatch ? urlMatch[0] : raw;
+        const url = candidate.startsWith("http")
+          ? new URL(candidate)
+          : new URL(candidate.startsWith("?") ? candidate : `?${candidate}`, window.location.origin);
+        const inviterUid = (
+          url.searchParams.get("inviteTrusted") ||
+          url.searchParams.get("trustedInvite")
+        )?.trim();
+        const inviterName = url.searchParams.get("inviterName")?.trim() || "ONY Friend";
+        const inviterEmail = url.searchParams.get("inviterEmail")?.trim() || "";
+        const inviterPhone = url.searchParams.get("inviterPhone")?.trim() || "";
+        if (inviterUid) {
+          setPendingInvite({
+            inviterUid,
+            inviterName,
+            inviterEmail,
+            inviterPhone: inviterPhone || undefined,
+          });
+          setPasteLinkInput("");
+          setShowPasteLink(false);
+          notify(`Opened invite link from ${inviterName}`);
+          return;
+        }
+      } catch {
+        // ignore
       }
-      setPendingInvite({
-        inviterUid,
-        inviterName,
-        inviterEmail,
-        inviterPhone: inviterPhone || undefined,
-      });
-      setPasteLinkInput("");
-      setShowPasteLink(false);
-      notify(`Opened invite link from ${inviterName}`);
-    } catch {
       setInviteLinkError("Could not read that invite link. Please paste the full link shared by your friend.");
+      return;
     }
+    setPendingInvite(parsed);
+    setPasteLinkInput("");
+    setShowPasteLink(false);
+    notify(`Opened invite link from ${parsed.inviterName}`);
   };
 
   const handleRequestViaInviteLink = async (e: FormEvent) => {
@@ -3807,9 +3817,13 @@ function TrustedContact({
         setCurrentPhone(phoneToUse);
       }
       const created = await sendTrustedContactRequestViaInviteLink({
+        requesterUid: currentUid,
         friendUid: currentUid,
+        requesterName: currentName,
         friendName: currentName,
+        requesterEmail: currentEmail,
         friendEmail: currentEmail,
+        requesterPhone: phoneToUse,
         friendPhone: phoneToUse,
         inviterUid: pendingInvite.inviterUid,
         inviterName: pendingInvite.inviterName,
@@ -3823,13 +3837,20 @@ function TrustedContact({
       await onRefresh();
       notify(`Request sent to ${created.toName}! They can now accept or reject in their app.`);
     } catch (err: any) {
+      console.warn("[ONY] Invite link request error:", err);
       const rawMsg = err instanceof Error ? err.message : String(err);
       if (rawMsg.includes("SELF_REQUEST")) {
         setInviteLinkError(
           "This is your own invite link! Share this link with a friend so they can log into their account and request to be your emergency contact.",
         );
+      } else if (rawMsg.includes("INVALID_INVITE")) {
+        setInviteLinkError("Invalid invite link. Please ask your friend to re-share their invite link.");
       } else {
-        setInviteLinkError("Could not send request from invite link. Please try again.");
+        setInviteLinkError(
+          rawMsg && !rawMsg.includes("{")
+            ? rawMsg
+            : "Could not send request from invite link. Please check your phone number and try again.",
+        );
       }
     } finally {
       setSubmitting(false);
@@ -4043,11 +4064,13 @@ function TrustedContact({
                   <span>{inviteLinkError}</span>
                 </div>
               )}
-              <Button className="full" type="submit" disabled={submitting} style={{ marginTop: "8px" }}>
-                {submitting
-                  ? "Sending Request…"
-                  : `Request to be ${pendingInvite.inviterName}’s Emergency Contact`}
-              </Button>
+              <div style={{ marginTop: "8px" }}>
+                <Button className="full" type="submit" disabled={submitting}>
+                  {submitting
+                    ? "Sending Request…"
+                    : `Request to be ${pendingInvite.inviterName}’s Emergency Contact`}
+                </Button>
+              </div>
             </form>
           </div>
         )}
@@ -4109,9 +4132,11 @@ function TrustedContact({
                   <span>{inviteLinkError}</span>
                 </div>
               )}
-              <Button className="full" type="submit" disabled={!pasteLinkInput.trim()} style={{ marginTop: "8px" }}>
-                Open Friend’s Invite Link
-              </Button>
+              <div style={{ marginTop: "8px" }}>
+                <Button className="full" type="submit" disabled={!pasteLinkInput.trim()}>
+                  Open Friend’s Invite Link
+                </Button>
+              </div>
             </form>
           )}
         </div>
