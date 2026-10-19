@@ -1,4 +1,15 @@
-import { ChangeEvent, FormEvent, KeyboardEvent, ReactNode, useEffect, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  KeyboardEvent,
+  ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+  createContext,
+  useContext,
+} from "react";
 import logo from "./assets/ony-logo.png";
 import { chatService, ChatServiceError } from "./services/chatService";
 import type { SafetyAction } from "./services/contracts";
@@ -74,6 +85,7 @@ type Screen =
   | "help"
   | "personalise"
   | "notifications"
+  | "notificationSettings"
   | "subscription"
   | "merchant"
   | "voucher"
@@ -182,8 +194,12 @@ const Icon = ({ name }: { name: string }) => {
     profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-7 8-7s8 2 8 7"/></>,
     back: <path d="m15 18-6-6 6-6"/>,
     close: <path d="m6 6 12 12M18 6 6 18"/>,
-    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-    send: <path d="m4 4 17 8-17 8 3-8-3-8Zm3 8h14"/>,
+    send: (
+      <>
+        <path d="m22 2-7 20-4-9-9-4Z" />
+        <path d="M22 2 11 13" />
+      </>
+    ),
     heart: <path d="M20 5c-2-2-5-2-8 1-3-3-6-3-8-1-3 3-1 7 8 14 9-7 11-11 8-14Z"/>,
     chevron: <path d="m9 18 6-6-6-6"/>,
     shield: <><path d="M12 3 4 6v5c0 5 3 8 8 10 5-2 8-5 8-10V6l-8-3Z"/><path d="m9 12 2 2 4-5"/></>,
@@ -199,6 +215,12 @@ const Icon = ({ name }: { name: string }) => {
     volume: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></>,
     volumeOff: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>,
     refresh: <path d="M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5"/>,
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </>
+    ),
   };
   return <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
 };
@@ -707,6 +729,229 @@ function App() {
 
   const pendingIncomingTrusted = incomingTrustedRequests.filter((r) => r.status === "pending");
 
+  const [mySupportMessages, setMySupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
+    DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
+      id: `seed_me_${i}`,
+      ...m,
+    })),
+  );
+
+  const fetchMySupportMessages = async () => {
+    try {
+      let msgs = await listCommunityMessages("0");
+      if (!msgs || msgs.length === 0) {
+        const myDefaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0");
+        for (const item of myDefaults) {
+          await createCommunityMessage(item).catch(() => {});
+        }
+        msgs = await listCommunityMessages("0");
+      }
+      if (msgs && msgs.length > 0) {
+        setMySupportMessages(msgs);
+      }
+    } catch (err) {
+      console.warn("[ONY] Support message fetch notice:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!authenticated) return;
+    void fetchMySupportMessages();
+  }, [authenticated]);
+
+  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("ony_read_notifications_v1");
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      return new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const saveReadNotificationIds = (nextSet: Set<string>) => {
+    try {
+      localStorage.setItem("ony_read_notifications_v1", JSON.stringify(Array.from(nextSet)));
+    } catch {}
+  };
+
+  const allNotifications: AppNotificationItem[] = useMemo(() => {
+    const list: AppNotificationItem[] = [];
+
+    // 1. Incoming Trusted / Emergency Contact Requests
+    incomingTrustedRequests.forEach((req) => {
+      const isInviteLink = req.requestKind === "invite_link";
+      const title = isInviteLink
+        ? "Emergency Contact Request via Invite Link"
+        : "Emergency Contact Request";
+      const message = isInviteLink
+        ? `${req.fromName} clicked your invite link and requested to be your emergency contact${
+            req.contactPhone ? ` · Phone: ${req.contactPhone}` : ""
+          }.`
+        : `${req.fromName} (${req.fromEmail}) wants to add you as their Trusted Contact in ONY.`;
+
+      const id = `tc_${req.id}_${req.status}`;
+      list.push({
+        id,
+        type: "emergency_contact_request",
+        title,
+        message,
+        createdAt: req.createdAt || new Date().toISOString(),
+        read: readNotificationIds.has(id),
+        rawRequest: req,
+      });
+    });
+
+    // 2. Outgoing Trusted / Emergency Contact Confirmations
+    outgoingTrustedRequests.forEach((req) => {
+      if (req.status === "accepted") {
+        const id = `tc_out_${req.id}_accepted`;
+        list.push({
+          id,
+          type: "emergency_contact_accepted",
+          title: "Emergency Contact Accepted",
+          message: `${req.toName} accepted your request to be their Trusted Emergency Contact.`,
+          createdAt: req.updatedAt || req.createdAt || new Date().toISOString(),
+          read: readNotificationIds.has(id),
+        });
+      }
+    });
+
+    // 3. Likes, comments, and replies on user's posts
+    const cleanNameLower = displayName.trim().toLowerCase();
+    posts.forEach((post) => {
+      const isMyPost =
+        (post.authorId && post.authorId === effectiveUid) ||
+        (post.author && post.author.toLowerCase().includes(cleanNameLower));
+
+      if (isMyPost && Array.isArray(post.likeRecords)) {
+        post.likeRecords.forEach((like) => {
+          const isFromOther =
+            like.userId !== effectiveUid &&
+            like.userName.trim().toLowerCase() !== cleanNameLower;
+          if (isFromOther) {
+            const id = `like_${post.id}_${like.userId}_${like.createdAt}`;
+            list.push({
+              id,
+              type: "post_liked",
+              title: "Someone liked your post",
+              message: `${like.userName} liked your post "${post.title}".`,
+              createdAt: like.createdAt,
+              read: readNotificationIds.has(id),
+              postId: post.id,
+              post,
+            });
+          }
+        });
+      }
+
+      if (Array.isArray(post.comments)) {
+        post.comments.forEach((comment) => {
+          if (isMyPost) {
+            const isFromOther =
+              comment.userId !== effectiveUid &&
+              comment.userName.trim().toLowerCase() !== cleanNameLower;
+            if (isFromOther) {
+              const id = `comment_${post.id}_${comment.id}`;
+              list.push({
+                id,
+                type: "post_commented",
+                title: "Someone commented on your post",
+                message: `${comment.userName} commented: "${comment.text}" on "${post.title}".`,
+                createdAt: comment.createdAt,
+                read: readNotificationIds.has(id),
+                postId: post.id,
+                post,
+              });
+            }
+          }
+
+          const isMyComment =
+            comment.userId === effectiveUid ||
+            comment.userName.trim().toLowerCase() === cleanNameLower;
+          if (isMyComment && Array.isArray(comment.replies)) {
+            comment.replies.forEach((rep) => {
+              const isFromOther =
+                rep.userId !== effectiveUid &&
+                rep.userName.trim().toLowerCase() !== cleanNameLower;
+              if (isFromOther) {
+                const id = `reply_${post.id}_${comment.id}_${rep.id}`;
+                list.push({
+                  id,
+                  type: "comment_replied",
+                  title: "Someone replied to your comment",
+                  message: `${rep.userName} replied: "${rep.text}" to your comment.`,
+                  createdAt: rep.createdAt,
+                  read: readNotificationIds.has(id),
+                  postId: post.id,
+                  post,
+                });
+              }
+            });
+          }
+        });
+      }
+    });
+
+    // 4. Supportive messages sent to user's globe node
+    mySupportMessages.forEach((msg) => {
+      const isFromOther =
+        msg.fromUserId !== effectiveUid &&
+        !(msg.senderAnonymous || "").includes("(You)");
+      if (isFromOther) {
+        const id = `support_${msg.id}`;
+        list.push({
+          id,
+          type: "support_message",
+          title: "Supportive Message Received",
+          message:
+            msg.kind === "voice"
+              ? `${msg.senderAnonymous || "Anonymous Member"} sent an encouraging voice note (${
+                  msg.audioDuration || 8
+                }s) to your globe node.`
+              : `${msg.senderAnonymous || "Anonymous Member"} sent you encouragement: "${msg.text}"`,
+          createdAt: msg.createdAt,
+          read: readNotificationIds.has(id),
+          audioUrl: msg.audioUrl,
+          audioDuration: msg.audioDuration,
+        });
+      }
+    });
+
+    // Sort newest first
+    return list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }, [
+    incomingTrustedRequests,
+    outgoingTrustedRequests,
+    posts,
+    mySupportMessages,
+    effectiveUid,
+    displayName,
+    readNotificationIds,
+  ]);
+
+  const unreadNotificationsCount = useMemo(
+    () => allNotifications.filter((n) => !n.read).length,
+    [allNotifications],
+  );
+
+  const handleMarkAllRead = () => {
+    const nextSet = new Set(readNotificationIds);
+    allNotifications.forEach((n) => nextSet.add(n.id));
+    setReadNotificationIds(nextSet);
+    saveReadNotificationIds(nextSet);
+    notify("All notifications marked as read");
+  };
+
+  const handleMarkRead = (id: string) => {
+    if (readNotificationIds.has(id)) return;
+    const nextSet = new Set(readNotificationIds);
+    nextSet.add(id);
+    setReadNotificationIds(nextSet);
+    saveReadNotificationIds(nextSet);
+  };
+
   const handleLogout = async () => {
     try {
       await logoutUser();
@@ -939,104 +1184,81 @@ function App() {
   };
 
   return (
-    <div className={`app-shell theme-${theme}`}>
-      <div className="phone">
-        <div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
-        {screen === "main" ? (
-          <>
-            <main className="main-content">
-              {pendingIncomingTrusted.length > 0 && (
-                <div
-                  className="card"
-                  style={{
-                    margin: "12px 16px 0",
-                    padding: "12px 14px",
-                    border: "1px solid var(--accent, #e07a5f)",
-                    background: "var(--surface-strong, #fff8f5)",
+    <NotificationsContext.Provider
+      value={{
+        unreadCount: unreadNotificationsCount,
+        openNotifications: () => navigate("notifications"),
+      }}
+    >
+      <div className={`app-shell theme-${theme}`}>
+        <div className="phone">
+          <div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
+          {screen === "main" ? (
+            <>
+              <main className="main-content">
+                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
+                  if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
+                  const next = freeUsage + 1;
+                  setFreeUsage(next);
+                  if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
+                }} notify={notify} />}
+                {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
+                {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} />}
+                {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
+                {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} pendingIncomingCount={pendingIncomingTrusted.length} unreadNotificationsCount={unreadNotificationsCount} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
+              </main>
+            </>
+          ) : (
+            <main className="overlay-page">
+              {screen === "mood" && <MoodCheck back={back} navigate={navigate} entries={moodEntries} setEntries={handleSetMoodEntries} notify={notify} />}
+              {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={handleSetMoodEntries} />}
+              {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
+              {screen === "help" && <Help back={back} navigate={navigate} />}
+              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={setLanguage} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
+                if (currentUser) {
+                  updateUserProfile(currentUser.uid, {
+                    theme,
+                    companion,
+                    persona,
+                    preferredLanguage: language,
+                    conversationStyle,
+                    responseLength,
+                    useActiveMemories,
+                  }).catch((e) => console.warn("[ONY] Update preferences error:", e));
+                }
+              }} />}
+              {screen === "notifications" && (
+                <Notifications
+                  back={back}
+                  navigate={navigate}
+                  notifications={allNotifications}
+                  onMarkAllRead={handleMarkAllRead}
+                  onMarkRead={handleMarkRead}
+                  onRespondTrusted={handleRespondToIncomingTrusted}
+                  onOpenPost={(postOrId) => {
+                    const found =
+                      typeof postOrId === "string"
+                        ? posts.find((p) => p.id === postOrId)
+                        : postOrId;
+                    if (found) {
+                      setSelectedPost(found);
+                      navigate("postDetail");
+                    }
                   }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
-                    <div style={{ flex: 1, minWidth: "180px" }}>
-                      <span className="eyebrow">
-                        {pendingIncomingTrusted[0].requestKind === "invite_link"
-                          ? "Emergency Contact Request via Invite Link"
-                          : "Incoming Trusted Contact Request"}
-                      </span>
-                      <strong style={{ display: "block", fontSize: "14px", marginTop: "2px" }}>
-                        {pendingIncomingTrusted[0].fromName} ({pendingIncomingTrusted[0].fromEmail})
-                      </strong>
-                      <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
-                        {pendingIncomingTrusted[0].requestKind === "invite_link"
-                          ? `Clicked your invite link and requested to be your emergency contact${pendingIncomingTrusted[0].contactPhone ? ` · Phone: ${pendingIncomingTrusted[0].contactPhone}` : ""}.`
-                          : "Wants to add you as their Trusted Contact in ONY."}
-                      </small>
-                    </div>
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <Button
-                        variant="primary"
-                        onClick={() =>
-                          handleRespondToIncomingTrusted(
-                            pendingIncomingTrusted[0].id,
-                            "accepted",
-                            pendingIncomingTrusted[0].fromName,
-                            pendingIncomingTrusted[0].requestKind,
-                          )
-                        }
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={() =>
-                          handleRespondToIncomingTrusted(
-                            pendingIncomingTrusted[0].id,
-                            "rejected",
-                            pendingIncomingTrusted[0].fromName,
-                            pendingIncomingTrusted[0].requestKind,
-                          )
-                        }
-                      >
-                        Reject
-                      </Button>
-                      <Button variant="ghost" onClick={() => navigate("trusted")}>
-                        View
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                  onOpenCommunityNode={() => {
+                    sessionStorage.setItem("ony_community_view", "myNode");
+                    goTab("community");
+                  }}
+                  onOpenTrusted={() => navigate("trusted")}
+                  notify={notify}
+                />
               )}
-              {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
-                if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
-                const next = freeUsage + 1;
-                setFreeUsage(next);
-                if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
-              }} notify={notify} />}
-              {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
-              {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} />}
-              {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
-              {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} pendingIncomingCount={pendingIncomingTrusted.length} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
-            </main>
-          </>
-        ) : (
-          <main className="overlay-page">
-            {screen === "mood" && <MoodCheck back={back} navigate={navigate} entries={moodEntries} setEntries={handleSetMoodEntries} notify={notify} />}
-            {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={handleSetMoodEntries} />}
-            {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
-            {screen === "help" && <Help back={back} navigate={navigate} />}
-            {screen === "personalise" && <Personalise back={back} language={language} setLanguage={setLanguage} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
-              if (currentUser) {
-                updateUserProfile(currentUser.uid, {
-                  theme,
-                  companion,
-                  persona,
-                  preferredLanguage: language,
-                  conversationStyle,
-                  responseLength,
-                  useActiveMemories,
-                }).catch((e) => console.warn("[ONY] Update preferences error:", e));
-              }
-            }} />}
-            {screen === "notifications" && <Notifications back={back} />}
+              {screen === "notificationSettings" && (
+                <NotificationSettings
+                  back={back}
+                  notify={notify}
+                />
+              )}
             {screen === "subscription" && <Subscription back={back} openHelp={() => navigate("help")} status={subscriptionStatus} setStatus={setSubscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} resetFreeUsage={() => setFreeUsage(0)} notify={notify} />}
             {screen === "merchant" && <MerchantDetail back={back} navigate={navigate} merchants={merchants} merchantName={selectedMerchantName} notify={notify} />}
             {screen === "voucher" && <Voucher back={back} merchants={merchants} merchantName={selectedMerchantName} />}
@@ -1115,7 +1337,8 @@ function App() {
         {toast && <div className="toast"><Icon name="check" />{toast}</div>}
       </div>
     </div>
-  );
+  </NotificationsContext.Provider>
+);
 }
 
 function AuthFlowContent({
@@ -1374,8 +1597,62 @@ function Choice({ active, onClick, title, text }: { active: boolean; onClick: ()
   return <button className={`choice ${active ? "active" : ""}`} onClick={onClick}><span className="choice-radio">{active && <span />}</span><span><strong>{title}</strong>{text && <small>{text}</small>}</span></button>;
 }
 
-function PageHeader({ title, subtitle, back, action }: { title: string; subtitle?: string; back?: () => void; action?: ReactNode }) {
-  return <header className="page-header">{back ? <Button variant="ghost" className="icon-btn" onClick={back}><Icon name="back" /></Button> : <SmallLogo />}<div className="header-copy"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action || <span className="header-spacer" />}</header>;
+export const NotificationsContext = createContext<{
+  unreadCount: number;
+  openNotifications: () => void;
+}>({
+  unreadCount: 0,
+  openNotifications: () => {},
+});
+
+export function useNotifications() {
+  return useContext(NotificationsContext);
+}
+
+function PageHeader({
+  title,
+  subtitle,
+  back,
+  action,
+  hideNotifications = false,
+}: {
+  title: string;
+  subtitle?: string;
+  back?: () => void;
+  action?: ReactNode;
+  hideNotifications?: boolean;
+}) {
+  const { unreadCount, openNotifications } = useNotifications();
+  return (
+    <header className="page-header">
+      {back ? (
+        <Button variant="ghost" className="icon-btn" onClick={back} aria-label="Go back">
+          <Icon name="back" />
+        </Button>
+      ) : (
+        <SmallLogo />
+      )}
+      <div className="header-copy">
+        <h2>{title}</h2>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      <div className="header-right-actions">
+        {action}
+        {!hideNotifications && (
+          <button
+            type="button"
+            className="top-notification-btn"
+            onClick={openNotifications}
+            aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+          >
+            <Icon name="bell" />
+            {unreadCount > 0 && <span className="notification-red-dot" aria-hidden="true" />}
+          </button>
+        )}
+      </div>
+    </header>
+  );
 }
 
 function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
@@ -2054,6 +2331,8 @@ function Community({
   onLikePost,
   dbSyncing,
   latestMood,
+  mySupportMessages: propMySupportMessages,
+  setMySupportMessages: propSetMySupportMessages,
 }: {
   navigate: (s: Screen) => void;
   openPost: (post: Post) => void;
@@ -2067,13 +2346,23 @@ function Community({
   onLikePost?: (postId: string) => void;
   dbSyncing?: boolean;
   latestMood?: MoodEntry;
+  mySupportMessages?: FirestoreCommunityMessage[];
+  setMySupportMessages?: React.Dispatch<React.SetStateAction<FirestoreCommunityMessage[]>>;
 }) {
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"globe" | "posts" | "myNode">(() => {
     const showPosts = sessionStorage.getItem("ony-show-posts") === "true";
-    sessionStorage.removeItem("ony-show-posts");
-    return showPosts ? "posts" : "globe";
+    if (showPosts) {
+      sessionStorage.removeItem("ony-show-posts");
+      return "posts";
+    }
+    const navView = sessionStorage.getItem("ony_community_view") as "globe" | "posts" | "myNode" | null;
+    if (navView) {
+      sessionStorage.removeItem("ony_community_view");
+      return navView;
+    }
+    return "globe";
   });
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -2084,12 +2373,14 @@ function Community({
   const [acceptMessages, setAcceptMessages] = useState(true);
 
   // Support messages sent specifically from others to MY node ("0" / "me" / currentUser.uid)
-  const [mySupportMessages, setMySupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
+  const [internalSupportMessages, setInternalSupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
     DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
       id: `seed_me_${i}`,
       ...m,
     })),
   );
+  const mySupportMessages = propMySupportMessages || internalSupportMessages;
+  const setMySupportMessages = propSetMySupportMessages || setInternalSupportMessages;
   const [loadingMyMessages, setLoadingMyMessages] = useState(false);
   const [sendingSampleToMe, setSendingSampleToMe] = useState(false);
 
@@ -3330,9 +3621,9 @@ function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: 
   return <div className="voucher-page"><PageHeader title="Voucher Redeemed!" subtitle="Mock redemption confirmation" back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">Your voucher is ready to use</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-DEMO-{merchant.name.slice(0, 2).toUpperCase()}</div><div className="barcode">|||| || ||| | |||| |||</div><small>Sample only · not valid for real redemption</small></div><div className="community-note"><Icon name="info" />Present this code only as part of the ONY prototype demonstration.</div><Button className="full" onClick={back}>Done</Button></section></div>;
 }
 
-function Profile({ navigate, displayName, language, persona, theme, companion, trustedName, contactStatus, pendingIncomingCount = 0, subscriptionStatus, onLogout }: {
+function Profile({ navigate, displayName, language, persona, theme, companion, trustedName, contactStatus, pendingIncomingCount = 0, unreadNotificationsCount = 0, subscriptionStatus, onLogout }: {
   navigate: (s: Screen) => void; displayName: string; language: string; persona: Persona; theme: Theme; companion: Companion; trustedName: string;
-  contactStatus: ContactStatus; pendingIncomingCount?: number; subscriptionStatus: SubscriptionStatus; onLogout: () => void;
+  contactStatus: ContactStatus; pendingIncomingCount?: number; unreadNotificationsCount?: number; subscriptionStatus: SubscriptionStatus; onLogout: () => void;
 }) {
   const contactLabel =
     pendingIncomingCount > 0
@@ -3357,7 +3648,13 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
     ["personalise", "Companion & communication", `${personaOptions.find((item) => item.id === persona)?.name}`],
     ["monthlyReport", "Monthly Reflection", "Your conversations and check-ins"],
     ["trusted", "Trusted contact", contactLabel],
-    ["notifications", "Notifications", "Daily check-in on"],
+    [
+      "notifications",
+      "Notifications",
+      unreadNotificationsCount > 0
+        ? `${unreadNotificationsCount} unread update${unreadNotificationsCount > 1 ? "s" : ""}`
+        : "All caught up",
+    ],
     ["privacy", "Privacy & memory", "You’re in control"],
     ["legal", "Legal & safety", "Disclaimer, terms, privacy, and crisis information"],
     ["subscription", "Subscription", subscriptionLabel],
@@ -3479,9 +3776,508 @@ function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setCo
   </section></>;
 }
 
-function Notifications({ back }: { back: () => void }) {
-  const [settings, setSettings] = useState<Record<string, boolean>>({ "Daily check-in": true, "Gentle follow-up": true, "Saved memory update": true, "Community activity": false, "Voucher reminder": true });
-  return <><PageHeader title="Notifications" subtitle="Gentle, never noisy" back={back} /><section className="page-pad"><div className="notification-preview"><Icon name="bell" /><div><strong>How are you, really?</strong><p>A quiet moment to check in with yourself.</p><small>Example notification · 8:30 PM</small></div></div>{Object.entries(settings).map(([name, on]) => <div className="setting-toggle" key={name}><div><strong>{name}</strong><p>{name === "Daily check-in" ? "A once-a-day mood reminder." : `Updates about ${name.toLowerCase()}.`}</p></div><Toggle on={on} setOn={(v) => setSettings({ ...settings, [name]: v })} /></div>)}<p className="disclaimer"><Icon name="info" />Prototype notifications will not be sent to your device.</p></section></>;
+export type AppNotificationType =
+  | "emergency_contact_request"
+  | "emergency_contact_accepted"
+  | "post_liked"
+  | "post_commented"
+  | "comment_replied"
+  | "support_message"
+  | "system";
+
+export interface AppNotificationItem {
+  id: string;
+  type: AppNotificationType;
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+  rawRequest?: FirestoreTrustedContactRequest;
+  postId?: string;
+  post?: Post;
+  audioUrl?: string;
+  audioDuration?: number;
+}
+
+function Notifications({
+  back,
+  navigate,
+  notifications,
+  onMarkAllRead,
+  onMarkRead,
+  onRespondTrusted,
+  onOpenPost,
+  onOpenCommunityNode,
+  onOpenTrusted,
+  notify,
+}: {
+  back: () => void;
+  navigate: (s: Screen) => void;
+  notifications: AppNotificationItem[];
+  onMarkAllRead: () => void;
+  onMarkRead: (id: string) => void;
+  onRespondTrusted: (
+    requestId: string,
+    decision: "accepted" | "rejected",
+    senderName: string,
+    requestKind?: "direct_invite" | "invite_link",
+  ) => Promise<void>;
+  onOpenPost: (postId: string) => void;
+  onOpenCommunityNode: () => void;
+  onOpenTrusted: () => void;
+  notify: (s: string) => void;
+}) {
+  const [filter, setFilter] = useState<"All" | "Emergency" | "Community" | "Messages">("All");
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const filtered = notifications.filter((item) => {
+    if (filter === "All") return true;
+    if (filter === "Emergency") {
+      return (
+        item.type === "emergency_contact_request" ||
+        item.type === "emergency_contact_accepted"
+      );
+    }
+    if (filter === "Community") {
+      return (
+        item.type === "post_liked" ||
+        item.type === "post_commented" ||
+        item.type === "comment_replied"
+      );
+    }
+    if (filter === "Messages") {
+      return item.type === "support_message";
+    }
+    return true;
+  });
+
+  const handleCardClick = (item: AppNotificationItem) => {
+    onMarkRead(item.id);
+    if (item.postId) {
+      onOpenPost(item.postId);
+    } else if (item.type === "support_message") {
+      onOpenCommunityNode();
+    } else if (
+      item.type === "emergency_contact_request" ||
+      item.type === "emergency_contact_accepted"
+    ) {
+      onOpenTrusted();
+    }
+  };
+
+  const getIconForType = (type: AppNotificationType) => {
+    switch (type) {
+      case "emergency_contact_request":
+      case "emergency_contact_accepted":
+        return <Icon name="shield" />;
+      case "post_liked":
+        return <Icon name="heart" />;
+      case "post_commented":
+      case "comment_replied":
+        return <Icon name="chat" />;
+      case "support_message":
+        return <Icon name="send" />;
+      default:
+        return <Icon name="bell" />;
+    }
+  };
+
+  const getWrapClassForType = (type: AppNotificationType) => {
+    switch (type) {
+      case "emergency_contact_request":
+      case "emergency_contact_accepted":
+        return "emergency";
+      case "post_liked":
+        return "like";
+      case "post_commented":
+      case "comment_replied":
+        return "comment";
+      case "support_message":
+        return "message";
+      default:
+        return "system";
+    }
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Notifications"
+        subtitle="All your activity & updates"
+        back={back}
+        hideNotifications={true}
+        action={
+          <button
+            type="button"
+            className="notifications-settings-icon-btn"
+            onClick={() => navigate("notificationSettings")}
+            aria-label="Notification settings & quiet hours"
+            title="Notification settings & quiet hours"
+          >
+            <Icon name="settings" />
+          </button>
+        }
+      />
+      <section className="page-pad">
+        <div className="notifications-top-bar">
+          <div className="notifications-badge-wrap">
+            {unreadCount > 0 ? (
+              <span className="notifications-unread-pill">
+                <i /> {unreadCount} unread
+              </span>
+            ) : (
+              <span
+                className="notifications-unread-pill"
+                style={{ background: "var(--sage-soft)", color: "#2e7d32" }}
+              >
+                All caught up
+              </span>
+            )}
+            <span className="notifications-total-count">
+              {notifications.length} {notifications.length === 1 ? "notification" : "notifications"}
+            </span>
+          </div>
+          <div className="notifications-top-actions">
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                className="mark-all-read-btn"
+                onClick={onMarkAllRead}
+              >
+                Mark all as read
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="notifications-filter-row">
+          {(["All", "Emergency", "Community", "Messages"] as const).map((tabName) => {
+            const count = notifications.filter((n) => {
+              if (tabName === "All") return true;
+              if (tabName === "Emergency")
+                return (
+                  n.type === "emergency_contact_request" ||
+                  n.type === "emergency_contact_accepted"
+                );
+              if (tabName === "Community")
+                return (
+                  n.type === "post_liked" ||
+                  n.type === "post_commented" ||
+                  n.type === "comment_replied"
+                );
+              if (tabName === "Messages") return n.type === "support_message";
+              return true;
+            }).length;
+            return (
+              <Button
+                key={tabName}
+                variant={filter === tabName ? "primary" : "secondary"}
+                onClick={() => setFilter(tabName)}
+              >
+                {tabName} ({count})
+              </Button>
+            );
+          })}
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="notifications-empty-box">
+            <Icon name="bell" />
+            <h3>No notifications in {filter}</h3>
+            <p>
+              Activity like someone putting you as emergency contact, post likes, comments, and supportive messages will appear here 🌱
+            </p>
+          </div>
+        ) : (
+          <div className="notifications-list">
+            {filtered.map((item) => {
+              const isActionableContact =
+                item.type === "emergency_contact_request" && item.rawRequest;
+              const isClickable =
+                Boolean(item.postId) ||
+                item.type === "support_message" ||
+                item.type === "emergency_contact_accepted";
+
+              return (
+                <div
+                  key={item.id}
+                  className={`notification-card ${!item.read ? "unread" : ""} ${
+                    isClickable ? "clickable" : ""
+                  }`}
+                  onClick={() => {
+                    if (isClickable) handleCardClick(item);
+                    else onMarkRead(item.id);
+                  }}
+                >
+                  <div className={`notification-icon-wrap ${getWrapClassForType(item.type)}`}>
+                    {getIconForType(item.type)}
+                  </div>
+
+                  <div className="notification-body">
+                    <div className="notification-header-row">
+                      <strong>{item.title}</strong>
+                      <small>{formatFriendlyTime(item.createdAt)}</small>
+                    </div>
+                    <p>{item.message}</p>
+
+                    {item.audioUrl && (
+                      <div style={{ marginTop: "8px" }} onClick={(e) => e.stopPropagation()}>
+                        <VoiceNote
+                          audioUrl={item.audioUrl}
+                          audioDuration={item.audioDuration || 8}
+                          notify={notify}
+                        />
+                      </div>
+                    )}
+
+                    {isActionableContact && item.rawRequest && (
+                      <div
+                        className="notification-item-actions"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {item.rawRequest.status === "pending" ? (
+                          <>
+                            <Button
+                              variant="primary"
+                              onClick={async () => {
+                                onMarkRead(item.id);
+                                await onRespondTrusted(
+                                  item.rawRequest!.id,
+                                  "accepted",
+                                  item.rawRequest!.fromName,
+                                  item.rawRequest!.requestKind,
+                                );
+                              }}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={async () => {
+                                onMarkRead(item.id);
+                                await onRespondTrusted(
+                                  item.rawRequest!.id,
+                                  "rejected",
+                                  item.rawRequest!.fromName,
+                                  item.rawRequest!.requestKind,
+                                );
+                              }}
+                            >
+                              Reject
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              onClick={() => {
+                                onMarkRead(item.id);
+                                onOpenTrusted();
+                              }}
+                            >
+                              View in Contacts
+                            </Button>
+                          </>
+                        ) : item.rawRequest.status === "accepted" ? (
+                          <span className="notification-item-badge accepted">
+                            <Icon name="check" /> Accepted as Trusted Contact
+                          </span>
+                        ) : (
+                          <span className="notification-item-badge rejected">
+                            Request Declined
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {isClickable && !isActionableContact && (
+                      <div style={{ marginTop: "6px" }}>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            color: "var(--coral-dark)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "2px",
+                          }}
+                        >
+                          {item.type === "support_message"
+                            ? "View in My Node ›"
+                            : "Open post ›"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {!item.read && <span className="notification-unread-dot-badge" title="Unread" />}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+      </section>
+    </>
+  );
+}
+
+function NotificationSettings({
+  back,
+  notify,
+}: {
+  back: () => void;
+  notify: (s: string) => void;
+}) {
+  const [settings, setSettings] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem("ony_notification_prefs_v1");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return {
+      "Daily check-in": true,
+      "Emergency contacts": true,
+      "Community activity": true,
+      "Supportive messages": true,
+      "Gentle follow-up": true,
+    };
+  });
+
+  const [quietHours, setQuietHours] = useState<{
+    enabled: boolean;
+    start: string;
+    end: string;
+  }>(() => {
+    try {
+      const stored = localStorage.getItem("ony_quiet_hours_v1");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return {
+      enabled: true,
+      start: "22:00",
+      end: "08:00",
+    };
+  });
+
+  const handleSave = () => {
+    try {
+      localStorage.setItem("ony_notification_prefs_v1", JSON.stringify(settings));
+      localStorage.setItem("ony_quiet_hours_v1", JSON.stringify(quietHours));
+    } catch {}
+    notify("Notification preferences & quiet hours saved");
+    back();
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Notification Settings"
+        subtitle="Preferences & quiet hours"
+        back={back}
+        hideNotifications={true}
+      />
+      <section className="page-pad">
+        <div className="card" style={{ padding: "16px", marginBottom: "16px" }}>
+          <div className="setting-section-header">
+            <span className="eyebrow">Rest & Peace</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>🌙 Quiet Hours</h3>
+                <p style={{ margin: "2px 0 0", color: "var(--muted)", fontSize: "12px" }}>
+                  Mute non-urgent alerts during sleep or focus time.
+                </p>
+              </div>
+              <Toggle
+                on={quietHours.enabled}
+                setOn={(v) => setQuietHours((prev) => ({ ...prev, enabled: v }))}
+              />
+            </div>
+          </div>
+
+          {quietHours.enabled && (
+            <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px dashed var(--line)" }}>
+              <div className="quiet-hours-time-row">
+                <div className="quiet-hours-time-input">
+                  <label>Start (Bedtime)</label>
+                  <TextInput
+                    type="time"
+                    value={quietHours.start}
+                    onChange={(e) =>
+                      setQuietHours((prev) => ({ ...prev, start: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="quiet-hours-time-input">
+                  <label>End (Wake up)</label>
+                  <TextInput
+                    type="time"
+                    value={quietHours.end}
+                    onChange={(e) =>
+                      setQuietHours((prev) => ({ ...prev, end: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="quiet-hours-emergency-callout" style={{ marginTop: "12px" }}>
+                <Icon name="shield" />
+                <span>
+                  <strong>Emergency Override:</strong> Trusted contact requests and safety crisis resources will always alert you immediately, even during quiet hours.
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: "16px", marginBottom: "20px" }}>
+          <span className="eyebrow">Alert Categories</span>
+          <h3 style={{ margin: "4px 0 6px" }}>🔔 Choose What Updates You Receive</h3>
+          <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: "14px" }}>
+            Toggle the activities you want to receive alerts for in your notification feed.
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            {Object.entries(settings).map(([name, on], idx, arr) => (
+              <div
+                className="setting-toggle"
+                key={name}
+                style={{
+                  padding: "10px 0",
+                  borderBottom: idx === arr.length - 1 ? "none" : "1px solid var(--line)",
+                }}
+              >
+                <div style={{ paddingRight: "10px" }}>
+                  <strong style={{ fontSize: "13.5px" }}>{name}</strong>
+                  <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "var(--muted)" }}>
+                    {name === "Daily check-in"
+                      ? "Gentle reminder for your daily mood check-in."
+                      : name === "Emergency contacts"
+                      ? "Requests and confirmations from your trusted emergency contacts."
+                      : name === "Community activity"
+                      ? "When other members like or comment on your community posts."
+                      : name === "Supportive messages"
+                      ? "When anonymous members send encouragement to your globe node."
+                      : "Helpful follow-up reflections and gentle check-ins from ONY."}
+                  </p>
+                </div>
+                <Toggle
+                  on={on}
+                  setOn={(v) => setSettings((prev) => ({ ...prev, [name]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingBottom: "24px" }}>
+          <Button className="full" onClick={handleSave}>
+            Save Preferences
+          </Button>
+          <Button variant="ghost" className="full" onClick={back}>
+            Back to Notifications
+          </Button>
+        </div>
+      </section>
+    </>
+  );
 }
 
 function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit, resetFreeUsage, notify }: {
