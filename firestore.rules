@@ -67,5 +67,10 @@ service cloud.firestore {
     match /trustedContactRequests/{requestId} {
       allow read, write: if true;
     }
+
+    // System audit & production activity logs
+    match /systemLogs/{logId} {
+      allow read, write: if true;
+    }
   }
 }

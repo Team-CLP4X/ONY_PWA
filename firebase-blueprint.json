@@ -228,6 +228,30 @@
         "respondedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["fromUid", "fromName", "fromEmail", "toUid", "toName", "toEmail", "status", "createdAt", "updatedAt"]
+    },
+    "SystemLog": {
+      "title": "SystemLog",
+      "description": "Production audit and system event logs recorded in Firestore for security, compliance, error tracing, and activity monitoring.",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "level": { "type": "string", "enum": ["info", "warn", "error", "security", "audit"] },
+        "category": { "type": "string", "maxLength": 50 },
+        "action": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 120 },
+        "clientInfo": {
+          "type": "object",
+          "properties": {
+            "platform": { "type": "string" },
+            "userAgent": { "type": "string", "maxLength": 300 },
+            "version": { "type": "string" }
+          }
+        },
+        "metadata": { "type": "object" }
+      },
+      "required": ["timestamp", "level", "category", "action", "message"]
     }
   },
   "firestore": {
@@ -270,6 +294,10 @@
     "/trustedContactRequests/{requestId}": {
       "schema": "TrustedContactRequest",
       "description": "Stores trusted contact requests between registered ONY users with pending, accepted, and rejected statuses."
+    },
+    "/systemLogs/{logId}": {
+      "schema": "SystemLog",
+      "description": "Stores production application activity logs, security audit events, and system diagnostic records in Firestore."
     }
   }
 }

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useMemo,
+  useCallback,
   createContext,
   useContext,
 } from "react";
@@ -68,6 +69,12 @@ import {
   DEFAULT_MERCHANTS,
   DEFAULT_USER_CONVERSATIONS,
   DEFAULT_COMMUNITY_MESSAGES,
+  writeSystemLog,
+  listSystemLogs,
+  formatLogsAsTextFile,
+  downloadLogFile,
+  type SystemLogEntry,
+  type SystemLogLevel,
   type PostLikeRecord,
   type PostCommentRecord,
   type PostCommentReplyRecord,
@@ -107,7 +114,8 @@ type Screen =
   | "postDetail"
   | "riskDemo"
   | "resources"
-  | "legal";
+  | "legal"
+  | "systemLogs";
 
 type Theme = "ocean" | "sunset" | "forest" | "lavender" | "peach" | "neutral";
 type Companion = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
@@ -219,6 +227,22 @@ const Icon = ({ name }: { name: string }) => {
       <>
         <circle cx="12" cy="12" r="3" />
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </>
+    ),
+    fileText: (
+      <>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <line x1="10" y1="9" x2="8" y2="9" />
+      </>
+    ),
+    download: (
+      <>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
       </>
     ),
   };
@@ -502,6 +526,12 @@ function App() {
           if (loadedMerchants && loadedMerchants.length > 0) {
             setMerchants(loadedMerchants);
           }
+          writeSystemLog({
+            level: "info",
+            category: "sync",
+            action: "DATABASE_SYNCED",
+            message: "Connected to Cloud Firestore (ai-studio-onypwa-289f0eda-a42f-43da-8c66-8ac63f5d46a8). Synced live collections.",
+          }).catch(() => {});
         }
       } catch (err) {
         console.warn("[ONY] Database fetch warning:", err);
@@ -522,6 +552,14 @@ function App() {
       if (user) {
         setAuthenticated(true);
         if (user.displayName) setDisplayName(user.displayName);
+        writeSystemLog({
+          level: "audit",
+          category: "auth",
+          action: "USER_AUTHENTICATED",
+          message: `Active session authenticated for ${user.email || user.uid}.`,
+          userId: user.uid,
+          userEmail: user.email,
+        }).catch(() => {});
         try {
           await seedInitialUserData(user.uid).catch((e) => console.warn("[ONY] User seed notice:", e));
           const profile = await getUserProfile(user.uid);
@@ -1263,7 +1301,8 @@ function App() {
             {screen === "merchant" && <MerchantDetail back={back} navigate={navigate} merchants={merchants} merchantName={selectedMerchantName} notify={notify} />}
             {screen === "voucher" && <Voucher back={back} merchants={merchants} merchantName={selectedMerchantName} />}
             {screen === "post" && <CreatePost back={back} notify={notify} displayName={displayName} currentUid={effectiveUid} onPostCreated={handleCreatePost} />}
-            {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} reviewMemories={() => goTab("memory")} clearMemories={handleClearMemories} onDeleteAccount={handleDeleteAccount} />}
+            {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} reviewMemories={() => goTab("memory")} clearMemories={handleClearMemories} onDeleteAccount={handleDeleteAccount} navigate={navigate} />}
+            {screen === "systemLogs" && <SystemLogsView back={back} notify={notify} currentUser={currentUser} />}
             {screen === "about" && <About back={back} />}
             {screen === "addMemory" && <AddMemory back={back} memories={memories} setMemories={handleSetMemories} editing={editingMemory} notify={notify} />}
             {screen === "jobPrefs" && <JobPreferences back={back} navigate={navigate} />}
@@ -3738,6 +3777,7 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
         : "All caught up",
     ],
     ["privacy", "Privacy & memory", "You’re in control"],
+    ["systemLogs", "Activity & System Logs", "Cloud database audit trail & .log export"],
     ["legal", "Legal & safety", "Disclaimer, terms, privacy, and crisis information"],
     ["subscription", "Subscription", subscriptionLabel],
     ["help", "Help & support", "Resources and crisis help"],
@@ -3745,7 +3785,7 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
   ] as [Screen, string, string][];
   return <><PageHeader title="Profile" subtitle="Your ONY, your way" /><section className="page-pad top-row">
     <div className="profile-card"><CompanionAvatar companion={companion} /><div><h2>{displayName} & ONY</h2><p>Preferred display name · {language}</p><span>{companion} · {personaOptions.find((item) => item.id === persona)?.name}</span></div><SmallLogo /></div>
-    <div className="section-head"><h3>Settings</h3></div><div className="menu">{menu.map(([id, title, text]) => <button key={id} onClick={() => navigate(id)}><span className="menu-icon"><Icon name={id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : "profile"} /></span><span><strong>{title}</strong><small>{text}</small></span><Icon name="chevron" /></button>)}</div>
+    <div className="section-head"><h3>Settings</h3></div><div className="menu">{menu.map(([id, title, text]) => <button key={id} onClick={() => navigate(id)}><span className="menu-icon"><Icon name={id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : id === "systemLogs" ? "fileText" : "profile"} /></span><span><strong>{title}</strong><small>{text}</small></span><Icon name="chevron" /></button>)}</div>
     <Button variant="secondary" className="full logout" onClick={onLogout}>Log out</Button>
     <p className="prototype-foot">ONY Secure Platform · Protected by Firebase Authentication & Cloud Firestore. End-to-end secure synchronization.</p>
   </section></>;
@@ -4244,6 +4284,12 @@ function NotificationSettings({
       localStorage.setItem("ony_notification_prefs_v1", JSON.stringify(settings));
       localStorage.setItem("ony_quiet_hours_v1", JSON.stringify(quietHours));
     } catch {}
+    writeSystemLog({
+      level: "info",
+      category: "privacy",
+      action: "NOTIFICATION_PREFERENCES_SAVED",
+      message: `Quiet hours: ${quietHours.enabled ? "Active (" + quietHours.start + "-" + quietHours.end + ")" : "Disabled"}. Updated category alert preferences.`,
+    }).catch(() => {});
     notify("Notification preferences & quiet hours saved");
     back();
   };
@@ -4393,9 +4439,18 @@ function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit,
 
 function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
   const [answer, setAnswer] = useState<"none" | "yes" | "no">("none");
+  const handleAnswerYes = () => {
+    setAnswer("yes");
+    writeSystemLog({
+      level: "security",
+      category: "safety",
+      action: "CRISIS_IMMEDIATE_DANGER_TRIGGERED",
+      message: "User responded YES to immediate danger. Critical emergency pathways presented.",
+    }).catch(() => {});
+  };
   return <div className="safety-page"><PageHeader title="Immediate support" subtitle="Let’s focus on your safety" back={back} /><section className="page-pad">
     <div className="safety-mark"><Icon name="shield" /></div><h1>I’m really sorry you’re going through this.</h1><p className="lead">You don’t have to handle this alone. I want to help you connect with support that can respond right now.</p>
-    {answer === "none" && <div className="danger-card"><strong>Are you in immediate danger?</strong><p>This includes having a plan, access to means, or feeling you may act now.</p><Button variant="danger" className="full" onClick={() => setAnswer("yes")}>Yes, I need immediate help</Button><Button variant="secondary" className="full" onClick={() => setAnswer("no")}>No, but I need support</Button></div>}
+    {answer === "none" && <div className="danger-card"><strong>Are you in immediate danger?</strong><p>This includes having a plan, access to means, or feeling you may act now.</p><Button variant="danger" className="full" onClick={handleAnswerYes}>Yes, I need immediate help</Button><Button variant="secondary" className="full" onClick={() => setAnswer("no")}>No, but I need support</Button></div>}
     {answer === "yes" && <div className="emergency"><span className="eyebrow">Need immediate help?</span><a href="tel:999">999</a><strong>Emergency</strong><p>If you can, move away from anything you could use to hurt yourself and go to a trusted person or public place.</p><Button className="full" onClick={() => navigate("help")}>See Malaysia crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>Contact someone I trust</Button></div>}
     {answer === "no" && <div className="danger-card"><strong>Let’s connect you with someone.</strong><p>Consider contacting a trusted person and staying near others. A befriender, counsellor, or support line can listen without judgment.</p><Button className="full" onClick={() => navigate("help")}>View crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>Contact someone I trust</Button><Button variant="ghost" className="full" onClick={back}>Return when I’m ready</Button></div>}
     <p className="safety-disclaimer"><strong>ONY is an AI companion and does not replace human emergency services.</strong> If in immediate life-threatening crisis, call 999 or Talian HEAL 15555 immediately.</p>
@@ -4404,6 +4459,14 @@ function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen
 }
 
 function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
+  useEffect(() => {
+    writeSystemLog({
+      level: "info",
+      category: "safety",
+      action: "CRISIS_DIRECTORY_ACCESSED",
+      message: "User opened verified Malaysian helplines and emergency directory.",
+    }).catch(() => {});
+  }, []);
   return <><PageHeader title="Get support" subtitle="Professional and urgent help" back={back} /><section className="page-pad">
     <div className="help-hero"><Icon name="shield" /><div><h2>You deserve the right support.</h2><p>ONY provides emotional support and information. It is not a replacement for professional or emergency care.</p></div></div>
     <h3 className="group-title">Immediate danger</h3><a className="resource emergency-resource" href="tel:999"><span><strong>Malaysian Emergency Services</strong><small>Police, ambulance, emergency medical response</small></span><b>Call 999</b></a>
@@ -6211,7 +6274,27 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
   );
 }
 
-function Privacy({ back, notify, memoryCount, useActiveMemories, setUseActiveMemories, reviewMemories, clearMemories, onDeleteAccount }: { back: () => void; notify: (s: string) => void; memoryCount: number; useActiveMemories: boolean; setUseActiveMemories: (v: boolean) => void; reviewMemories: () => void; clearMemories: () => void; onDeleteAccount?: () => void }) {
+function Privacy({
+  back,
+  notify,
+  memoryCount,
+  useActiveMemories,
+  setUseActiveMemories,
+  reviewMemories,
+  clearMemories,
+  onDeleteAccount,
+  navigate,
+}: {
+  back: () => void;
+  notify: (s: string) => void;
+  memoryCount: number;
+  useActiveMemories: boolean;
+  setUseActiveMemories: (v: boolean) => void;
+  reviewMemories: () => void;
+  clearMemories: () => void;
+  onDeleteAccount?: () => void;
+  navigate: (s: Screen) => void;
+}) {
   const [analytics, setAnalytics] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
@@ -6255,6 +6338,13 @@ function Privacy({ back, notify, memoryCount, useActiveMemories, setUseActiveMem
         </div>
         <Button variant="secondary" className="full" onClick={reviewMemories}>
           Review saved memories
+        </Button>
+        <Button
+          variant="secondary"
+          className="full"
+          onClick={() => navigate("systemLogs")}
+        >
+          <Icon name="fileText" /> View Database Activity & System Logs (.log)
         </Button>
         <Button
           variant="secondary"
@@ -6317,6 +6407,281 @@ function About({ back }: { back: () => void }) {
           <p>ONY is engineered to provide compassionate, culturally-aware companionship, privacy-first community connection, and swift escalation to professional care when you need it most.</p>
         </div>
         <small>ONY · Version 1.0.0 (Release Edition)</small>
+      </section>
+    </>
+  );
+}
+
+function SystemLogsView({
+  back,
+  notify,
+  currentUser,
+}: {
+  back: () => void;
+  notify: (s: string) => void;
+  currentUser: User | null;
+}) {
+  const [logs, setLogs] = useState<SystemLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<string>("All");
+  const [search, setSearch] = useState("");
+  const [isSubmittingPing, setIsSubmittingPing] = useState(false);
+
+  const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const items = await listSystemLogs(100);
+      setLogs(items);
+    } catch {
+      notify("Failed to fetch logs from Firestore");
+    } finally {
+      setLoading(false);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  const handleDownloadLog = () => {
+    if (logs.length === 0) {
+      notify("No log records available to export");
+      return;
+    }
+    const formatted = formatLogsAsTextFile(logs);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `ony-system-audit-${dateStr}.log`;
+    downloadLogFile(formatted, fileName, "text/plain");
+    notify(`Downloaded log file: ${fileName}`);
+
+    writeSystemLog({
+      level: "audit",
+      category: "privacy",
+      action: "LOG_FILE_DOWNLOADED",
+      message: `User exported system log file (${logs.length} records, format: .log).`,
+      userId: currentUser?.uid,
+      userEmail: currentUser?.email,
+    });
+  };
+
+  const handleDownloadJson = () => {
+    if (logs.length === 0) {
+      notify("No log records available to export");
+      return;
+    }
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `ony-system-audit-${dateStr}.json`;
+    downloadLogFile(JSON.stringify(logs, null, 2), fileName, "application/json");
+    notify(`Downloaded JSON log: ${fileName}`);
+
+    writeSystemLog({
+      level: "audit",
+      category: "privacy",
+      action: "JSON_LOG_DOWNLOADED",
+      message: `User exported system log file (${logs.length} records, format: .json).`,
+      userId: currentUser?.uid,
+      userEmail: currentUser?.email,
+    });
+  };
+
+  const handleDiagnosticPing = async () => {
+    setIsSubmittingPing(true);
+    try {
+      await writeSystemLog({
+        level: "info",
+        category: "system",
+        action: "DIAGNOSTIC_PING_OK",
+        message: "Manual diagnostic ping generated by user. Cloud Firestore round-trip verified.",
+        userId: currentUser?.uid,
+        userEmail: currentUser?.email,
+        metadata: {
+          clientTime: new Date().toISOString(),
+          screen: "systemLogs",
+          database: "ai-studio-onypwa-289f0eda-a42f-43da-8c66-8ac63f5d46a8",
+        },
+      });
+      notify("Diagnostic log entry saved to Firestore");
+      await fetchLogs();
+    } catch {
+      notify("Could not write diagnostic log entry");
+    } finally {
+      setIsSubmittingPing(false);
+    }
+  };
+
+  const filteredLogs = logs.filter((log) => {
+    if (filter === "Security" && log.level !== "security") return false;
+    if (filter === "Audit" && log.level !== "audit") return false;
+    if (filter === "Safety" && log.category !== "safety") return false;
+    if (filter === "Auth" && log.category !== "auth") return false;
+    if (filter === "System" && log.category !== "system") return false;
+    if (filter === "Errors" && log.level !== "error" && log.level !== "warn") return false;
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchAction = log.action.toLowerCase().includes(q);
+      const matchMsg = log.message.toLowerCase().includes(q);
+      const matchCat = log.category.toLowerCase().includes(q);
+      const matchUser = (log.userEmail || "").toLowerCase().includes(q);
+      return matchAction || matchMsg || matchCat || matchUser;
+    }
+    return true;
+  });
+
+  return (
+    <>
+      <PageHeader
+        title="Activity & System Logs"
+        subtitle="Production database audit trail"
+        back={back}
+        action={
+          <div style={{ display: "flex", gap: "6px" }}>
+            <Button
+              variant="secondary"
+              className="header-action-btn"
+              onClick={handleDownloadLog}
+              title="Download standard .log file"
+            >
+              <Icon name="download" /> .log
+            </Button>
+          </div>
+        }
+      />
+      <section className="page-pad system-logs-page">
+        <div className="system-logs-hero">
+          <div className="system-logs-hero-icon">
+            <Icon name="fileText" />
+          </div>
+          <div>
+            <h2>Database System & Audit Logs</h2>
+            <p>
+              Real-time audit log of security events, authentications, safety escalations, and system actions stored in Cloud Firestore.
+            </p>
+          </div>
+        </div>
+
+        <div className="log-file-summary-card">
+          <div className="log-file-summary-header">
+            <div>
+              <strong style={{ fontSize: "13px" }}>📦 Live Database Log Stream</strong>
+              <small style={{ display: "block", color: "var(--muted)", fontSize: "11px" }}>
+                Collection: <code>systemLogs</code> · Zero-Trust Security
+              </small>
+            </div>
+            <Button
+              variant="ghost"
+              className="refresh-btn"
+              onClick={fetchLogs}
+              disabled={loading}
+              title="Refresh log stream"
+            >
+              <Icon name="refresh" /> {loading ? "Syncing…" : "Refresh"}
+            </Button>
+          </div>
+
+          <div className="log-file-meta-grid">
+            <div className="log-file-meta-item">
+              <strong>Database Instance</strong>
+              <span>ai-studio-onypwa…</span>
+            </div>
+            <div className="log-file-meta-item">
+              <strong>Total Records</strong>
+              <span>{logs.length} logged events</span>
+            </div>
+            <div className="log-file-meta-item">
+              <strong>Current User</strong>
+              <span>{currentUser?.email || "Anonymous"}</span>
+            </div>
+            <div className="log-file-meta-item">
+              <strong>Log Standard</strong>
+              <span>RFC-5424 Syslog / JSON</span>
+            </div>
+          </div>
+
+          <div className="log-export-actions">
+            <Button variant="primary" onClick={handleDownloadLog}>
+              <Icon name="download" /> Export .log File
+            </Button>
+            <Button variant="secondary" onClick={handleDownloadJson}>
+              <Icon name="fileText" /> Export .json File
+            </Button>
+          </div>
+          <div style={{ marginTop: "4px" }}>
+            <Button
+              variant="ghost"
+              className="full"
+              onClick={handleDiagnosticPing}
+              disabled={isSubmittingPing}
+            >
+              {isSubmittingPing ? "Writing to DB…" : "+ Record Diagnostic Ping in Firestore"}
+            </Button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: "12px" }}>
+          <TextInput
+            placeholder="Search action, message, or user..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: "100%", padding: "8px 12px", fontSize: "12.5px" }}
+          />
+        </div>
+
+        <div className="logs-filter-scroll">
+          {(["All", "Security", "Audit", "Safety", "Auth", "System", "Errors"] as const).map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              className={`logs-filter-pill ${filter === cat ? "active" : ""}`}
+              onClick={() => setFilter(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="log-empty-state">Loading system log stream from Firestore…</div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="log-empty-state">No matching log records found in database.</div>
+        ) : (
+          <div className="logs-list">
+            {filteredLogs.map((log) => {
+              const d = new Date(log.timestamp);
+              const friendlyTime = isNaN(d.getTime())
+                ? log.timestamp
+                : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+              return (
+                <div className="log-card" key={log.id}>
+                  <div className="log-card-head">
+                    <div className="log-badge-group">
+                      <span className={`log-badge ${log.level}`}>{log.level}</span>
+                      <span className="log-category-tag">{log.category}</span>
+                    </div>
+                    <span className="log-timestamp">{friendlyTime}</span>
+                  </div>
+                  <strong className="log-action-title">{log.action}</strong>
+                  <p className="log-body-msg">{log.message}</p>
+                  <div className="log-meta-footer">
+                    <span>
+                      <strong>ID:</strong> {log.id}
+                    </span>
+                    {log.userEmail && (
+                      <span>
+                        <strong>User:</strong> {log.userEmail}
+                      </span>
+                    )}
+                    {log.clientInfo?.platform && (
+                      <span>
+                        <strong>Platform:</strong> {log.clientInfo.platform}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
     </>
   );

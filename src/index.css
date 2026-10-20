@@ -1011,3 +1011,216 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   .chat-input { bottom: 88px; }
 }
 
+/* ============================================================================
+   SYSTEM & AUDIT LOGS IN CLOUD FIRESTORE
+   ============================================================================ */
+.system-logs-hero {
+  background: linear-gradient(135deg, rgba(46, 125, 50, 0.08), rgba(66, 133, 244, 0.06));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.system-logs-hero-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #2e7d32;
+}
+.system-logs-hero h2 {
+  font-size: 15px;
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+.system-logs-hero p {
+  font-size: 12px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.log-file-summary-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.log-file-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.log-file-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 11px;
+}
+.log-file-meta-item strong {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.log-file-meta-item span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+.log-export-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.logs-filter-scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+.logs-filter-pill {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.logs-filter-pill.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.log-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease;
+}
+.log-card:hover {
+  border-color: color-mix(in srgb, var(--ink) 25%, var(--line));
+}
+.log-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.log-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.log-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.log-badge.info {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+.log-badge.audit {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.log-badge.security {
+  background: #ede7f6;
+  color: #512da8;
+}
+.log-badge.safety {
+  background: #fff3e0;
+  color: #e65100;
+}
+.log-badge.warn {
+  background: #fff8e1;
+  color: #f57f17;
+}
+.log-badge.error {
+  background: #ffebee;
+  color: #c62828;
+}
+.log-category-tag {
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.log-timestamp {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.log-action-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.log-body-msg {
+  font-size: 12px;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.4;
+}
+.log-meta-footer {
+  display: flex;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 6px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.log-empty-state {
+  text-align: center;
+  padding: 36px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+}
+
+
