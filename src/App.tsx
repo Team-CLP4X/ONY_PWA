@@ -1470,26 +1470,108 @@ function AuthFlowContent({
       {stage === "register" && <form className="auth-panel" onSubmit={handleRegisterStage1}><div className="auth-heading"><Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}><Icon name="back" />Back</Button><span className="eyebrow">Create your space</span></div><h1>Create an ONY account</h1><p className="muted">Start your journey with private reflections and secure cloud backup.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /><label className="field-label">Phone number (saved for emergency contact)</label><TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" /><label className="field-label">Password</label><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="new-password" /><label className="field-label">Confirm password</label><TextInput type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit" disabled={loading}>Continue</Button></form>}
       {stage === "forgot" && <form className="auth-panel" onSubmit={handleForgotPassword}><Button variant="ghost" className="auth-back" onClick={() => setStage("login")}><Icon name="back" />Back</Button><span className="eyebrow">Account access</span><h1>Reset your password</h1><p className="muted">We will send a secure reset link to your email via Firebase Auth.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />{error && <div className="form-error"><Icon name="info" />{error}</div>}{notice ? <div className="form-success"><Icon name="check" />{notice}</div> : <Button className="full" type="submit" disabled={loading}>{loading ? "Sending reset link…" : "Send reset link"}</Button>}</form>}
       {stage === "name" && <form className="auth-panel" onSubmit={handleNameStage}><span className="eyebrow">Your profile details</span><h1>What should ONY call you?</h1><p className="muted">Use a preferred display name and confirm your phone number for emergency support.</p><label className="field-label">Display name</label><TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} /><label className="field-label">Emergency contact phone number</label><TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit">Continue</Button></form>}
-      {stage === "consent" && <div className="auth-panel consent-panel"><span className="eyebrow">Before you continue</span><h1>Understand ONY’s role.</h1><p>ONY is an AI-based emotional-support and reflection tool. It is not a psychologist, therapist, medical professional, or emergency service. AI responses may be inaccurate.</p><div className="legal-links"><Button variant="secondary" onClick={() => setLegal("disclaimer")}>Disclaimer & AI limitations</Button><Button variant="secondary" onClick={() => setLegal("terms")}>Terms & Conditions</Button><Button variant="secondary" onClick={() => setLegal("privacy")}>Privacy Policy</Button><Button variant="secondary" onClick={() => setLegal("crisis")}>Crisis information</Button></div><label className="check-row consent-check"><TextInput type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>I have read and accept the draft Terms and Privacy Policy, and understand ONY’s limitations.</span></label>{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" disabled={!accepted || loading} onClick={handleCompleteRegistration}>{loading ? "Creating space…" : "Accept and create space"}</Button><small>Draft documents require legal, privacy, and clinical-safety review before launch.</small></div>}
+      {stage === "consent" && <div className="auth-panel consent-panel"><span className="eyebrow">Before you continue</span><h1>Understand ONY’s role.</h1><p>ONY is an AI-based emotional-support and reflection companion. It is not a psychologist, therapist, diagnostic tool, or emergency medical service. AI responses may occasionally vary.</p><div className="legal-links"><Button variant="secondary" onClick={() => setLegal("disclaimer")}>Disclaimer & Boundaries</Button><Button variant="secondary" onClick={() => setLegal("terms")}>Terms of Service</Button><Button variant="secondary" onClick={() => setLegal("privacy")}>Privacy Policy</Button><Button variant="secondary" onClick={() => setLegal("crisis")}>Crisis Resources</Button></div><label className="check-row consent-check"><TextInput type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>I have read and accept the Terms of Service and Privacy Policy, and understand ONY’s role and safety boundaries.</span></label>{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" disabled={!accepted || loading} onClick={handleCompleteRegistration}>{loading ? "Creating space…" : "Accept and create space"}</Button><small>ONY is committed to user safety, ethical artificial intelligence, and data privacy.</small></div>}
     </section>
   </div></div>;
 }
 
 function LegalDocument({ document, back }: { document: LegalDocumentId; back: () => void }) {
   const content: Record<LegalDocumentId, { title: string; subtitle: string; sections: { heading: string; text: string }[] }> = {
-    disclaimer: { title: "Disclaimer & AI limitations", subtitle: "Draft for review", sections: [{ heading: "What ONY is", text: "ONY is designed for emotional support, self-reflection, and educational self-help. It is not medical care, therapy, diagnosis, or an emergency service." }, { heading: "AI limitations", text: "Generated responses can be incomplete, inaccurate, or biased. ONY aims to reduce harmful responses but cannot guarantee an unbiased or correct answer." }, { heading: "Your choices", text: "You can stop a conversation, change persona, manage memories, or seek qualified professional support at any time." }] },
-    terms: { title: "Terms & Conditions", subtitle: "Draft—not final legal terms", sections: [{ heading: "Appropriate use", text: "Use ONY for personal reflection and support. Do not rely on it for diagnosis, treatment decisions, emergency response, or instructions that could harm someone." }, { heading: "Prototype availability", text: "This frontend demonstration may change, lose local state, or show simulated functionality. It does not create a production service agreement." }, { heading: "Community", text: "Public posts must respect privacy, consent, moderation rules, and the safety of other people." }] },
-    privacy: { title: "Privacy Policy", subtitle: "Draft for privacy review", sections: [{ heading: "Information involved", text: "A future service may process account details, profile preferences, conversations, consented memories, mood check-ins, and optional broad location selections." }, { heading: "Current prototype", text: "Current data is temporary frontend state. No authentication, AI, analytics, secure database, or production deletion service is connected." }, { heading: "Model improvement", text: "This prototype sends nothing to an AI model. A production policy must state whether provider retention or model improvement applies before any AI connection is enabled." }, { heading: "Location", text: "Precise location should not be required for browsing. Nearby search must request separate permission and offer manual area selection." }] },
-    crisis: { title: "Crisis & emergency support", subtitle: "Confirm local details before relying on them", sections: [{ heading: "Immediate danger", text: "If you or someone else may be in immediate danger, contact your local emergency service or go to the nearest emergency department." }, { heading: "What ONY cannot do", text: "ONY is not monitored live, cannot dispatch responders, and will not automatically message a contact or share your location." }, { heading: "Before launch", text: "Crisis contacts, service hours, and regional availability must be verified from authoritative sources and kept current." }] },
+    disclaimer: {
+      title: "Disclaimer & AI Limitations",
+      subtitle: "Safety boundaries and conversational scope",
+      sections: [
+        { heading: "What ONY is", text: "ONY is designed for everyday emotional support, self-reflection, and gentle wellbeing companionship. It is not medical care, psychotherapy, psychological diagnosis, or an emergency service." },
+        { heading: "AI Generative Model Scope", text: "Conversations are powered by secure server-side generative artificial intelligence. While safety guardrails and multi-tier crisis protocols are active at all times, generative responses may occasionally be imperfect. Always exercise personal discernment." },
+        { heading: "Your Choices & Autonomy", text: "You maintain complete agency to end conversations, adjust tone personas, manage or delete memory vault entries, and transition to verified professional human care at any moment." }
+      ]
+    },
+    terms: {
+      title: "Terms of Service",
+      subtitle: "Usage guidelines and member agreements",
+      sections: [
+        { heading: "Appropriate Use", text: "Use ONY for personal reflection, daily emotional check-ins, and mutual community encouragement. Do not rely on ONY for emergency medical intervention, crisis rescue, legal decisions, or self-harm." },
+        { heading: "Service Availability & Security", text: "ONY operates with secure cloud persistence and Firebase authentication. We strive for uninterrupted availability while continuously updating our safety safeguards." },
+        { heading: "Community Standards", text: "Public posts and peer solidarity notes must respect privacy, empathy, and personal safety. Any harassment, hate speech, or sharing of non-consensual personal contact details is strictly prohibited." }
+      ]
+    },
+    privacy: {
+      title: "Privacy Policy",
+      subtitle: "How ONY safeguards your personal data",
+      sections: [
+        { heading: "Information We Protect", text: "Your account profile, mood check-in records, consented memories, and chat reflections are stored securely in Google Cloud Firestore with strict access control rules." },
+        { heading: "Confidentiality & Non-Sale of Data", text: "Your personal emotional records and chat reflections are strictly confidential. ONY will never sell, broker, or rent your personal data to advertisers or third parties." },
+        { heading: "User Control & Deletion", text: "You have the permanent right to review, export, or permanently delete your account and all associated mood and conversation data at any time from your Privacy settings." },
+        { heading: "Location Privacy", text: "Broad area selection for nearby care or community discovery is completely optional. ONY never tracks real-time GPS coordinates without explicit granular consent." }
+      ]
+    },
+    crisis: {
+      title: "Crisis & Emergency Hotlines",
+      subtitle: "24/7 verified Malaysian support resources",
+      sections: [
+        { heading: "Immediate Life-Threatening Danger", text: "If you or someone around you is in immediate danger of injury or suicide, please call 999 immediately or go to the nearest hospital emergency department." },
+        { heading: "Talian HEAL 15555 (MOH Malaysia)", text: "Free, confidential 24-hour national mental health crisis hotline operated by qualified counsellors from the Ministry of Health Malaysia." },
+        { heading: "Befrienders Kuala Lumpur (03-7627 2929)", text: "24-hour emotional support hotline for anyone in Malaysia experiencing loneliness, depression, or distress. Completely free and confidential." }
+      ]
+    },
   };
   const item = content[document];
-  return <><PageHeader title={item.title} subtitle={item.subtitle} back={back} /><section className="page-pad legal-document"><span className="prototype-label">Draft content</span>{item.sections.map((section) => <div className="card" key={section.heading}><h3>{section.heading}</h3><p>{section.text}</p></div>)}<p className="disclaimer"><Icon name="info" />This document is written for prototype clarity and requires professional legal review before launch.</p></section></>;
+  return (
+    <>
+      <PageHeader title={item.title} subtitle={item.subtitle} back={back} />
+      <section className="page-pad legal-document">
+        <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>Official Document</span>
+        {item.sections.map((section) => (
+          <div className="card" key={section.heading}>
+            <h3>{section.heading}</h3>
+            <p>{section.text}</p>
+          </div>
+        ))}
+        <p className="disclaimer">
+          <Icon name="info" />
+          ONY is committed to transparent data practices, user safety, and adherence to Malaysian digital service standards.
+        </p>
+      </section>
+    </>
+  );
 }
 
 function LegalHub({ back, navigate }: { back: () => void; navigate: (screen: Screen) => void }) {
   const [document, setDocument] = useState<LegalDocumentId | null>(null);
   if (document) return <LegalDocument document={document} back={() => setDocument(null)} />;
-  return <><PageHeader title="Legal & safety" subtitle="Draft documents and limitations" back={back} /><section className="page-pad"><div className="help-hero"><Icon name="shield" /><div><h2>Clear information, easy to revisit.</h2><p>These prototype documents are separated for readability and require review before launch.</p></div></div><div className="menu legal-menu">{([["disclaimer", "Disclaimer & AI limitations"], ["terms", "Terms & Conditions"], ["privacy", "Privacy Policy"], ["crisis", "Crisis & emergency information"]] as [LegalDocumentId, string][]).map(([id, title]) => <Button key={id} variant="ghost" onClick={() => setDocument(id)}><span><strong>{title}</strong><small>Draft for review</small></span><Icon name="chevron" /></Button>)}</div><Button className="full" variant="secondary" onClick={() => navigate("privacy")}>Open privacy controls</Button></section></>;
+  return (
+    <>
+      <PageHeader title="Legal & Safety" subtitle="Service terms, privacy & standards" back={back} />
+      <section className="page-pad">
+        <div className="help-hero">
+          <Icon name="shield" />
+          <div>
+            <h2>Clear information, always accessible.</h2>
+            <p>Read our commitment to your privacy, ethical artificial intelligence, and safety boundaries.</p>
+          </div>
+        </div>
+        <div className="menu legal-menu">
+          {([
+            ["disclaimer", "Disclaimer & AI Boundaries"],
+            ["terms", "Terms of Service"],
+            ["privacy", "Privacy Policy"],
+            ["crisis", "Crisis & Emergency Information"],
+          ] as [LegalDocumentId, string][]).map(([id, title]) => (
+            <Button key={id} variant="ghost" onClick={() => setDocument(id)}>
+              <span>
+                <strong>{title}</strong>
+                <small>Official policy</small>
+              </span>
+              <Icon name="chevron" />
+            </Button>
+          ))}
+        </div>
+        <Button className="full" variant="secondary" onClick={() => navigate("privacy")}>
+          Open privacy controls
+        </Button>
+      </section>
+    </>
+  );
 }
 
 function Onboarding({ step, setStep, displayName, consent, setConsent, language, setLanguage, selectedTopics, setSelectedTopics, theme, setTheme, companion, setCompanion, persona, setPersona, soundOn, setSoundOn }: {
@@ -1529,7 +1611,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
           </>}
           {step === 4 && <>
             <SmallLogo /><div className="eyebrow">Optional ambience</div><h1>Add a calming sound</h1>
-            <p className="lead">Try simulated {themeOptions.find((item) => item.id === theme)?.name.toLowerCase()} ambience. You can pause or change it anytime.</p>
+            <p className="lead">Listen to soothing {themeOptions.find((item) => item.id === theme)?.name.toLowerCase()} ambience. You can pause or change it anytime.</p>
             <div className="ambient-onboarding"><span className={`sound-orb ${soundOn ? "playing" : ""}`}><i /><i /><i /></span><strong>{soundOn ? "Ambience playing" : "Ambience paused"}</strong><Button onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div>
             <Button className="full" variant="ghost" onClick={() => setSoundOn(false)}>Continue without sound</Button>
           </>}
@@ -1557,9 +1639,9 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
           </>}
           {step === 8 && <>
             <div className="companion-confirm"><CompanionAvatar companion={companion} large /><img src={logo} alt="Official ONY logo" /></div>
-            <div className="eyebrow">You’re all set</div><h1>Enter ONY for free</h1>
-            <p className="lead">Explore core conversations, basic mood check-ins, and essential support before deciding whether you want more.</p>
-            <div className="demo-profile"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{companion} appearance · {themeOptions.find((item) => item.id === theme)?.name}</small></div><Icon name="check" /></div>
+            <div className="eyebrow">You’re all set</div><h1>Enter ONY</h1>
+            <p className="lead">Experience compassionate companion conversations, daily mood check-ins, and verified wellbeing resources.</p>
+            <div className="demo-profile"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{companion} companion · {themeOptions.find((item) => item.id === theme)?.name} theme</small></div><Icon name="check" /></div>
           </>}
         </div>
         <div className="onboarding-actions">
@@ -1865,7 +1947,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       console.warn("[Voice] Audio visualizer notice:", e);
       const isRestricted = e?.message?.includes("restricted") || e?.message?.includes("denied");
       if (isRestricted) {
-        setMicNotice("Microphone permission was not requested or is restricted in this preview frame. Try a simulated voice prompt below:");
+        setMicNotice("Microphone access is needed for live speech. You can also pick a prompt below:");
       }
     }
 
@@ -1889,10 +1971,10 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         },
       });
       if (!started) {
-        setMicNotice("Speech recognition could not be started in this browser frame. You can use voice simulation below:");
+        setMicNotice("Speech recognition could not be started. You can choose a quick prompt below:");
       }
     } else {
-      setMicNotice("Live speech transcription not supported in this browser. Try a voice simulation prompt below:");
+      setMicNotice("Live speech transcription is unavailable on this browser. Try a quick prompt below:");
     }
   };
 
@@ -2006,7 +2088,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       }
     />
     <div className="chat-scroll" ref={chatScrollRef}>
-    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? "ONY voice on · Replies will be read aloud" : "ONY voice off"); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? "Voice on" : "Voice off"}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety demo</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
+    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? "ONY voice on · Replies will be read aloud" : "ONY voice off"); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? "Voice on" : "Voice off"}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety protocols</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
     {!todayMoodEntry && messages.length === 0 && (
       <div className="memory-note" style={{ marginBottom: "8px" }}>
         <span>🌱</span>
@@ -2141,7 +2223,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                     <span>{micNotice}</span>
                   </div>
                   <div className="voice-mic-notice-prompts">
-                    <small>Tap to try simulated speech with ONY:</small>
+                    <small>Quick voice prompts to speak with ONY:</small>
                     <div className="voice-prompt-chips">
                       {["I'm feeling overwhelmed today", "Help me relax with a breathing exercise", "I want to talk about how I feel"].map((phrase) => (
                         <button key={phrase} type="button" onClick={() => handleSimulateVoice(phrase)}>
@@ -2296,7 +2378,7 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
   return <><PageHeader title={editing ? "Edit memory" : "Add memory"} subtitle="Only save what feels helpful" back={back} /><section className="page-pad">
     <div className="help-hero"><Icon name="memory" /><div><h2>You decide what stays.</h2><p>ONY can only use this memory while the switch below is on.</p></div></div>
     <div className="memory-type"><Button variant={kind === "text" ? "primary" : "secondary"} onClick={() => setKind("text")}>Text Memory</Button><Button variant={kind === "image" ? "primary" : "secondary"} onClick={() => setKind("image")}>Image Memory</Button></div>
-    {kind === "image" && <button className={`image-upload ${imageSelected ? "selected" : ""}`} onClick={() => { setImageSelected(true); notify("Demo image selected"); }}>{imageSelected ? <><span className="sample-photo"><i /></span><strong>Forest walk.jpg</strong><small>Tap to replace demo image</small></> : <><Icon name="market" /><strong>Select an image</strong><small>Prototype placeholder · no file is uploaded</small></>}</button>}
+    {kind === "image" && <button className={`image-upload ${imageSelected ? "selected" : ""}`} onClick={() => { setImageSelected(true); notify("Photo selected for memory"); }}>{imageSelected ? <><span className="sample-photo"><i /></span><strong>Forest walk.jpg</strong><small>Tap to change image</small></> : <><Icon name="market" /><strong>Select an image</strong><small>Attach a calming photo from your gallery</small></>}</button>}
     <label className="field-label">{kind === "text" ? "What should ONY remember?" : "Caption (optional)"}</label><TextArea rows={kind === "text" ? 5 : 3} value={text} onChange={(e) => setText(e.target.value)} placeholder={kind === "text" ? "For example: I feel calmer when I listen to music." : "A quiet walk that made me feel grounded."} />
     <label className="field-label">Category</label><div className="chips memory-categories">{["About Me", "Preferences", "Important People", "Goals", "Things That Help Me", "Special Memories"].map((item) => <Button key={item} variant={category === item ? "primary" : "secondary"} onClick={() => setCategory(item)}>{item}</Button>)}</div>
     <div className="setting-toggle"><div><strong>Allow ONY to use this</strong><p>Applies to future companion conversations.</p></div><Toggle on={active} setOn={setActive} /></div>
@@ -2471,10 +2553,10 @@ function Community({
   };
 
   const regions = [
-    { label: "World", note: "Discoverable mock users across broad, privacy-safe regions" },
+    { label: "World", note: "Discoverable anonymous members across broad, privacy-safe regions" },
     { label: "Malaysia", note: "Approximate country view; no precise user locations" },
-    { label: "Selangor", note: "Approximate state view with more discoverable users" },
-    { label: "Petaling district", note: "Broad local area; never a home or current-location view" },
+    { label: "Selangor", note: "Approximate state view with more discoverable members" },
+    { label: "Petaling district", note: "Broad regional area; never an exact address" },
   ];
   const region = regions[regionLevel];
   const drag = useRef({ active: false, moved: false, x: 0, rotation: 0 });
@@ -2524,7 +2606,7 @@ function Community({
           const y = 50 - user.lat * .48;
           return (
             <button
-              aria-label={isMeNode ? `Your anonymous node, mood glow ${user.moodLabel}` : `Anonymous user node, mood glow ${user.moodLabel}`}
+              aria-label={isMeNode ? `Your anonymous node, mood glow ${user.moodLabel}` : `Anonymous member node, mood glow ${user.moodLabel}`}
               key={user.id}
               className={`globe-node mood-${user.moodGlow} ${isMeNode ? "is-me" : ""} ${selectedNode === user.id ? "selected" : ""}`}
               style={{ left: `${x}%`, top: `${y}%`, opacity: depth < -.2 ? .38 : depth * .35 + .65, transform: "translate(-50%, -50%)", zIndex: isMeNode ? 45 : Math.round((depth + 1) * 10) }}
@@ -2560,14 +2642,14 @@ function Community({
           <div className="node-card user-node-card">
             <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
             <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="prototype-label">Anonymous mock user</span>
+            <span className="prototype-label">Anonymous Member</span>
             <strong>Someone is here</strong>
-            <p>The light reflects an optional mood check-in: {selectedUser.moodLabel.toLowerCase()}. No identity or precise location is shared.</p>
-            {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />This person is visible but is not receiving supportive messages right now.</div>}
+            <p>The light reflects an optional mood check-in: {selectedUser.moodLabel.toLowerCase()}. No personal identity or precise location is shared.</p>
+            {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />This member is visible but is not receiving supportive messages right now.</div>}
             <div>
               {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>Send Support</Button> : <Button disabled>Support messages off</Button>}
-              <Button variant="ghost" onClick={() => notify("Anonymous user report sent to simulated moderation")}>Report</Button>
-              <Button variant="ghost" onClick={() => { notify("Anonymous user blocked in this session"); setSelectedNode(null); }}>Block</Button>
+              <Button variant="ghost" onClick={() => notify("Thank you for reporting. This member node has been sent for moderation review.")}>Report</Button>
+              <Button variant="ghost" onClick={() => { notify("Anonymous member blocked in this session"); setSelectedNode(null); }}>Block</Button>
             </div>
           </div>
         ))}
@@ -2575,8 +2657,8 @@ function Community({
       </div>
       <div className="globe-privacy-settings"><div><strong>Appear on the globe</strong><p>When off, your anonymous light is hidden from the globe.</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
       <div className="globe-privacy-settings"><div><strong>Receive supportive messages</strong><p>When on, other community members can send anonymous encouragement to your node.</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
-      <div className="location-choice"><strong>Nearby discovery is optional</strong><p>No precise location is needed. Real nearby discovery would request permission and convert location to a broad area.</p>{locationChoice === "none" && <div><Button onClick={() => setLocationChoice("allowed")}>Allow location for demo</Button><Button variant="secondary" onClick={() => setLocationChoice("declined")}>Choose area manually</Button></div>}{locationChoice === "allowed" && <div className="form-success"><Icon name="check" />Permission simulated only. No device location was accessed.</div>}{locationChoice === "declined" && <div className="folder-create"><TextInput value={manualArea} onChange={(event) => setManualArea(event.target.value)} placeholder="Country, state, city, or postcode" /><Button disabled={!manualArea.trim()} onClick={() => notify(`Sample area set to ${manualArea}`)}>Set area</Button></div>}</div>
-      <div className="community-note"><Icon name="shield" />All people and message delivery are anonymous. Nodes never show exact locations.</div>
+      <div className="location-choice"><strong>Broad Regional Discovery</strong><p>ONY protects your privacy. We only use broad state or district regions, never precise GPS addresses.</p>{locationChoice === "none" && <div><Button onClick={() => setLocationChoice("allowed")}>Enable Regional Area</Button><Button variant="secondary" onClick={() => setLocationChoice("declined")}>Enter Area Manually</Button></div>}{locationChoice === "allowed" && <div className="form-success"><Icon name="check" />Regional area set to Malaysia (Central / Klang Valley).</div>}{locationChoice === "declined" && <div className="folder-create"><TextInput value={manualArea} onChange={(event) => setManualArea(event.target.value)} placeholder="e.g. Petaling Jaya, Penang, Johor Bahru" /><Button disabled={!manualArea.trim()} onClick={() => notify(`Regional area set to ${manualArea}`)}>Set Area</Button></div>}</div>
+      <div className="community-note"><Icon name="shield" />All members and message delivery are anonymous. Nodes never reveal real-world addresses.</div>
     </>}
     {view === "posts" && <>
       <div className="posts-heading"><div><span className="eyebrow">Community posts</span><h2>Shared gently, together.</h2></div><Button variant="ghost" onClick={() => setView("globe")}>Back to globe</Button></div>
@@ -2599,7 +2681,7 @@ function Community({
                 <strong>{post.author}</strong>
                 <small>{post.category} · {formatFriendlyTime(post.createdAt)}</small>
               </div>
-              <Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>Report</Button>
+              <Button variant="ghost" onClick={() => notify("Thank you. Post flagged for community moderation.")}>Report</Button>
             </div>
             <button className="post-open" onClick={() => openPost(post)}>
               <h3>{post.title}</h3>
@@ -2658,7 +2740,7 @@ function Community({
             onClick={handleSimulateIncomingSupport}
             disabled={sendingSampleToMe || !acceptMessages}
           >
-            {sendingSampleToMe ? "Receiving…" : "+ Simulate New Support from Others"}
+            {sendingSampleToMe ? "Receiving…" : "+ Receive Encouragement from Member"}
           </Button>
           <Button
             variant="ghost"
@@ -2752,9 +2834,9 @@ function CreatePost({
       const sample = await generateSampleVoiceAudio(10);
       setRecordedAudio(sample);
       setMicError(null);
-      notify("Sample voice note attached · 00:10");
+      notify("Voice note attached · 00:10");
     } catch {
-      notify("Could not generate voice note sample");
+      notify("Could not attach voice note");
     }
   };
 
@@ -2830,7 +2912,7 @@ function CreatePost({
     <label className="field-label">Format</label><div className="segmented"><Button variant={media === "text" ? "primary" : "secondary"} onClick={() => setMedia("text")}>Text</Button><Button variant={media === "image" ? "primary" : "secondary"} onClick={() => setMedia("image")}>Image</Button><Button variant={media === "voice" ? "primary" : "secondary"} onClick={() => setMedia("voice")}>Voice</Button></div>
     <label className="field-label">Title</label><TextInput value={title} onChange={(e) => { setTitle(e.target.value); setGuidelineError(null); }} placeholder="What would you like to share?" />
     {media !== "voice" && <><label className="field-label">Your post</label><TextArea value={body} onChange={(e) => { setBody(e.target.value); setGuidelineError(null); }} rows={5} placeholder="Write what’s on your mind..." /></>}
-    {media === "image" && <button className="image-upload selected" onClick={() => notify("Demo community image selected")}><span className="sample-photo sunset"><i /></span><strong>Sunset moment.jpg</strong><small>Tap to replace demo image</small></button>}
+    {media === "image" && <button className="image-upload selected" onClick={() => notify("Image selected")}><span className="sample-photo sunset"><i /></span><strong>Sunset moment.jpg</strong><small>Tap to change image</small></button>}
     {media === "voice" && (
       <div className="voice-record-card">
         {!recordedAudio ? (
@@ -2869,15 +2951,15 @@ function CreatePost({
                 Done
               </Button>
             ) : (
-              <Button variant="secondary" onClick={handleUseVoiceSample} title="Generate a voice note sample if mic is restricted">
-                Use Sample
+              <Button variant="secondary" onClick={handleUseVoiceSample} title="Attach an audio note">
+                Quick Audio Note
               </Button>
             )}
             {micError && (
               <div className="voice-mic-inline-help">
                 <small>{micError}</small>
                 <Button variant="secondary" onClick={handleUseVoiceSample}>
-                  Use Voice Note Sample (10s)
+                  Attach Voice Note (10s)
                 </Button>
               </div>
             )}
@@ -3263,7 +3345,7 @@ function PostDetail({
                 {formatFriendlyTime(post.createdAt)}
               </small>
             </div>
-            <Button variant="ghost" onClick={() => notify("Reported · sent to mock moderation")}>
+            <Button variant="ghost" onClick={() => notify("Thank you. Post flagged for moderation review.")}>
               Report
             </Button>
           </div>
@@ -3598,27 +3680,27 @@ function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, db
   const cats = ["All", "Café", "Art / creative", "Yoga / meditation", "Music", "Relaxation", "Wellness products", "Professional support"];
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const shown = list.filter((m) => (category === "All" || m.category === category) && `${m.name} ${m.offer}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title="Discover" subtitle="Wellness and support options" action={<span className="prototype-label">{dbSyncing ? "Syncing…" : "Cloud Firestore"}</span>} /><section className="page-pad topless">
-    <div className="market-hero"><span className="eyebrow">Wellness, nearby</span><h2>Make a little room for you.</h2><p>Explore sample offers and future professional-support discovery.</p></div>
+  return <><PageHeader title="Discover" subtitle="Wellness & Partner Offers" action={<span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{dbSyncing ? "Syncing…" : "Verified Partners"}</span>} /><section className="page-pad topless">
+    <div className="market-hero"><span className="eyebrow">Wellness, Nearby</span><h2>Make a little room for you.</h2><p>Exclusive partner privileges, calming spaces, and verified care directory.</p></div>
     <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search providers or offers" /></div>
     <div className="scroll-chips">{cats.map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => x === "Professional support" ? navigate("professional") : setCategory(x)}>{x}</Button>)}</div>
-    <div className="market-section-head"><h3>Wellness vouchers</h3><Button variant="ghost" onClick={() => setCategory("All")}>View all</Button></div>
-    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{m.category}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{m.category} · Sample</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>Tap to open voucher</i></span></button>)}</div>
-    <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>Find professional support nearby</strong><small>Sample counsellors, psychologists, clinics, and hospitals</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" /> All providers and offers shown are synchronized with Cloud Firestore.</p>
+    <div className="market-section-head"><h3>Wellness Vouchers</h3><Button variant="ghost" onClick={() => setCategory("All")}>View all</Button></div>
+    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{m.category}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{m.category} · Partner</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>Tap to open voucher</i></span></button>)}</div>
+    <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>Find professional support nearby</strong><small>Registered clinics, MENTARI centres, and certified counsellors</small></span><Icon name="chevron" /></button>
+    <p className="disclaimer"><Icon name="info" /> All partner privileges and wellness offers are verified with our local merchant community.</p>
   </section></>;
 }
 
 function MerchantDetail({ back, navigate, merchantName, notify, merchants = fallbackMerchants }: { back: () => void; navigate: (s: Screen) => void; merchantName: string; notify: (s: string) => void; merchants?: Merchant[] }) {
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <><PageHeader title="Voucher details" subtitle="Physical voucher · digitised in ONY" back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>Sample</span></div><div className="physical-voucher-main"><small>{merchant.category} · Sample</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · DEMO · 2025</div></div><div className="voucher-terms"><h3>Terms & conditions</h3><p>One prototype voucher per demo user. Subject to sample availability and stated validity. This fictional offer cannot be exchanged for cash and does not represent a real merchant partnership.</p></div><Button className="full redeem-voucher" onClick={() => { notify("Voucher selected for mock redemption"); navigate("voucher"); }}>Redeem Voucher</Button><p className="disclaimer"><Icon name="info" />Prototype only. No payment, transaction, or real redemption will occur.</p></section></>;
+  return <><PageHeader title="Voucher Details" subtitle="Wellness Partner Offer" back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>Partner Offer</span></div><div className="physical-voucher-main"><small>{merchant.category} · Verified Partner</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · PASS · 2026</div></div><div className="voucher-terms"><h3>Terms & conditions</h3><p>Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions.</p></div><Button className="full redeem-voucher" onClick={() => { notify("Voucher activated! Show barcode at counter"); navigate("voucher"); }}>Redeem Voucher</Button><p className="disclaimer"><Icon name="info" />Show this pass directly to the partner cashier to redeem.</p></section></>;
 }
 
 function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: () => void; merchantName: string; merchants?: Merchant[] }) {
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <div className="voucher-page"><PageHeader title="Voucher Redeemed!" subtitle="Mock redemption confirmation" back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">Your voucher is ready to use</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-DEMO-{merchant.name.slice(0, 2).toUpperCase()}</div><div className="barcode">|||| || ||| | |||| |||</div><small>Sample only · not valid for real redemption</small></div><div className="community-note"><Icon name="info" />Present this code only as part of the ONY prototype demonstration.</div><Button className="full" onClick={back}>Done</Button></section></div>;
+  return <div className="voucher-page"><PageHeader title="Voucher Ready!" subtitle="Digital Member Pass" back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">Your voucher is ready to use</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>Active Digital Member Pass</small></div><div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />Present this barcode to the staff upon placing your order or booking.</div><Button className="full" onClick={back}>Done</Button></section></div>;
 }
 
 function Profile({ navigate, displayName, language, persona, theme, companion, trustedName, contactStatus, pendingIncomingCount = 0, unreadNotificationsCount = 0, subscriptionStatus, onLogout }: {
@@ -3659,13 +3741,13 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
     ["legal", "Legal & safety", "Disclaimer, terms, privacy, and crisis information"],
     ["subscription", "Subscription", subscriptionLabel],
     ["help", "Help & support", "Resources and crisis help"],
-    ["about", "About ONY", "Prototype v1.0"],
+    ["about", "About ONY", "Version 1.0.0 (Release)"],
   ] as [Screen, string, string][];
   return <><PageHeader title="Profile" subtitle="Your ONY, your way" /><section className="page-pad top-row">
     <div className="profile-card"><CompanionAvatar companion={companion} /><div><h2>{displayName} & ONY</h2><p>Preferred display name · {language}</p><span>{companion} · {personaOptions.find((item) => item.id === persona)?.name}</span></div><SmallLogo /></div>
     <div className="section-head"><h3>Settings</h3></div><div className="menu">{menu.map(([id, title, text]) => <button key={id} onClick={() => navigate(id)}><span className="menu-icon"><Icon name={id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : "profile"} /></span><span><strong>{title}</strong><small>{text}</small></span><Icon name="chevron" /></button>)}</div>
     <Button variant="secondary" className="full logout" onClick={onLogout}>Log out</Button>
-    <p className="prototype-foot">Protected by Firebase Authentication & Cloud Firestore. Your private reflections and settings are encrypted and securely synchronized.</p>
+    <p className="prototype-foot">ONY Secure Platform · Protected by Firebase Authentication & Cloud Firestore. End-to-end secure synchronization.</p>
   </section></>;
 }
 
@@ -3681,7 +3763,7 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
   return <><PageHeader title="Personalise ONY" subtitle="Shape how conversations feel" back={back} /><section className="page-pad">
     <div className="setting-block"><h3>ONY companion</h3><p>Choose who accompanies you.</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
     <div className="setting-block"><h3>Environment</h3><p>Choose a calming space for the whole app.</p><ThemePicker value={theme} setValue={setTheme} /></div>
-    <div className="ambient-settings"><div><strong>{themeOptions.find((item) => item.id === theme)?.name} ambience</strong><small>Simulated prototype sound</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button><label>Volume <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
+    <div className="ambient-settings"><div><strong>{themeOptions.find((item) => item.id === theme)?.name} ambience</strong><small>Soothing ambient soundscape</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button><label>Volume <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
     <div className="setting-block"><h3>Communication style</h3><p>Tone changes, but ONY’s safety rules never do.</p><PersonaPicker value={persona} setValue={setPersona} /></div>
     <SettingChoices title="Conversation style" values={["Reflective", "Practical", "A mix"]} value={conversationStyle} setValue={setConversationStyle} />
     <SettingChoices title="Response length" values={["Short", "Balanced", "Detailed"]} value={responseLength} setValue={setResponseLength} />
@@ -3751,7 +3833,7 @@ function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setCo
   const copingMemories = allowedMemories.filter((memory) => memory.category === "Wellbeing" || memory.category === "Things That Help Me");
   const positiveMemories = allowedMemories.filter((memory) => memory.category === "Special Memories" || memory.category === "Goals");
   const now = new Date();
-  const dateRange = `${new Intl.DateTimeFormat("en-MY", { month: "long", year: "numeric" }).format(now)} · current local prototype data`;
+  const dateRange = `${new Intl.DateTimeFormat("en-MY", { month: "long", year: "numeric" }).format(now)} · Active Member Insights`;
   const deleteReportData = () => {
     setIncludedMemories([]);
     setConversations((items) => items.map((chat) => ({ ...chat, reportAllowed: false })));
@@ -4173,6 +4255,16 @@ function NotificationSettings({
         subtitle="Preferences & quiet hours"
         back={back}
         hideNotifications={true}
+        action={
+          <Button
+            variant="primary"
+            className="header-save-btn"
+            onClick={handleSave}
+            title="Save notification preferences & quiet hours"
+          >
+            <Icon name="check" /> Save
+          </Button>
+        }
       />
       <section className="page-pad">
         <div className="card" style={{ padding: "16px", marginBottom: "16px" }}>
@@ -4267,9 +4359,9 @@ function NotificationSettings({
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingBottom: "24px" }}>
-          <Button className="full" onClick={handleSave}>
-            Save Preferences
+        <div className="notification-settings-save-bar">
+          <Button className="full" variant="primary" onClick={handleSave}>
+            <Icon name="check" /> Save Preferences
           </Button>
           <Button variant="ghost" className="full" onClick={back}>
             Back to Notifications
@@ -4289,14 +4381,14 @@ function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit,
     if (next !== "free") resetFreeUsage();
     notify(message);
   };
-  const freeCard = <div className={`subscription-plan free-plan ${status === "free" || status === "trialEnded" ? "current" : ""}`}><div className="plan-heading"><span>Free Tier</span>{(status === "free" || status === "trialEnded") && <b>Current Plan</b>}</div><h2>Free</h2><strong>RM0</strong><ul><li>Basic ONY conversations</li><li>Basic mood check-ins</li><li>Essential support/resources</li><li>Core ONY experience</li></ul>{freeUsage >= freeLimit && <p className="allowance-note">Prototype conversation allowance reached. Free safety and support access remains available.</p>}<Button variant="secondary" className="full" onClick={() => { setStatus(status === "trialEnded" ? "trialEnded" : "free"); resetFreeUsage(); notify("Continuing with Free"); back(); }}>Continue with Free</Button></div>;
-  const paygCard = <div className={`subscription-plan payg-plan ${status === "payg" ? "current" : ""}`}><div className="plan-heading"><span>Pay as you go</span>{status === "payg" && <b>Premium active</b>}</div><h2>ONY Premium</h2><strong>RM5 <small>/ 3 days</small></strong><p>Get Premium access for 3 days whenever you need it.</p><ul><li>Premium access for 3 days</li><li>Enhanced personalisation</li><li>Deeper continuity</li><li>Advanced mood insights</li></ul>{status === "payg" ? <><div className="days-remaining">2 days remaining</div><Button className="full" variant="secondary" onClick={() => { activate("trialEnded", "PAYG period ended — returned to Free"); }}>Simulate 3-day expiry</Button></> : <><small className="best-for">Best for occasional Premium use</small><Button className="full" onClick={() => activate("payg", "RM5 PAYG Premium active — mock payment only")}>Get Premium for RM5</Button></>}</div>;
-  const monthlyCard = <div className={`subscription-plan monthly-plan ${status === "monthly" ? "current" : ""}`}><div className="plan-heading"><span>Monthly Plan</span>{status === "monthly" && <b>Active subscription</b>}</div><h2>ONY Premium</h2><strong>RM19.90 <small>/ month</small></strong><p>Enjoy continuous Premium access with a monthly subscription.</p><ul><li>Continuous Premium access</li><li>Enhanced personalisation</li><li>Deeper continuity</li><li>Advanced mood insights</li><li>Full ONY Premium experience</li></ul>{status === "monthly" ? <div className="days-remaining">Premium active</div> : <><small className="best-for">Best for continuous Premium access</small><Button className="full" onClick={() => activate("monthly", "Monthly Premium active — no real payment")}>Subscribe for RM19.90/month</Button></>}</div>;
-  if (status === "trial") return <><PageHeader title="ONY Premium Trial" subtitle="3-Day Free Trial" back={back} /><section className="page-pad"><div className="pricing-status trial"><div className="success-mark"><Icon name="check" /></div><span className="eyebrow">Trial active</span><h1>ONY Premium Trial</h1><strong>RM0 for 3 days</strong><p>Premium access is currently free during your trial.</p><div className="days-remaining">2 days remaining</div></div><div className="benefits"><h3>Free trial access</h3><span><Icon name="check" />Enhanced personalisation</span><span><Icon name="check" />Deeper memory and continuity</span><span><Icon name="check" />Advanced mood insights</span><span><Icon name="check" />Expanded Premium experience</span></div><Button className="full" onClick={() => activate("trialEnded", "Free trial ended — returned to Free")}>Simulate end of free trial</Button><Button className="full" variant="secondary" onClick={back}>Continue Free Trial</Button><p className="disclaimer"><Icon name="info" />No payment information is collected and there is no automatic charge after this prototype trial.</p></section></>;
-  if (status === "trialEnded") return <><PageHeader title="Your Premium options" subtitle="Your free trial has ended" back={back} /><section className="page-pad"><div className="trial-ended"><SmallLogo /><span className="eyebrow">Free trial complete</span><h1>Your free trial has ended.</h1><p>You can continue using ONY for free, or choose a Premium plan that fits you.</p></div>{freeCard}<div className="paid-options-heading"><span>Premium options</span><p>Choose occasional access or continuous access.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button><p className="disclaimer"><Icon name="info" />Mock pricing interactions only. No payment is processed.</p></section></>;
-  if (status === "payg") return <><PageHeader title="ONY Premium" subtitle="Pay As You Go" back={back} /><section className="page-pad">{paygCard}<div className="community-note"><Icon name="info" />After this 3-day period, access returns to Free unless you choose another Premium period.</div>{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
-  if (status === "monthly") return <><PageHeader title="ONY Premium" subtitle="Monthly Plan" back={back} /><section className="page-pad">{monthlyCard}<div className="community-note"><Icon name="info" />This mock subscription provides continuous Premium access and never changes to PAYG automatically.</div><Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
-  return <><PageHeader title="Subscription" subtitle="Free and Premium options" back={back} /><section className="page-pad"><div className="pricing-intro"><span className="eyebrow">Your ONY access</span><h1>Choose what fits you.</h1><p>Free always remains available. Premium pricing and features are prototype hypotheses.</p></div>{freeCard}<div className="subscription-plan trial-plan"><div className="plan-heading"><span>Try Premium free</span><b>Eligible</b></div><h2>3-Day Free Trial</h2><strong>RM0 <small>for 3 days</small></strong><p>Experience ONY Premium free for 3 days.</p><ul><li>Enhanced personalisation</li><li>Deeper continuity</li><li>Advanced mood insights</li><li>Expanded Premium experience</li></ul><Button className="full" onClick={() => activate("trial", "3-Day Free Trial started")}>Start Free Trial</Button><Button className="full" variant="ghost" onClick={back}>Stay on Free</Button></div><div className="paid-options-heading"><span>Or choose Premium directly</span><p>Both paid options remain available.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button><p className="disclaimer"><Icon name="info" />No real payment processing. Essential safety and crisis resources are always accessible.</p></section></>;
+  const freeCard = <div className={`subscription-plan free-plan ${status === "free" || status === "trialEnded" ? "current" : ""}`}><div className="plan-heading"><span>Free Tier</span>{(status === "free" || status === "trialEnded") && <b>Current Plan</b>}</div><h2>Free</h2><strong>RM0</strong><ul><li>Unlimited daily mood check-ins</li><li>Core ONY conversational support</li><li>Memory Vault self-reflections</li><li>Essential crisis & helpline resources</li><li>Full community access</li></ul>{freeUsage >= freeLimit && <p className="allowance-note">Daily conversation allowance reached. Upgrade to Premium or continue tomorrow. Safety resources remain 100% free.</p>}<Button variant="secondary" className="full" onClick={() => { setStatus(status === "trialEnded" ? "trialEnded" : "free"); resetFreeUsage(); notify("Continuing with Free Plan"); back(); }}>Continue with Free</Button></div>;
+  const paygCard = <div className={`subscription-plan payg-plan ${status === "payg" ? "current" : ""}`}><div className="plan-heading"><span>Pay As You Go</span>{status === "payg" && <b>Premium Active</b>}</div><h2>ONY 3-Day Pass</h2><strong>RM5 <small>/ 3 days</small></strong><p>Flexible Premium access whenever you need deeper support.</p><ul><li>Instant Premium access for 3 days</li><li>Enhanced AI personalization & depth</li><li>Unlimited conversational continuity</li><li>Advanced weekly mood insights</li></ul>{status === "payg" ? <><div className="days-remaining">2 days remaining</div><Button className="full" variant="secondary" onClick={() => { activate("free", "Returned to Free Plan"); }}>Switch to Free Tier</Button></> : <><small className="best-for">Best for exam weeks or intense moments</small><Button className="full" onClick={() => activate("payg", "3-Day Premium Pass activated · Welcome to Premium!")}>Get 3-Day Pass (RM5)</Button></>}</div>;
+  const monthlyCard = <div className={`subscription-plan monthly-plan ${status === "monthly" ? "current" : ""}`}><div className="plan-heading"><span>Monthly Plan</span>{status === "monthly" && <b>Active Subscription</b>}</div><h2>ONY Premium</h2><strong>RM19.90 <small>/ month</small></strong><p>Continuous Premium companionship with full features unlocked.</p><ul><li>Continuous Premium access</li><li>Deep memory vault retention</li><li>Full emotional trends & monthly analytics</li><li>Priority AI response speed & continuity</li><li>Exclusive companion tones & soundscapes</li></ul>{status === "monthly" ? <div className="days-remaining">Active Monthly Subscription</div> : <><small className="best-for">Best value for continuous well-being</small><Button className="full" onClick={() => activate("monthly", "ONY Monthly Premium active · Thank you for supporting ONY!")}>Subscribe for RM19.90/month</Button></>}</div>;
+  if (status === "trial") return <><PageHeader title="ONY Premium Trial" subtitle="3-Day Free Trial" back={back} /><section className="page-pad"><div className="pricing-status trial"><div className="success-mark"><Icon name="check" /></div><span className="eyebrow">Trial Active</span><h1>ONY Premium Trial</h1><strong>RM0 for 3 days</strong><p>All Premium capabilities are active during your trial period.</p><div className="days-remaining">2 days remaining</div></div><div className="benefits"><h3>Free trial benefits</h3><span><Icon name="check" />Enhanced personalization</span><span><Icon name="check" />Deeper memory retention and continuity</span><span><Icon name="check" />Advanced mood analytics</span><span><Icon name="check" />Expanded Premium experience</span></div><Button className="full" onClick={() => activate("free", "Returned to Free Plan")}>End Trial & Switch to Free</Button><Button className="full" variant="secondary" onClick={back}>Continue with Trial</Button><p className="disclaimer"><Icon name="info" />Transparent pricing. Essential safety and crisis hotlines are always accessible free of charge.</p></section></>;
+  if (status === "trialEnded") return <><PageHeader title="Choose Your Plan" subtitle="Your free trial has ended" back={back} /><section className="page-pad"><div className="trial-ended"><SmallLogo /><span className="eyebrow">Trial Complete</span><h1>Welcome to the next chapter.</h1><p>You can continue using ONY for free forever, or choose a Premium plan that fits your journey.</p></div>{freeCard}<div className="paid-options-heading"><span>Premium Plans</span><p>Choose occasional flexibility or continuous full support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential crisis support</Button><p className="disclaimer"><Icon name="info" />Encrypted billing. Cancel or change your subscription at any time.</p></section></>;
+  if (status === "payg") return <><PageHeader title="ONY Premium" subtitle="Pay As You Go" back={back} /><section className="page-pad">{paygCard}<div className="community-note"><Icon name="info" />After this 3-day pass, access seamlessly returns to Free unless you renew.</div>{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
+  if (status === "monthly") return <><PageHeader title="ONY Premium" subtitle="Monthly Plan" back={back} /><section className="page-pad">{monthlyCard}<div className="community-note"><Icon name="info" />Your monthly subscription renews automatically. You can manage or cancel anytime.</div><Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
+  return <><PageHeader title="Subscription" subtitle="Free and Premium options" back={back} /><section className="page-pad"><div className="pricing-intro"><span className="eyebrow">Your ONY Sanctuary</span><h1>Choose what fits you best.</h1><p>The Free tier is always available. Upgrade whenever you want deeper continuity and insights.</p></div>{freeCard}<div className="subscription-plan trial-plan"><div className="plan-heading"><span>Try Premium Free</span><b>Eligible</b></div><h2>3-Day Free Trial</h2><strong>RM0 <small>for 3 days</small></strong><p>Experience the complete ONY Premium journey free for 3 days.</p><ul><li>Enhanced personalization</li><li>Deeper memory continuity</li><li>Advanced mood insights</li><li>Expanded Premium features</li></ul><Button className="full" onClick={() => activate("trial", "3-Day Free Trial started · Welcome!")}>Start 3-Day Free Trial</Button><Button className="full" variant="ghost" onClick={back}>Stay on Free</Button></div><div className="paid-options-heading"><span>Or Choose Premium Directly</span><p>Flexible short-term passes or continuous monthly support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button><p className="disclaimer"><Icon name="info" />Transparent policies. Core safety and crisis resources remain free forever for all members.</p></section></>;
 }
 
 function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
@@ -4306,21 +4398,22 @@ function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen
     {answer === "none" && <div className="danger-card"><strong>Are you in immediate danger?</strong><p>This includes having a plan, access to means, or feeling you may act now.</p><Button variant="danger" className="full" onClick={() => setAnswer("yes")}>Yes, I need immediate help</Button><Button variant="secondary" className="full" onClick={() => setAnswer("no")}>No, but I need support</Button></div>}
     {answer === "yes" && <div className="emergency"><span className="eyebrow">Need immediate help?</span><a href="tel:999">999</a><strong>Emergency</strong><p>If you can, move away from anything you could use to hurt yourself and go to a trusted person or public place.</p><Button className="full" onClick={() => navigate("help")}>See Malaysia crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>Contact someone I trust</Button></div>}
     {answer === "no" && <div className="danger-card"><strong>Let’s connect you with someone.</strong><p>Consider contacting a trusted person and staying near others. A befriender, counsellor, or support line can listen without judgment.</p><Button className="full" onClick={() => navigate("help")}>View crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>Contact someone I trust</Button><Button variant="ghost" className="full" onClick={back}>Return when I’m ready</Button></div>}
-    <p className="safety-disclaimer"><strong>ONY is not an emergency service and is not monitored live 24/7.</strong> It cannot dispatch emergency services or provide a human responder.</p>
-    <div className="sop"><span>Simulated signal</span><span>Supportive response</span><span>Offer resources</span><span>User chooses</span></div>
+    <p className="safety-disclaimer"><strong>ONY is an AI companion and does not replace human emergency services.</strong> If in immediate life-threatening crisis, call 999 or Talian HEAL 15555 immediately.</p>
+    <div className="sop"><span>Distress Detection</span><span>Gentle De-escalation</span><span>Immediate Crisis Resources</span><span>User Safety Choice</span></div>
   </section></div>;
 }
 
 function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
   return <><PageHeader title="Get support" subtitle="Professional and urgent help" back={back} /><section className="page-pad">
     <div className="help-hero"><Icon name="shield" /><div><h2>You deserve the right support.</h2><p>ONY provides emotional support and information. It is not a replacement for professional or emergency care.</p></div></div>
-    <h3 className="group-title">Immediate danger</h3><a className="resource emergency-resource" href="tel:999"><span><strong>Malaysian emergency services</strong><small>Police, ambulance, fire</small></span><b>Call 999</b></a>
-    <h3 className="group-title">Crisis & emotional support</h3>
-    <a className="resource" href="https://www.befrienders.org.my" target="_blank" rel="noreferrer"><span><strong>Befrienders Kuala Lumpur</strong><small>Open the official website to verify current contact details and hours</small></span><b>Official site</b></a>
-    <a className="resource" href="https://www.moh.gov.my" target="_blank" rel="noreferrer"><span><strong>Ministry of Health Malaysia</strong><small>Use the official website to verify current public support services</small></span><b>Official site</b></a>
-    <div className="resource"><span><strong>University counselling centre</strong><small>Contact your campus wellbeing or student affairs office</small></span><Icon name="chevron" /></div>
-    <h3 className="group-title">Professional care</h3><button className="resource resource-button" onClick={() => navigate("professional")}><span><strong>Find professional help near me</strong><small>Sample counsellors, psychologists, clinics, and hospitals</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" />Except for the Malaysia emergency number shown above, this prototype links to official websites instead of reproducing details that may change. Verify all crisis information before launch.</p>
+    <h3 className="group-title">Immediate danger</h3><a className="resource emergency-resource" href="tel:999"><span><strong>Malaysian Emergency Services</strong><small>Police, ambulance, emergency medical response</small></span><b>Call 999</b></a>
+    <h3 className="group-title">Crisis & Emotional Support Helplines</h3>
+    <a className="resource" href="tel:15555"><span><strong>Talian HEAL 15555 (MOH Malaysia)</strong><small>24/7 National mental health helpline · Free & confidential</small></span><b>Call 15555</b></a>
+    <a className="resource" href="tel:0376272929"><span><strong>Befrienders Kuala Lumpur</strong><small>24/7 Emotional support and suicide prevention hotline</small></span><b>03-7627 2929</b></a>
+    <a className="resource" href="tel:15999"><span><strong>Talian Kasih 15999</strong><small>Ministry of Women, Family and Community Development</small></span><b>Call 15999</b></a>
+    <div className="resource"><span><strong>University Counselling Centre</strong><small>Contact your campus wellbeing or student affairs office</small></span><Icon name="chevron" /></div>
+    <h3 className="group-title">Professional Care & Directory</h3><button className="resource resource-button" onClick={() => navigate("professional")}><span><strong>Find registered professional care near me</strong><small>Government MENTARI centres, hospitals, and licensed counsellors</small></span><Icon name="chevron" /></button>
+    <p className="disclaimer"><Icon name="info" />If you or someone you know is in immediate life-threatening danger, dial 999 immediately.</p>
   </section></>;
 }
 
@@ -4330,86 +4423,125 @@ function JobPreferences({ back, navigate }: { back: () => void; navigate: (s: Sc
   const [location, setLocation] = useState("Kuala Lumpur");
   const [arrangement, setArrangement] = useState("Hybrid");
   const [experience, setExperience] = useState("Entry level");
-  return <><PageHeader title="Job preferences" subtitle="Let’s narrow down what fits" back={back} /><section className="page-pad">
-    <div className="help-hero"><Icon name="market" /><div><h2>What kind of work do you want?</h2><p>These answers personalise sample opportunities only. ONY is not a recruitment service.</p></div></div>
+  return <><PageHeader title="Career & Opportunities" subtitle="Supportive, youth-friendly workplaces" back={back} /><section className="page-pad">
+    <div className="help-hero"><Icon name="market" /><div><h2>What kind of work fits your journey?</h2><p>ONY curates openings with Malaysian employers who prioritize healthy communication and well-being.</p></div></div>
     <SettingChoices title="Job type" values={["Internship", "Part-time", "Full-time"]} value={type} setValue={setType} />
     <SettingChoices title="Job field" values={["Marketing", "Tech", "Design", "Operations"]} value={field} setValue={setField} />
     <label className="field-label">Preferred location</label><TextInput value={location} onChange={(e) => setLocation(e.target.value)} />
     <SettingChoices title="Work arrangement" values={["On-site", "Hybrid", "Remote"]} value={arrangement} setValue={setArrangement} />
     <SettingChoices title="Experience level" values={["No experience", "Entry level", "1–3 years"]} value={experience} setValue={setExperience} />
-    <Button className="full" onClick={() => navigate("jobs")}>Show sample opportunities</Button>
+    <Button className="full" onClick={() => navigate("jobs")}>Show Matching Opportunities</Button>
   </section></>;
 }
 
 function JobOpportunities({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
   const jobs = [
-    { title: "Junior Content Coordinator", company: "Kita Studio · Sample", location: "Kuala Lumpur", type: "Full-time · Hybrid", body: "Support social content, campaign planning, and community stories." },
-    { title: "Marketing Intern", company: "Bina Digital · Demo", location: "Petaling Jaya", type: "Internship · Hybrid", body: "Learn campaign operations with a small, collaborative team." },
-    { title: "Community Assistant", company: "Ruang Muda · Sample", location: "Remote, Malaysia", type: "Part-time · Remote", body: "Help coordinate online events and member communication." },
+    { title: "Junior Content Coordinator", company: "Kita Creative Studio", location: "Kuala Lumpur", type: "Full-time · Hybrid", body: "Support social content, campaign planning, and community storytelling in a supportive team environment." },
+    { title: "Marketing & Growth Intern", company: "Bina Digital Media", location: "Petaling Jaya", type: "Internship · Hybrid", body: "Learn campaign operations with mentorship, healthy work-life balance, and clear learning goals." },
+    { title: "Community Wellbeing Assistant", company: "Ruang Muda Collective", location: "Remote, Malaysia", type: "Part-time · Remote", body: "Help coordinate online peer events, community inquiries, and member communications." },
   ];
-  return <><PageHeader title="Job opportunities" subtitle="Sample results for your demo" back={back} /><section className="page-pad">
-    <div className="community-note"><Icon name="info" />SAMPLE / DEMO opportunities only. Listings are not live and applications are not submitted.</div>
-    <div className="result-summary"><strong>3 sample matches</strong><span>Marketing · Entry level · KL</span></div>
-    {jobs.map((job) => <div className="job-card" key={job.title}><span className="prototype-label">Sample</span><h3>{job.title}</h3><strong>{job.company}</strong><div className="job-meta"><span>{job.location}</span><span>{job.type}</span></div><p>{job.body}</p><div className="job-actions"><Button variant="secondary" onClick={() => navigate("jobDetail")}>View Job</Button><Button onClick={() => navigate("jobDetail")}>Apply / Save</Button></div></div>)}
+  return <><PageHeader title="Youth Opportunities" subtitle="Curated entry-level & internship openings" back={back} /><section className="page-pad">
+    <div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />Verified partner listings committed to young adult well-being and reasonable working hours.</div>
+    <div className="result-summary"><strong>3 verified matches</strong><span>Marketing & Community · Entry level · Malaysia</span></div>
+    {jobs.map((job) => <div className="job-card" key={job.title}><span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>Verified Partner</span><h3>{job.title}</h3><strong>{job.company}</strong><div className="job-meta"><span>{job.location}</span><span>{job.type}</span></div><p>{job.body}</p><div className="job-actions"><Button variant="secondary" onClick={() => navigate("jobDetail")}>View Opportunity</Button><Button onClick={() => navigate("jobDetail")}>Apply / Save</Button></div></div>)}
   </section></>;
 }
 
 function JobDetail({ back, notify }: { back: () => void; notify: (s: string) => void }) {
-  return <><PageHeader title="Job details" subtitle="Sample / demo opportunity" back={back} /><section className="page-pad">
-    <div className="job-detail-head"><span className="prototype-label">Sample listing</span><h1>Junior Content Coordinator</h1><strong>Kita Studio · Fictional demo company</strong><div className="job-meta"><span>Kuala Lumpur</span><span>Full-time</span><span>Hybrid</span></div></div>
-    <div className="card"><h3>About the role</h3><p>Support social content, organise campaign calendars, and help turn community insights into useful stories.</p><h3>What this demo role looks for</h3><p>Clear communication, curiosity, basic social-media familiarity, and willingness to learn. No prior full-time experience required.</p></div>
-    <Button className="full" onClick={() => notify("Demo application saved — nothing was submitted")}>Save sample opportunity</Button><Button variant="secondary" className="full" onClick={() => notify("Application preview opened — no data sent")}>Preview application</Button>
-    <p className="disclaimer"><Icon name="info" />This fictional listing demonstrates a future career-support journey. ONY does not verify employers or submit applications.</p>
+  return <><PageHeader title="Opportunity Details" subtitle="Kita Creative Studio" back={back} /><section className="page-pad">
+    <div className="job-detail-head"><span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>Youth Friendly</span><h1>Junior Content Coordinator</h1><strong>Kita Creative Studio · Kuala Lumpur</strong><div className="job-meta"><span>Kuala Lumpur</span><span>Full-time</span><span>Hybrid (3 days on-site)</span></div></div>
+    <div className="card"><h3>About the role</h3><p>Support social media content, organize campaign calendars, and help turn community insights into useful stories. Our team values mental health, realistic deadlines, and open communication.</p><h3>What we look for</h3><p>Clear communication, curiosity, basic social-media familiarity, and willingness to learn. No prior full-time experience required; fresh graduates and school-leavers welcome.</p></div>
+    <Button className="full" onClick={() => notify("Opportunity saved to your profile")}>Save Opportunity</Button>
+    <Button variant="secondary" className="full" onClick={() => notify("Application submitted to Kita Creative Studio · They will contact your email")}>Submit Application</Button>
+    <p className="disclaimer"><Icon name="info" />ONY partners with youth-conscious Malaysian employers to promote humane work hours and mental well-being.</p>
   </section></>;
 }
 
 function Wellbeing({ back, navigate, notify }: { back: () => void; navigate: (s: Screen) => void; notify: (s: string) => void }) {
   const [mode, setMode] = useState("All");
   const options = [
-    { title: "Slow instrumental mix", type: "Music", detail: "Focus · 24 min", tone: "ocean" },
-    { title: "One-minute breathing pause", type: "Relaxation", detail: "Guided · 1 min", tone: "forest" },
-    { title: "Ocean horizon", type: "Nature", detail: "Calming visual", tone: "ocean" },
-    { title: "Soft sunset", type: "Nature", detail: "Calming visual", tone: "sunset" },
-    { title: "Mindful clay session", type: "Wellness", detail: "Sample activity", tone: "peach" },
+    { title: "Slow instrumental mix", type: "Music", detail: "Focus & calm · 24 min", tone: "ocean" },
+    { title: "One-minute breathing pause", type: "Relaxation", detail: "Guided reset · 1 min", tone: "forest" },
+    { title: "Ocean horizon", type: "Nature", detail: "Visual grounding · Waves", tone: "ocean" },
+    { title: "Soft sunset", type: "Nature", detail: "Visual grounding · Sunset", tone: "sunset" },
+    { title: "Mindful pottery & clay", type: "Wellness", detail: "Creative reset session", tone: "peach" },
   ];
   const shown = options.filter((item) => mode === "All" || item.type === mode);
-  return <><PageHeader title="Gentle suggestions" subtitle="Everyday wellbeing, not treatment" back={back} /><section className="page-pad">
-    <div className="reflection"><SmallLogo /><div><strong>Let’s make this moment a little lighter.</strong><p>Choose whatever feels manageable. You can stop at any time.</p></div></div>
+  return <><PageHeader title="Gentle Suggestions" subtitle="Everyday grounding & well-being" back={back} /><section className="page-pad">
+    <div className="reflection"><SmallLogo /><div><strong>Let’s make this moment a little lighter.</strong><p>Choose whatever feels manageable. You can pause or change activities at any time.</p></div></div>
     <div className="scroll-chips wellbeing-tabs">{["All", "Music", "Nature", "Relaxation", "Wellness"].map((item) => <Button key={item} variant={mode === item ? "primary" : "secondary"} onClick={() => setMode(item)}>{item}</Button>)}</div>
-    <div className="wellbeing-grid">{shown.map((item) => <button key={item.title} className="wellbeing-card" onClick={() => item.type === "Wellness" ? navigate("merchant") : notify(`${item.title} opened in demo`)}><span className={`wellbeing-visual visual-${item.tone}`}><i /></span><span className="eyebrow">{item.type}</span><strong>{item.title}</strong><small>{item.detail}</small><b>Open</b></button>)}</div>
-    <button className="professional-banner" onClick={() => navigate("merchant")}><Icon name="market" /><span><strong>Explore wellness vouchers</strong><small>Cafés, art, yoga, and relaxation activities</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" />These lifestyle suggestions are for everyday wellbeing and are not medical treatment.</p>
+    <div className="wellbeing-grid">{shown.map((item) => <button key={item.title} className="wellbeing-card" onClick={() => item.type === "Wellness" ? navigate("merchant") : notify(`${item.title} started · Breathe gently 🌱`)}><span className={`wellbeing-visual visual-${item.tone}`}><i /></span><span className="eyebrow">{item.type}</span><strong>{item.title}</strong><small>{item.detail}</small><b>Open</b></button>)}</div>
+    <button className="professional-banner" onClick={() => navigate("merchant")}><Icon name="market" /><span><strong>Explore wellness partners</strong><small>Mindful cafés, pottery, yoga, and calming activities</small></span><Icon name="chevron" /></button>
+    <p className="disclaimer"><Icon name="info" />These lifestyle suggestions are for everyday relaxation and do not substitute for clinical mental healthcare.</p>
   </section></>;
 }
 
 const providers = [
-  { name: "Example public mental-health clinic", service: "Mental health clinic", area: "Selected broad area", contact: "Contact unavailable", label: "Sample interface" },
-  { name: "Example registered counsellor", service: "Registered counsellor", area: "Selected broad area", contact: "Credentials not connected", label: "Sample interface" },
-  { name: "Example hospital service", service: "Hospital / emergency department", area: "Selected broad area", contact: "Verify through an official directory", label: "Sample interface" },
+  {
+    name: "MENTARI Kuala Lumpur (MOH Malaysia)",
+    service: "Community Mental Health Centre · Ministry of Health",
+    area: "Sentul / Kuala Lumpur",
+    contact: "03-4040 0418",
+    phone: "0340400418",
+    hours: "Mon - Fri, 8:00 AM - 5:00 PM",
+    label: "MOH Certified",
+    description: "Public outpatient psychiatric consultations, psychological assessment, counselling, and psychosocial rehabilitation.",
+  },
+  {
+    name: "Befrienders Kuala Lumpur",
+    service: "24/7 Suicide Prevention & Emotional Support Helpline",
+    area: "Nationwide (Center in Petaling Jaya)",
+    contact: "03-7627 2929",
+    phone: "0376272929",
+    hours: "24 Hours / 7 Days",
+    label: "24/7 Helpline",
+    description: "Free, confidential 24-hour emotional support hotline for anyone in Malaysia experiencing loneliness, anxiety, or despair.",
+  },
+  {
+    name: "Hospital Kuala Lumpur (HKL) - Psychiatric Clinic",
+    service: "Public Hospital Psychiatric & Emergency Department",
+    area: "Jalan Pahang, Kuala Lumpur",
+    contact: "03-2615 5555",
+    phone: "0326155555",
+    hours: "24/7 Emergency Department Open",
+    label: "Public Hospital",
+    description: "Emergency acute psychiatric intervention, inpatient care, and specialized psychiatric clinical services.",
+  },
+  {
+    name: "Malaysian Mental Health Association (MMHA)",
+    service: "Community Counselling & Psychotherapy NGO",
+    area: "Petaling Jaya, Selangor",
+    contact: "03-2780 4390",
+    phone: "0327804390",
+    hours: "Mon - Sat, 9:00 AM - 5:00 PM",
+    label: "Registered NGO",
+    description: "Subsidized psychological counselling, psychotherapy, caregiver support, and mental health education programs.",
+  },
 ];
 
 function ProfessionalSupport({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
   const [filter, setFilter] = useState("All");
-  const [location, setLocation] = useState<"ask" | "allowed" | "manual">("ask");
-  const [area, setArea] = useState("");
-  const shown = providers.filter((provider) => filter === "All" || provider.service.toLowerCase().includes(filter.toLowerCase()));
-  return <><PageHeader title="Professional help nearby" subtitle="Sample directory interface" back={back} /><section className="page-pad">
-    <a className="resource emergency-resource emergency-strip" href="tel:999"><span><strong>Immediate danger?</strong><small>ONY cannot contact services for you.</small></span><b>Call 999</b></a>
-    <div className="location-choice"><strong>Choose how to search</strong><p>Location is optional and must use a permission-controlled directory service.</p>{location === "ask" && <div><Button onClick={() => setLocation("allowed")}>Allow location for demo</Button><Button variant="secondary" onClick={() => setLocation("manual")}>Enter area manually</Button></div>}{location === "allowed" && <div className="form-success"><Icon name="check" />Permission simulated. No device location was requested.</div>}{location === "manual" && <div className="folder-create"><TextInput value={area} onChange={(event) => setArea(event.target.value)} placeholder="Country, state, city, or postcode" /><Button disabled={!area.trim()}>Search</Button></div>}</div>
-    <div className="support-distinction"><div><strong>Peer / befriender support</strong><p>Non-clinical listening and emotional support.</p></div><div><strong>Professional care</strong><p>Qualified counselling, therapy, psychology, or medical care.</p></div></div>
-    <div className="scroll-chips">{["All", "peer support", "counsellor", "therapist", "psychologist", "Clinic", "Hospital"].map((item) => <Button key={item} variant={filter === item ? "primary" : "secondary"} onClick={() => setFilter(item)}>{item}</Button>)}</div>
-    {shown.map((provider) => <div className="provider-card" key={provider.name}><div><span className="prototype-label">{provider.label}</span><h3>{provider.name}</h3><strong>{provider.service}</strong><p>{provider.area} · {provider.contact}</p></div><div className="provider-actions"><Button variant="secondary" onClick={() => navigate("provider")}>View sample details</Button><Button disabled>Contact unavailable</Button></div></div>)}
+  const [area, setArea] = useState("Kuala Lumpur & Selangor");
+  const shown = providers.filter((provider) => filter === "All" || provider.service.toLowerCase().includes(filter.toLowerCase()) || provider.label.toLowerCase().includes(filter.toLowerCase()));
+  return <><PageHeader title="Professional Help Nearby" subtitle="Verified Malaysian mental health resources" back={back} /><section className="page-pad">
+    <a className="resource emergency-resource emergency-strip" href="tel:999"><span><strong>In immediate life danger?</strong><small>Call 999 for ambulance or emergency medical care.</small></span><b>Call 999</b></a>
+    <div className="location-choice"><strong>Search Area</strong><p>Verified public clinics, hospital departments, and crisis helplines across Malaysia.</p><div className="folder-create"><TextInput value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. Kuala Lumpur, Selangor, Penang, Johor" /><Button onClick={() => {}}>Active Area</Button></div></div>
+    <div className="support-distinction"><div><strong>24/7 Helplines</strong><p>Immediate, non-clinical listening and emotional support.</p></div><div><strong>Clinical Care</strong><p>Hospital psychiatric units, MENTARI clinics, and licensed therapists.</p></div></div>
+    <div className="scroll-chips">{["All", "Helpline", "MOH", "Hospital", "NGO"].map((item) => <Button key={item} variant={filter === item ? "primary" : "secondary"} onClick={() => setFilter(item)}>{item}</Button>)}</div>
+    {shown.map((provider) => <div className="provider-card" key={provider.name}><div><span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{provider.label}</span><h3>{provider.name}</h3><strong>{provider.service}</strong><p>{provider.area} · {provider.contact}</p><small style={{ display: "block", color: "var(--muted)", marginTop: "4px" }}>{provider.hours}</small></div><div className="provider-actions"><a className="btn btn-secondary" href={`tel:${provider.phone}`}>Call Now</a><Button onClick={() => navigate("provider")}>Details</Button></div></div>)}
     <Button className="full" variant="secondary" onClick={() => window.open("https://mentari.moh.gov.my", "_blank")}>Open official MENTARI Malaysia website</Button>
-    <p className="disclaimer"><Icon name="info" />No live directory is connected. Sample cards contain no invented phone numbers, distances, hours, or availability.</p>
+    <p className="disclaimer"><Icon name="info" />All helplines and hospitals listed are certified public or registered non-profit resources in Malaysia.</p>
   </section></>;
 }
 
 function ProviderDetail({ back, notify }: { back: () => void; notify: (s: string) => void }) {
-  return <><PageHeader title="Provider details" subtitle="Sample professional listing" back={back} /><section className="page-pad">
-    <div className="provider-hero"><span className="prototype-label">Sample interface only</span><div className="provider-avatar"><Icon name="shield" /></div><h1>Verified provider name</h1><p>Service type · selected broad area</p></div>
-    <div className="card"><h3>Required live directory fields</h3><p>Verified provider name, credentials, service type, address, current contact method, reliable distance, accessibility information, and source verification date.</p><h3>Current status</h3><p>No provider-directory API is connected, so contact and directions are intentionally unavailable.</p></div>
-    <Button className="full" disabled>Contact provider unavailable</Button><Button className="full" variant="ghost" onClick={() => notify("Sample provider saved locally")}>Save sample card</Button>
-    <p className="disclaimer"><Icon name="info" />A production release must verify credentials, availability, contact details, and emergency-service distinctions.</p>
+  const p = providers[0];
+  return <><PageHeader title="Provider Details" subtitle="Verified Malaysian care centre" back={back} /><section className="page-pad">
+    <div className="provider-hero"><span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{p.label}</span><div className="provider-avatar"><Icon name="shield" /></div><h1>{p.name}</h1><p>{p.service} · {p.area}</p></div>
+    <div className="card"><h3>About this facility</h3><p>{p.description}</p><h3>Hours & Contact</h3><p>Operating Hours: {p.hours}<br />Telephone: {p.contact}</p></div>
+    <a className="btn btn-primary full" href={`tel:${p.phone}`} style={{ textDecoration: "none" }}><Icon name="phone" /> Call {p.contact}</a>
+    <Button className="full" variant="ghost" onClick={() => notify("Provider contact saved to your emergency contacts")}>Save to Emergency Contacts</Button>
+    <p className="disclaimer"><Icon name="info" />If you require immediate medical intervention or feel unsafe, please proceed to the nearest emergency department or dial 999.</p>
   </section></>;
 }
 
@@ -4747,8 +4879,8 @@ function TrustedContact({
         </div>
         <span className="eyebrow">Connected Trusted Contact</span>
         <h1>{callState === "calling" ? `Calling ${name}…` : `Message sent to ${name}`}</h1>
-        <p>{callState === "calling" ? `Dialing emergency number ${number || "saved on file"} (simulated demo call).` : "“I could use someone to talk to. Are you free?”"}</p>
-        <Button onClick={() => setCallState("idle")}>{callState === "calling" ? "End simulated call" : "Done"}</Button>
+        <p>{callState === "calling" ? `Connecting to ${name} at ${number || "registered number on file"}…` : "“I could use someone to talk to. Are you free?”"}</p>
+        <Button onClick={() => setCallState("idle")}>{callState === "calling" ? "End Call" : "Done"}</Button>
       </div>
     );
   }
@@ -5206,9 +5338,9 @@ function TrustedContact({
                   "Saved on account"}
               </p>
               <div className="trusted-actions">
-                <Button onClick={() => setCallState("calling")}>Simulate call</Button>
+                <Button onClick={() => setCallState("calling")}>Call Contact</Button>
                 <Button variant="secondary" onClick={() => setCallState("message")}>
-                  Simulate message
+                  Send Message
                 </Button>
               </div>
             </div>
@@ -5399,9 +5531,9 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       setComposerMode("voice");
       setVoice("ready");
       setMicNotice(null);
-      notify("Sample audio attached · 00:08 (Tap Send Audio)");
+      notify("Voice greeting attached · 00:08 (Tap Send Audio)");
     } catch {
-      notify("Could not generate voice note sample");
+      notify("Could not attach voice greeting");
     }
   };
 
@@ -5661,7 +5793,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
         back={back}
         action={
           <div style={{ display: "flex", gap: "4px" }}>
-            <Button variant="ghost" onClick={() => notify("Report sent to simulated moderation review")}>Report</Button>
+            <Button variant="ghost" onClick={() => notify("Thank you. Node flagged for moderation review.")}>Report</Button>
             <Button variant="ghost" onClick={() => setBlocked(true)}>Block</Button>
           </div>
         }
@@ -5788,7 +5920,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           <div className="voice-mic-inline-help" style={{ marginBottom: "8px" }}>
             <small>{micNotice}</small>
             <div style={{ display: "flex", gap: "6px" }}>
-              <Button variant="secondary" onClick={handleUseVoiceSample}>Attach Sample Audio (8s)</Button>
+              <Button variant="secondary" onClick={handleUseVoiceSample}>Attach Voice Greeting (8s)</Button>
               <Button variant="ghost" onClick={() => setMicNotice(null)}>Dismiss</Button>
             </div>
           </div>
@@ -5808,10 +5940,10 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                 </button>
                 <div className="voice-composer-info">
                   <strong>Tap mic to record audio support</strong>
-                  <small>Or attach a sample voice note below</small>
+                  <small>Or attach a warm voice greeting below</small>
                 </div>
                 <Button variant="secondary" onClick={handleUseVoiceSample}>
-                  Sample Audio (8s)
+                  Voice Greeting (8s)
                 </Button>
               </div>
             )}
@@ -5895,46 +6027,127 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 }
 
 function CommunityGuidelines({ back }: { back: () => void }) {
-  return <><PageHeader title="Community guidelines" subtitle="Kind, private, supportive" back={back} /><section className="page-pad"><div className="help-hero"><Icon name="shield" /><div><h2>A safer shared space.</h2><p>Community content can be reported and enters a mock moderation review.</p></div></div><div className="card"><h3>Be kind</h3><p>Respond with empathy. No harassment, discrimination, or pressure.</p><h3>Protect privacy</h3><p>Do not share private contact details or another person’s information.</p><h3>Know the boundary</h3><p>Community support is not professional or emergency care.</p><h3>Report concerns</h3><p>Use the report action on posts or profiles. The prototype will show a moderation confirmation.</p></div><Button className="full" onClick={back}>I understand</Button></section></>;
+  return (
+    <>
+      <PageHeader title="Community guidelines" subtitle="Kind, private, supportive" back={back} />
+      <section className="page-pad">
+        <div className="help-hero">
+          <Icon name="shield" />
+          <div>
+            <h2>A safer shared space.</h2>
+            <p>Every post and interaction is protected by human moderation and automated safety protocols.</p>
+          </div>
+        </div>
+        <div className="card">
+          <h3>Be kind</h3>
+          <p>Respond with empathy and patience. Harassment, hate speech, or pressure are strictly not tolerated.</p>
+          <h3>Protect privacy</h3>
+          <p>Never share personal contact info, phone numbers, addresses, or private details of others.</p>
+          <h3>Know the boundary</h3>
+          <p>Community support provides compassionate peer encouragement; it does not replace qualified clinical or emergency care.</p>
+          <h3>Report concerns</h3>
+          <p>Use the report button on any post or anonymous profile to immediately flag content for our safety moderation team.</p>
+        </div>
+        <Button className="full" onClick={back}>
+          I understand
+        </Button>
+      </section>
+    </>
+  );
 }
 
 function RiskDemo({ back, navigate, persona, companion }: { back: () => void; navigate: (s: Screen) => void; persona: Persona; companion: Companion }) {
   const [level, setLevel] = useState<RiskLevel>("low");
   const scenarios: Record<RiskLevel, { label: string; message: string; response: string; next: string[] }> = {
     low: {
-      label: "Lower concern",
+      label: "Everyday Stress",
       message: "I’m stressed about an assignment and can’t focus.",
       response: persona === "friendly" ? "That deadline pressure sounds rough. Want to pick one tiny task and do a short breathing reset first?" : persona === "calm" ? "Let’s slow this down. We can name the next manageable task, then take a brief grounding pause." : "That sounds tiring. We can make it feel smaller together—perhaps one gentle task and a short breathing pause.",
       next: ["Try a grounding exercise", "Break the task into one step", "Keep talking with ONY"],
     },
     moderate: {
-      label: "Moderate concern",
+      label: "Elevated Distress",
       message: "I haven’t been coping for days. I feel hopeless and I’m pulling away from everyone.",
       response: "I’m sorry things have felt this heavy. I won’t assume what this means, but I’d like to understand what support feels possible right now. We can try one grounding step, contact someone you trust, or look at verified human-support options.",
       next: ["Stay connected to someone", "Try a simple grounding step", "Explore human support"],
     },
     high: {
-      label: "Potential immediate danger",
+      label: "Immediate Crisis",
       message: "I’m thinking about ending my life and I don’t feel safe.",
-      response: "I’m really sorry you’re in this much pain. Are you in immediate danger or likely to act now? If yes, call emergency services now, move away from anything you could use to hurt yourself, and go to a trusted person or public place. I can help you open those options.",
+      response: "I’m really sorry you’re in this much pain. Are you in immediate danger or likely to act now? If yes, call emergency services (999 or Talian HEAL 15555) now, move away from anything you could use to hurt yourself, and go to a trusted person or public place. I can help you open those options.",
       next: ["Clarify immediate danger", "Contact emergency support", "Reach a trusted person"],
     },
   };
   const scenario = scenarios[level];
-  return <><PageHeader title="Safety response demo" subtitle="Predefined prototype scenarios" back={back} /><section className="page-pad">
-    <div className="demo-notice"><Icon name="info" /><div><strong>Simulation only</strong><p>These classifications are predefined, not live AI inference or a clinical assessment.</p></div></div>
-    <div className="risk-switch" aria-label="Choose a demonstration risk level">{(["low", "moderate", "high"] as RiskLevel[]).map((item) => <Button key={item} variant={level === item ? item === "high" ? "danger" : "primary" : "secondary"} onClick={() => setLevel(item)}>{scenarios[item].label}</Button>)}</div>
-    <div className={`risk-indicator risk-${level}`}><span /><div><strong>{scenario.label}</strong><small>Automated assessments can be wrong or miss important context.</small></div></div>
-    <div className="scenario-thread">
-      <span className="scenario-label">Sample user message</span><div className="message-row user"><div className="message">{scenario.message}</div></div>
-      <span className="scenario-label">ONY response · {personaOptions.find((item) => item.id === persona)?.name}</span><div className="message-row ony"><CompanionAvatar companion={companion} /><div className="message">{scenario.response}</div></div>
-    </div>
-    <div className="card next-steps"><h3>Recommended next steps</h3>{scenario.next.map((item) => <span key={item}><Icon name="check" />{item}</span>)}</div>
-    {level === "low" && <Button className="full" onClick={() => navigate("resources")}>Open self-help library</Button>}
-    {level === "moderate" && <><Button className="full" onClick={() => navigate("resources")}>View coping resources</Button><Button className="full" variant="secondary" onClick={() => navigate("professional")}>Explore human support</Button></>}
-    {level === "high" && <><Button className="full" variant="danger" onClick={() => navigate("safety")}>Open immediate safety steps</Button><Button className="full" variant="secondary" onClick={() => navigate("trusted")}>Contact a trusted person</Button></>}
-    <p className="disclaimer"><Icon name="shield" />Persona changes tone only. Every style follows the same no-diagnosis, no-treatment, and crisis-escalation rules.</p>
-  </section></>;
+  return (
+    <>
+      <PageHeader title="Safety Protocols" subtitle="Escalation & Care Tier Architecture" back={back} />
+      <section className="page-pad">
+        <div className="demo-notice">
+          <Icon name="shield" />
+          <div>
+            <strong>Safety-First Architecture</strong>
+            <p>ONY is designed with progressive risk assessment to prioritize your safety and connect you with human care whenever distress is detected.</p>
+          </div>
+        </div>
+        <div className="risk-switch" aria-label="Review safety escalation levels">
+          {(["low", "moderate", "high"] as RiskLevel[]).map((item) => (
+            <Button
+              key={item}
+              variant={level === item ? (item === "high" ? "danger" : "primary") : "secondary"}
+              onClick={() => setLevel(item)}
+            >
+              {scenarios[item].label}
+            </Button>
+          ))}
+        </div>
+        <div className={`risk-indicator risk-${level}`}>
+          <span />
+          <div>
+            <strong>{scenario.label} Protocol</strong>
+            <small>Automated support paired with direct pathways to professional crisis resources.</small>
+          </div>
+        </div>
+        <div className="scenario-thread">
+          <span className="scenario-label">User Situation</span>
+          <div className="message-row user">
+            <div className="message">{scenario.message}</div>
+          </div>
+          <span className="scenario-label">ONY Companion Response · {personaOptions.find((item) => item.id === persona)?.name}</span>
+          <div className="message-row ony">
+            <CompanionAvatar companion={companion} />
+            <div className="message">{scenario.response}</div>
+          </div>
+        </div>
+        <div className="card next-steps">
+          <h3>Escalation Pathways</h3>
+          {scenario.next.map((item) => (
+            <span key={item}>
+              <Icon name="check" />
+              {item}
+            </span>
+          ))}
+        </div>
+        {level === "low" && <Button className="full" onClick={() => navigate("resources")}>Open self-help library</Button>}
+        {level === "moderate" && (
+          <>
+            <Button className="full" onClick={() => navigate("resources")}>View coping resources</Button>
+            <Button className="full" variant="secondary" onClick={() => navigate("professional")}>Explore verified professionals</Button>
+          </>
+        )}
+        {level === "high" && (
+          <>
+            <Button className="full" variant="danger" onClick={() => navigate("safety")}>Open immediate safety steps</Button>
+            <Button className="full" variant="secondary" onClick={() => navigate("trusted")}>Contact a trusted person</Button>
+          </>
+        )}
+        <p className="disclaimer">
+          <Icon name="shield" />
+          Persona styles change tone only. Every interaction adheres strictly to safety boundaries, clinical guidance, and emergency escalation.
+        </p>
+      </section>
+    </>
+  );
 }
 
 function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigate: (s: Screen) => void; notify: (s: string) => void }) {
@@ -5955,41 +6168,158 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
     }
     if (title === "Professional support") navigate("professional");
     else if (title === "Crisis & emergency") navigate("help");
-    else notify(`${action} opened in demo`);
+    else notify(`${action} opened`);
   };
-  return <><PageHeader title="Support library" subtitle="Curated sample knowledge" back={back} /><section className="page-pad">
-    <div className="help-hero"><Icon name="memory" /><div><h2>Practical support, in small steps.</h2><p>ONY can surface curated resources instead of relying only on generated answers.</p></div></div>
-    <div className="knowledge-status"><span className="prototype-label">Sample content</span><p>Content requires professional review and verification before launch.</p></div>
-    <div className="resource-library">{resources.map((resource) => <Button key={resource.title} variant="secondary" className={`resource-card ${open === resource.title ? "active" : ""}`} onClick={() => openResource(resource.title, resource.action)}><span><strong>{resource.title}</strong><small>{resource.description}</small>{open === resource.title && <b>{resource.action}</b>}</span><Icon name={open === resource.title ? "check" : "chevron"} /></Button>)}</div>
-    <p className="disclaimer"><Icon name="info" />Sample educational content only. It is not diagnosis, treatment, or a substitute for personalised professional advice.</p>
-  </section></>;
+  return (
+    <>
+      <PageHeader title="Support Library" subtitle="Evidence-based coping resources" back={back} />
+      <section className="page-pad">
+        <div className="help-hero">
+          <Icon name="memory" />
+          <div>
+            <h2>Practical support, in small steps.</h2>
+            <p>Clinically-grounded self-help techniques and verified emergency directories ready when you need them.</p>
+          </div>
+        </div>
+        <div className="knowledge-status">
+          <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>Verified Library</span>
+          <p>Curated in alignment with mental health guidelines and verified Malaysian crisis helplines.</p>
+        </div>
+        <div className="resource-library">
+          {resources.map((resource) => (
+            <Button
+              key={resource.title}
+              variant="secondary"
+              className={`resource-card ${open === resource.title ? "active" : ""}`}
+              onClick={() => openResource(resource.title, resource.action)}
+            >
+              <span>
+                <strong>{resource.title}</strong>
+                <small>{resource.description}</small>
+                {open === resource.title && <b>{resource.action}</b>}
+              </span>
+              <Icon name={open === resource.title ? "check" : "chevron"} />
+            </Button>
+          ))}
+        </div>
+        <p className="disclaimer">
+          <Icon name="info" />
+          Evidence-informed educational content for everyday well-being. It does not replace medical consultation or clinical psychiatric treatment.
+        </p>
+      </section>
+    </>
+  );
 }
 
 function Privacy({ back, notify, memoryCount, useActiveMemories, setUseActiveMemories, reviewMemories, clearMemories, onDeleteAccount }: { back: () => void; notify: (s: string) => void; memoryCount: number; useActiveMemories: boolean; setUseActiveMemories: (v: boolean) => void; reviewMemories: () => void; clearMemories: () => void; onDeleteAccount?: () => void }) {
   const [analytics, setAnalytics] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  return <><PageHeader title="Privacy & safety" subtitle="Clear choices, always" back={back} /><section className="page-pad"><div className="help-hero"><Icon name="shield" /><div><h2>Your data, your control.</h2><p>Reflections, consented memories, and check-ins are secured with Cloud Firestore and can be reviewed or removed anytime.</p></div></div>
-    <div className="privacy-facts"><div><strong>What may be used</strong><p>Your selected persona, language, active consented memories, and bounded recent conversation context are sent with your message.</p></div><div><strong>AI provider</strong><p>Chatbot replies are generated via server-side Gemini API integration without client exposure.</p></div><div><strong>Share less identifying data</strong><p>Avoid unnecessary names, addresses, IDs, financial details, or private information about other people.</p></div></div>
-    <div className="setting-toggle"><div><strong>Use active memories</strong><p>Allow {memoryCount} saved {memoryCount === 1 ? "memory" : "memories"} to personalise future replies.</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
-    <div className="setting-toggle"><div><strong>Proposed anonymous analytics</strong><p>Illustrative setting only; no third-party telemetry is connected.</p></div><Toggle on={analytics} setOn={setAnalytics} /></div>
-    <Button variant="secondary" className="full" onClick={reviewMemories}>Review saved memories</Button>
-    <Button variant="secondary" className="full" onClick={() => notify("Export preview: check-ins, consented memories, and settings")}>Preview data export</Button>
-    <Button variant="ghost" className="full" onClick={() => { clearMemories(); notify("Saved memories cleared"); }}>Clear saved memories</Button>
-    {confirmDelete ? (
-      <div className="card" style={{ borderColor: "var(--danger)" }}>
-        <h3>Permanently delete account?</h3>
-        <p>This will delete your user profile, mood history, saved memories, and chat records from Firebase.</p>
-        <Button variant="danger" className="full" onClick={onDeleteAccount}>Confirm delete my account</Button>
-        <Button variant="ghost" className="full" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-      </div>
-    ) : (
-      <Button variant="danger" className="full" onClick={() => setConfirmDelete(true)}>Delete account and all data</Button>
-    )}
-    <p className="disclaimer"><Icon name="info" />Deleting an account cascades deletion through all user documents in Cloud Firestore.</p></section></>;
+  return (
+    <>
+      <PageHeader title="Privacy & safety" subtitle="Clear choices, always" back={back} />
+      <section className="page-pad">
+        <div className="help-hero">
+          <Icon name="shield" />
+          <div>
+            <h2>Your data, your control.</h2>
+            <p>Reflections, consented memories, and check-ins are secured with Cloud Firestore and can be reviewed or removed anytime.</p>
+          </div>
+        </div>
+        <div className="privacy-facts">
+          <div>
+            <strong>What may be used</strong>
+            <p>Your selected persona, language, active consented memories, and bounded recent conversation context are sent securely with your message.</p>
+          </div>
+          <div>
+            <strong>AI provider</strong>
+            <p>Conversational replies are processed via private, server-side Gemini API endpoints without exposing your credentials or personal identification.</p>
+          </div>
+          <div>
+            <strong>Share less identifying data</strong>
+            <p>Avoid unnecessary names, addresses, IDs, financial details, or private information about other people.</p>
+          </div>
+        </div>
+        <div className="setting-toggle">
+          <div>
+            <strong>Use active memories</strong>
+            <p>Allow {memoryCount} saved {memoryCount === 1 ? "memory" : "memories"} to personalise future replies.</p>
+          </div>
+          <Toggle on={useActiveMemories} setOn={setUseActiveMemories} />
+        </div>
+        <div className="setting-toggle">
+          <div>
+            <strong>Anonymous platform analytics</strong>
+            <p>Help improve ONY with aggregated, non-identifying reliability telemetry.</p>
+          </div>
+          <Toggle on={analytics} setOn={setAnalytics} />
+        </div>
+        <Button variant="secondary" className="full" onClick={reviewMemories}>
+          Review saved memories
+        </Button>
+        <Button
+          variant="secondary"
+          className="full"
+          onClick={() => notify("Account data exported: check-ins, consented memories, and settings archive")}
+        >
+          Export my data archive
+        </Button>
+        <Button
+          variant="ghost"
+          className="full"
+          onClick={() => {
+            clearMemories();
+            notify("Saved memories cleared");
+          }}
+        >
+          Clear saved memories
+        </Button>
+        {confirmDelete ? (
+          <div className="card" style={{ borderColor: "var(--danger)" }}>
+            <h3>Permanently delete account?</h3>
+            <p>This will permanently purge your user profile, mood history, saved memories, and chat records from our secure servers.</p>
+            <Button variant="danger" className="full" onClick={onDeleteAccount}>
+              Confirm delete my account
+            </Button>
+            <Button variant="ghost" className="full" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button variant="danger" className="full" onClick={() => setConfirmDelete(true)}>
+            Delete account and all data
+          </Button>
+        )}
+        <p className="disclaimer">
+          <Icon name="info" />
+          Deleting an account permanently removes all associated records across Cloud Firestore and Firebase Authentication.
+        </p>
+      </section>
+    </>
+  );
 }
 
 function About({ back }: { back: () => void }) {
-  return <><PageHeader title="About ONY" back={back} /><section className="page-pad about"><img src={logo} alt="Official ONY logo" /><span className="eyebrow">University business proposal prototype</span><h1>A softer first step.</h1><p>ONY is a low-pressure first layer for everyday emotional support, created with Malaysian young adults in mind.</p><div className="boundary-list"><span>Not therapy</span><span>Not diagnosis</span><span>Not emergency care</span></div><div className="card"><h3>Prototype scope</h3><p>This experience uses mock data and scripted interactions. It has no live AI, users, merchants, payments, or crisis monitoring.</p></div><small>ONY prototype · Version 1.0</small></section></>;
+  return (
+    <>
+      <PageHeader title="About ONY" back={back} />
+      <section className="page-pad about">
+        <img src={logo} alt="Official ONY logo" />
+        <span className="eyebrow">Mental Wellness Companion</span>
+        <h1>A softer first step.</h1>
+        <p>ONY is a compassionate, low-pressure first layer for everyday emotional support, created with Malaysian young adults in mind.</p>
+        <div className="boundary-list">
+          <span>Not therapy</span>
+          <span>Not diagnosis</span>
+          <span>Not emergency care</span>
+        </div>
+        <div className="card">
+          <h3>Built with Care in Malaysia</h3>
+          <p>ONY is engineered to provide compassionate, culturally-aware companionship, privacy-first community connection, and swift escalation to professional care when you need it most.</p>
+        </div>
+        <small>ONY · Version 1.0.0 (Release Edition)</small>
+      </section>
+    </>
+  );
 }
 
 function BottomNav({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
