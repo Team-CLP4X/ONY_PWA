@@ -82,6 +82,8 @@ import {
   type FirestoreCommunityMessage,
   type FirestoreTrustedContactRequest,
 } from "./firebase/firestore";
+import { LanguageProvider, useLanguage } from "./i18n/LanguageContext";
+import { type AppLanguage, getTranslation } from "./i18n/translations";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -396,7 +398,8 @@ function AuthFlow(props: AuthFlowProps) {
   return <AuthFlowContent {...props} />;
 }
 
-function App() {
+function AppInner() {
+  const { language, setLanguage } = useLanguage();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [displayName, setDisplayName] = useState("Aina");
@@ -407,7 +410,6 @@ function App() {
   const [onboarding, setOnboarding] = useState(0);
   const [memoryConsent, setMemoryConsent] = useState("allow");
   const [useActiveMemories, setUseActiveMemories] = useState(true);
-  const [language, setLanguage] = useState("English");
   const [conversationStyle, setConversationStyle] = useState("Reflective");
   const [responseLength, setResponseLength] = useState("Balanced");
   const [selectedTopics, setSelectedTopics] = useState<string[]>(["Stress", "Study"]);
@@ -583,7 +585,7 @@ function App() {
             if (profile.theme) setTheme(profile.theme as Theme);
             if (profile.companion) setCompanion(profile.companion as Companion);
             if (profile.persona) setPersona(profile.persona as Persona);
-            if (profile.preferredLanguage) setLanguage(profile.preferredLanguage);
+            if (profile.preferredLanguage) setLanguage(profile.preferredLanguage as AppLanguage);
             if (profile.conversationStyle) setConversationStyle(profile.conversationStyle);
             if (profile.responseLength) setResponseLength(profile.responseLength);
             if (profile.memoryConsent) setMemoryConsent(profile.memoryConsent);
@@ -1058,7 +1060,7 @@ function App() {
       consent={memoryConsent}
       setConsent={setMemoryConsent}
       language={language}
-      setLanguage={setLanguage}
+      setLanguage={(v) => setLanguage(v as AppLanguage)}
       selectedTopics={selectedTopics}
       setSelectedTopics={setSelectedTopics}
       theme={theme}
@@ -1252,7 +1254,7 @@ function App() {
               {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={handleSetMoodEntries} />}
               {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
               {screen === "help" && <Help back={back} navigate={navigate} />}
-              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={setLanguage} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
+              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => setLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
                 if (currentUser) {
                   updateUserProfile(currentUser.uid, {
                     theme,
@@ -1736,14 +1738,17 @@ function PageHeader({
   back,
   action,
   hideNotifications = false,
+  hideLanguage = false,
 }: {
   title: string;
   subtitle?: string;
   back?: () => void;
   action?: ReactNode;
   hideNotifications?: boolean;
+  hideLanguage?: boolean;
 }) {
   const { unreadCount, openNotifications } = useNotifications();
+  const { language, setLanguage } = useLanguage();
   return (
     <header className="page-header">
       {back ? (
@@ -1759,6 +1764,37 @@ function PageHeader({
       </div>
       <div className="header-right-actions">
         {action}
+        {!hideLanguage && (
+          <div className="header-lang-switch" role="group" aria-label="Language selector">
+            <button
+              type="button"
+              className={`lang-pill-btn ${language === "English" ? "active" : ""}`}
+              onClick={() => setLanguage("English")}
+              title="English"
+              aria-label="Switch to English"
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              className={`lang-pill-btn ${language === "Bahasa Melayu" ? "active" : ""}`}
+              onClick={() => setLanguage("Bahasa Melayu")}
+              title="Bahasa Melayu"
+              aria-label="Tukar ke Bahasa Melayu"
+            >
+              BM
+            </button>
+            <button
+              type="button"
+              className={`lang-pill-btn ${language === "中文" ? "active" : ""}`}
+              onClick={() => setLanguage("中文")}
+              title="中文"
+              aria-label="切换至中文"
+            >
+              中文
+            </button>
+          </div>
+        )}
         {!hideNotifications && (
           <button
             type="button"
@@ -1823,7 +1859,37 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const [chatError, setChatError] = useState<string | null>(null);
   const [failedUserText, setFailedUserText] = useState<string | null>(null);
   const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
-  const suggestions = ["I feel stressed", "I feel anxious", "I need someone to talk to", "Find a job", "Study pressure", "I want to relax"];
+  const { t } = useLanguage();
+  const suggestions = useMemo(() => {
+    if (language === "Bahasa Melayu") {
+      return [
+        "Saya rasa tertekan dengan tugasan",
+        "Saya rasa gelisah hari ini",
+        "Perlukan teman untuk meluahkan perasaan",
+        "Bimbing saya dalam pernafasan tenang",
+        "Tekanan belajar dan peperiksaan",
+        "Saya ingin berehat sejenak",
+      ];
+    }
+    if (language === "中文") {
+      return [
+        "今天感到压力有些大",
+        "感到有些焦虑不安",
+        "想要找一个温暖的倾听者",
+        "带我做一次深呼吸放松",
+        "学习和考试压力很大",
+        "想要在这里静静放松一下",
+      ];
+    }
+    return [
+      "I feel stressed",
+      "I feel anxious",
+      "I need someone to talk to",
+      "Guide me through a calming breath",
+      "Study and exam pressure",
+      "I want to relax",
+    ];
+  }, [language]);
 
   const isSubscribed = subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly";
   const isLimitReached = !isSubscribed && freeUsage >= freeLimit;
@@ -3746,6 +3812,7 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
   navigate: (s: Screen) => void; displayName: string; language: string; persona: Persona; theme: Theme; companion: Companion; trustedName: string;
   contactStatus: ContactStatus; pendingIncomingCount?: number; unreadNotificationsCount?: number; subscriptionStatus: SubscriptionStatus; onLogout: () => void;
 }) {
+  const { t } = useLanguage();
   const contactLabel =
     pendingIncomingCount > 0
       ? `${pendingIncomingCount} incoming request${pendingIncomingCount > 1 ? "s" : ""} to review`
@@ -3766,27 +3833,27 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
           ? "Free · Trial ended"
           : "Free · Free access";
   const menu = [
-    ["personalise", "Companion & communication", `${personaOptions.find((item) => item.id === persona)?.name}`],
-    ["monthlyReport", "Monthly Reflection", "Your conversations and check-ins"],
-    ["trusted", "Trusted contact", contactLabel],
+    ["personalise", t.profile_menu_personalise, t.profile_menu_personalise_sub],
+    ["monthlyReport", t.profile_menu_monthly, t.profile_menu_monthly_sub],
+    ["trusted", t.profile_menu_trusted, contactLabel],
     [
       "notifications",
-      "Notifications",
+      t.profile_menu_notifications,
       unreadNotificationsCount > 0
-        ? `${unreadNotificationsCount} unread update${unreadNotificationsCount > 1 ? "s" : ""}`
-        : "All caught up",
+        ? `${unreadNotificationsCount} ${t.notif_unread}`
+        : t.notif_all_caught_up,
     ],
-    ["privacy", "Privacy & memory", "You’re in control"],
-    ["systemLogs", "Activity & System Logs", "Cloud database audit trail & .log export"],
-    ["legal", "Legal & safety", "Disclaimer, terms, privacy, and crisis information"],
-    ["subscription", "Subscription", subscriptionLabel],
-    ["help", "Help & support", "Resources and crisis help"],
-    ["about", "About ONY", "Version 1.0.0 (Release)"],
+    ["privacy", t.profile_menu_privacy, t.profile_menu_privacy_sub],
+    ["systemLogs", t.profile_menu_logs, t.profile_menu_logs_sub],
+    ["legal", t.profile_menu_legal, t.profile_menu_legal_sub],
+    ["subscription", t.profile_menu_subscription, subscriptionLabel],
+    ["help", t.profile_menu_help, t.profile_menu_help_sub],
+    ["about", t.profile_menu_about, "Version 1.0.0 (Release)"],
   ] as [Screen, string, string][];
-  return <><PageHeader title="Profile" subtitle="Your ONY, your way" /><section className="page-pad top-row">
+  return <><PageHeader title={t.profile_title} subtitle={t.profile_subtitle} /><section className="page-pad top-row">
     <div className="profile-card"><CompanionAvatar companion={companion} /><div><h2>{displayName} & ONY</h2><p>Preferred display name · {language}</p><span>{companion} · {personaOptions.find((item) => item.id === persona)?.name}</span></div><SmallLogo /></div>
-    <div className="section-head"><h3>Settings</h3></div><div className="menu">{menu.map(([id, title, text]) => <button key={id} onClick={() => navigate(id)}><span className="menu-icon"><Icon name={id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : id === "systemLogs" ? "fileText" : "profile"} /></span><span><strong>{title}</strong><small>{text}</small></span><Icon name="chevron" /></button>)}</div>
-    <Button variant="secondary" className="full logout" onClick={onLogout}>Log out</Button>
+    <div className="section-head"><h3>{t.profile_settings_head}</h3></div><div className="menu">{menu.map(([id, title, text]) => <button key={id} onClick={() => navigate(id)}><span className="menu-icon"><Icon name={id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : id === "systemLogs" ? "fileText" : "profile"} /></span><span><strong>{title}</strong><small>{text}</small></span><Icon name="chevron" /></button>)}</div>
+    <Button variant="secondary" className="full logout" onClick={onLogout}>{t.profile_menu_logout}</Button>
     <p className="prototype-foot">ONY Secure Platform · Protected by Firebase Authentication & Cloud Firestore. End-to-end secure synchronization.</p>
   </section></>;
 }
@@ -3800,17 +3867,18 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
   soundOn: boolean; setSoundOn: (v: boolean) => void; volume: number; setVolume: (v: number) => void; notify: (s: string) => void;
   persona: Persona; setPersona: (v: Persona) => void; onSave?: () => void;
 }) {
-  return <><PageHeader title="Personalise ONY" subtitle="Shape how conversations feel" back={back} /><section className="page-pad">
-    <div className="setting-block"><h3>ONY companion</h3><p>Choose who accompanies you.</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
-    <div className="setting-block"><h3>Environment</h3><p>Choose a calming space for the whole app.</p><ThemePicker value={theme} setValue={setTheme} /></div>
+  const { t } = useLanguage();
+  return <><PageHeader title={t.personalise_title} subtitle={t.personalise_subtitle} back={back} /><section className="page-pad">
+    <div className="setting-block"><h3>{t.personalise_companion}</h3><p>Choose who accompanies you.</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
+    <div className="setting-block"><h3>{t.personalise_theme}</h3><p>Choose a calming space for the whole app.</p><ThemePicker value={theme} setValue={setTheme} /></div>
     <div className="ambient-settings"><div><strong>{themeOptions.find((item) => item.id === theme)?.name} ambience</strong><small>Soothing ambient soundscape</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button><label>Volume <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
-    <div className="setting-block"><h3>Communication style</h3><p>Tone changes, but ONY’s safety rules never do.</p><PersonaPicker value={persona} setValue={setPersona} /></div>
-    <SettingChoices title="Conversation style" values={["Reflective", "Practical", "A mix"]} value={conversationStyle} setValue={setConversationStyle} />
-    <SettingChoices title="Response length" values={["Short", "Balanced", "Detailed"]} value={responseLength} setValue={setResponseLength} />
-    <SettingChoices title="Language" values={["English", "Bahasa Melayu", "中文"]} value={language} setValue={setLanguage} />
+    <div className="setting-block"><h3>{t.personalise_persona}</h3><p>Tone changes, but ONY’s safety rules never do.</p><PersonaPicker value={persona} setValue={setPersona} /></div>
+    <SettingChoices title={t.personalise_style} values={["Reflective", "Practical", "A mix"]} value={conversationStyle} setValue={setConversationStyle} />
+    <SettingChoices title={t.personalise_response_length} values={["Short", "Balanced", "Detailed"]} value={responseLength} setValue={setResponseLength} />
+    <SettingChoices title={t.personalise_language} values={["English", "Bahasa Melayu", "中文"]} value={language} setValue={setLanguage} />
     <div className="setting-toggle"><div><strong>Relevant memories</strong><p>Let ONY use active Vault memories.</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
     <div className="preview-bubble"><CompanionAvatar companion={companion} /><div><span>Your preview</span><p>{personaOptions.find((item) => item.id === persona)?.preview}</p></div></div>
-    <Button className="full" onClick={() => { if (onSave) onSave(); notify("Your ONY preferences are saved to your profile"); }}>Save preferences</Button>
+    <Button className="full" onClick={() => { if (onSave) onSave(); notify(t.personalise_save_toast); }}>{t.common_save}</Button>
   </section></>;
 }
 
@@ -3863,6 +3931,7 @@ function ChatHistory({ back, navigate, conversations, setConversations, activeCh
 }
 
 function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setConversations, memories }: { back: () => void; moodEntries: MoodEntry[]; setMoodEntries: (entries: MoodEntry[]) => void; conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; memories: Memory[] }) {
+  const { t } = useLanguage();
   const [includedMemories, setIncludedMemories] = useState<number[]>(memories.filter((memory) => memory.active).map((memory) => memory.id));
   const [intention, setIntention] = useState("");
   const [generated, setGenerated] = useState(1);
@@ -3881,7 +3950,7 @@ function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setCo
     setIntention("");
     setGenerated((value) => value + 1);
   };
-  return <><PageHeader title="Monthly Reflection" subtitle="Consented data, never a diagnosis" back={back} /><section className="page-pad">
+  return <><PageHeader title={t.report_title} subtitle={t.report_subtitle} back={back} /><section className="page-pad">
     <div className="monthly-hero"><SmallLogo /><span className="eyebrow">Monthly with ONY</span><h1>Your reflection</h1><p>{dateRange}</p></div>
     <div className="report-source"><Icon name="info" /><p>Generated locally from {allowedMoods.length} allowed mood entries, {allowedChats.length} conversations, and {allowedMemories.length} active selected memories. Version {generated}.</p></div>
     <div className="report-grid"><div><span>Included mood entries</span><strong>{allowedMoods.length}</strong><small>{moodEntries.length - allowedMoods.length} excluded from this report</small></div><div><span>Included chats</span><strong>{allowedChats.length}</strong><small>{conversations.length - allowedChats.length} excluded or archived</small></div></div>
@@ -3949,6 +4018,7 @@ function Notifications({
   onOpenTrusted: () => void;
   notify: (s: string) => void;
 }) {
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<"All" | "Emergency" | "Community" | "Messages">("All");
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -4025,8 +4095,8 @@ function Notifications({
   return (
     <>
       <PageHeader
-        title="Notifications"
-        subtitle="All your activity & updates"
+        title={t.notif_title}
+        subtitle={t.notif_subtitle}
         back={back}
         hideNotifications={true}
         action={
@@ -4046,14 +4116,14 @@ function Notifications({
           <div className="notifications-badge-wrap">
             {unreadCount > 0 ? (
               <span className="notifications-unread-pill">
-                <i /> {unreadCount} unread
+                <i /> {unreadCount} {t.notif_unread}
               </span>
             ) : (
               <span
                 className="notifications-unread-pill"
                 style={{ background: "var(--sage-soft)", color: "#2e7d32" }}
               >
-                All caught up
+                {t.notif_all_caught_up}
               </span>
             )}
             <span className="notifications-total-count">
@@ -4067,7 +4137,7 @@ function Notifications({
                 className="mark-all-read-btn"
                 onClick={onMarkAllRead}
               >
-                Mark all as read
+                {t.notif_mark_all_read}
               </Button>
             )}
           </div>
@@ -4249,6 +4319,7 @@ function NotificationSettings({
   back: () => void;
   notify: (s: string) => void;
 }) {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState<Record<string, boolean>>(() => {
     try {
       const stored = localStorage.getItem("ony_notification_prefs_v1");
@@ -4290,15 +4361,15 @@ function NotificationSettings({
       action: "NOTIFICATION_PREFERENCES_SAVED",
       message: `Quiet hours: ${quietHours.enabled ? "Active (" + quietHours.start + "-" + quietHours.end + ")" : "Disabled"}. Updated category alert preferences.`,
     }).catch(() => {});
-    notify("Notification preferences & quiet hours saved");
+    notify(t.notif_saved_toast);
     back();
   };
 
   return (
     <>
       <PageHeader
-        title="Notification Settings"
-        subtitle="Preferences & quiet hours"
+        title={t.notif_settings_title}
+        subtitle={t.notif_settings_subtitle}
         back={back}
         hideNotifications={true}
         action={
@@ -4306,9 +4377,9 @@ function NotificationSettings({
             variant="primary"
             className="header-save-btn"
             onClick={handleSave}
-            title="Save notification preferences & quiet hours"
+            title={t.notif_save_btn}
           >
-            <Icon name="check" /> Save
+            <Icon name="check" /> {t.common_save}
           </Button>
         }
       />
@@ -4422,6 +4493,7 @@ function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit,
   back: () => void; openHelp: () => void; status: SubscriptionStatus; setStatus: (status: SubscriptionStatus) => void;
   freeUsage: number; freeLimit: number; resetFreeUsage: () => void; notify: (s: string) => void;
 }) {
+  const { t } = useLanguage();
   const activate = (next: SubscriptionStatus, message: string) => {
     setStatus(next);
     if (next !== "free") resetFreeUsage();
@@ -4434,10 +4506,11 @@ function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit,
   if (status === "trialEnded") return <><PageHeader title="Choose Your Plan" subtitle="Your free trial has ended" back={back} /><section className="page-pad"><div className="trial-ended"><SmallLogo /><span className="eyebrow">Trial Complete</span><h1>Welcome to the next chapter.</h1><p>You can continue using ONY for free forever, or choose a Premium plan that fits your journey.</p></div>{freeCard}<div className="paid-options-heading"><span>Premium Plans</span><p>Choose occasional flexibility or continuous full support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential crisis support</Button><p className="disclaimer"><Icon name="info" />Encrypted billing. Cancel or change your subscription at any time.</p></section></>;
   if (status === "payg") return <><PageHeader title="ONY Premium" subtitle="Pay As You Go" back={back} /><section className="page-pad">{paygCard}<div className="community-note"><Icon name="info" />After this 3-day pass, access seamlessly returns to Free unless you renew.</div>{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
   if (status === "monthly") return <><PageHeader title="ONY Premium" subtitle="Monthly Plan" back={back} /><section className="page-pad">{monthlyCard}<div className="community-note"><Icon name="info" />Your monthly subscription renews automatically. You can manage or cancel anytime.</div><Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
-  return <><PageHeader title="Subscription" subtitle="Free and Premium options" back={back} /><section className="page-pad"><div className="pricing-intro"><span className="eyebrow">Your ONY Sanctuary</span><h1>Choose what fits you best.</h1><p>The Free tier is always available. Upgrade whenever you want deeper continuity and insights.</p></div>{freeCard}<div className="subscription-plan trial-plan"><div className="plan-heading"><span>Try Premium Free</span><b>Eligible</b></div><h2>3-Day Free Trial</h2><strong>RM0 <small>for 3 days</small></strong><p>Experience the complete ONY Premium journey free for 3 days.</p><ul><li>Enhanced personalization</li><li>Deeper memory continuity</li><li>Advanced mood insights</li><li>Expanded Premium features</li></ul><Button className="full" onClick={() => activate("trial", "3-Day Free Trial started · Welcome!")}>Start 3-Day Free Trial</Button><Button className="full" variant="ghost" onClick={back}>Stay on Free</Button></div><div className="paid-options-heading"><span>Or Choose Premium Directly</span><p>Flexible short-term passes or continuous monthly support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button><p className="disclaimer"><Icon name="info" />Transparent policies. Core safety and crisis resources remain free forever for all members.</p></section></>;
+  return <><PageHeader title={t.sub_title} subtitle={t.sub_subtitle} back={back} /><section className="page-pad"><div className="pricing-intro"><span className="eyebrow">Your ONY Sanctuary</span><h1>Choose what fits you best.</h1><p>The Free tier is always available. Upgrade whenever you want deeper continuity and insights.</p></div>{freeCard}<div className="subscription-plan trial-plan"><div className="plan-heading"><span>Try Premium Free</span><b>Eligible</b></div><h2>3-Day Free Trial</h2><strong>RM0 <small>for 3 days</small></strong><p>Experience the complete ONY Premium journey free for 3 days.</p><ul><li>Enhanced personalization</li><li>Deeper memory continuity</li><li>Advanced mood insights</li><li>Expanded Premium features</li></ul><Button className="full" onClick={() => activate("trial", "3-Day Free Trial started · Welcome!")}>Start 3-Day Free Trial</Button><Button className="full" variant="ghost" onClick={back}>Stay on Free</Button></div><div className="paid-options-heading"><span>Or Choose Premium Directly</span><p>Flexible short-term passes or continuous monthly support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button><p className="disclaimer"><Icon name="info" />Transparent policies. Core safety and crisis resources remain free forever for all members.</p></section></>;
 }
 
 function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
+  const { t } = useLanguage();
   const [answer, setAnswer] = useState<"none" | "yes" | "no">("none");
   const handleAnswerYes = () => {
     setAnswer("yes");
@@ -4448,12 +4521,12 @@ function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen
       message: "User responded YES to immediate danger. Critical emergency pathways presented.",
     }).catch(() => {});
   };
-  return <div className="safety-page"><PageHeader title="Immediate support" subtitle="Let’s focus on your safety" back={back} /><section className="page-pad">
-    <div className="safety-mark"><Icon name="shield" /></div><h1>I’m really sorry you’re going through this.</h1><p className="lead">You don’t have to handle this alone. I want to help you connect with support that can respond right now.</p>
-    {answer === "none" && <div className="danger-card"><strong>Are you in immediate danger?</strong><p>This includes having a plan, access to means, or feeling you may act now.</p><Button variant="danger" className="full" onClick={handleAnswerYes}>Yes, I need immediate help</Button><Button variant="secondary" className="full" onClick={() => setAnswer("no")}>No, but I need support</Button></div>}
-    {answer === "yes" && <div className="emergency"><span className="eyebrow">Need immediate help?</span><a href="tel:999">999</a><strong>Emergency</strong><p>If you can, move away from anything you could use to hurt yourself and go to a trusted person or public place.</p><Button className="full" onClick={() => navigate("help")}>See Malaysia crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>Contact someone I trust</Button></div>}
-    {answer === "no" && <div className="danger-card"><strong>Let’s connect you with someone.</strong><p>Consider contacting a trusted person and staying near others. A befriender, counsellor, or support line can listen without judgment.</p><Button className="full" onClick={() => navigate("help")}>View crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>Contact someone I trust</Button><Button variant="ghost" className="full" onClick={back}>Return when I’m ready</Button></div>}
-    <p className="safety-disclaimer"><strong>ONY is an AI companion and does not replace human emergency services.</strong> If in immediate life-threatening crisis, call 999 or Talian HEAL 15555 immediately.</p>
+  return <div className="safety-page"><PageHeader title={t.safety_title} subtitle={t.safety_subtitle} back={back} /><section className="page-pad">
+    <div className="safety-mark"><Icon name="shield" /></div><h1>{t.safety_sorry_heading}</h1><p className="lead">{t.safety_lead}</p>
+    {answer === "none" && <div className="danger-card"><strong>{t.safety_immediate_question}</strong><p>{t.safety_immediate_desc}</p><Button variant="danger" className="full" onClick={handleAnswerYes}>{t.safety_yes_danger}</Button><Button variant="secondary" className="full" onClick={() => setAnswer("no")}>{t.safety_no_support}</Button></div>}
+    {answer === "yes" && <div className="emergency"><span className="eyebrow">Need immediate help?</span><a href="tel:999">999</a><strong>{t.safety_emergency_services}</strong><p>If you can, move away from anything you could use to hurt yourself and go to a trusted person or public place.</p><Button className="full" onClick={() => navigate("help")}>See Malaysia crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>{t.safety_contact_trusted}</Button></div>}
+    {answer === "no" && <div className="danger-card"><strong>Let’s connect you with someone.</strong><p>Consider contacting a trusted person and staying near others. A befriender, counsellor, or support line can listen without judgment.</p><Button className="full" onClick={() => navigate("help")}>View crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>{t.safety_contact_trusted}</Button><Button variant="ghost" className="full" onClick={back}>Return when I’m ready</Button></div>}
+    <p className="safety-disclaimer"><strong>ONY is an AI companion and does not replace human emergency services.</strong> {t.safety_disclaimer}</p>
     <div className="sop"><span>Distress Detection</span><span>Gentle De-escalation</span><span>Immediate Crisis Resources</span><span>User Safety Choice</span></div>
   </section></div>;
 }
@@ -4651,6 +4724,7 @@ function TrustedContact({
   onRefresh: () => Promise<void>;
   notify: (s: string) => void;
 }) {
+  const { t } = useLanguage();
   const [callState, setCallState] = useState<"idle" | "calling" | "message">("idle");
   const [recipientIdentifier, setRecipientIdentifier] = useState(email || "");
   const [relationshipNote, setRelationshipNote] = useState("");
@@ -4951,12 +5025,12 @@ function TrustedContact({
   return (
     <>
       <PageHeader
-        title="Trusted contact"
-        subtitle="Emergency contact invite link & requests"
+        title={t.trusted_title}
+        subtitle={t.trusted_subtitle}
         back={back}
         action={
           <Button variant="ghost" onClick={() => void onRefresh()}>
-            Refresh
+            {t.common_refresh}
           </Button>
         }
       />
@@ -6090,9 +6164,10 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 }
 
 function CommunityGuidelines({ back }: { back: () => void }) {
+  const { t } = useLanguage();
   return (
     <>
-      <PageHeader title="Community guidelines" subtitle="Kind, private, supportive" back={back} />
+      <PageHeader title={t.guidelines_title} subtitle={t.guidelines_subtitle} back={back} />
       <section className="page-pad">
         <div className="help-hero">
           <Icon name="shield" />
@@ -6295,11 +6370,12 @@ function Privacy({
   onDeleteAccount?: () => void;
   navigate: (s: Screen) => void;
 }) {
+  const { t } = useLanguage();
   const [analytics, setAnalytics] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <>
-      <PageHeader title="Privacy & safety" subtitle="Clear choices, always" back={back} />
+      <PageHeader title={t.privacy_title} subtitle={t.privacy_subtitle} back={back} />
       <section className="page-pad">
         <div className="help-hero">
           <Icon name="shield" />
@@ -6389,9 +6465,10 @@ function Privacy({
 }
 
 function About({ back }: { back: () => void }) {
+  const { t } = useLanguage();
   return (
     <>
-      <PageHeader title="About ONY" back={back} />
+      <PageHeader title={t.about_title} subtitle={t.about_subtitle} back={back} />
       <section className="page-pad about">
         <img src={logo} alt="Official ONY logo" />
         <span className="eyebrow">Mental Wellness Companion</span>
@@ -6421,6 +6498,7 @@ function SystemLogsView({
   notify: (s: string) => void;
   currentUser: User | null;
 }) {
+  const { t } = useLanguage();
   const [logs, setLogs] = useState<SystemLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("All");
@@ -6531,8 +6609,8 @@ function SystemLogsView({
   return (
     <>
       <PageHeader
-        title="Activity & System Logs"
-        subtitle="Production database audit trail"
+        title={t.logs_title}
+        subtitle={t.logs_subtitle}
         back={back}
         action={
           <div style={{ display: "flex", gap: "6px" }}>
@@ -6553,9 +6631,9 @@ function SystemLogsView({
             <Icon name="fileText" />
           </div>
           <div>
-            <h2>Database System & Audit Logs</h2>
+            <h2>{t.logs_title}</h2>
             <p>
-              Real-time audit log of security events, authentications, safety escalations, and system actions stored in Cloud Firestore.
+              {t.logs_hero_desc}
             </p>
           </div>
         </div>
@@ -6581,12 +6659,12 @@ function SystemLogsView({
 
           <div className="log-file-meta-grid">
             <div className="log-file-meta-item">
-              <strong>Database Instance</strong>
+              <strong>{t.logs_database_instance}</strong>
               <span>ai-studio-onypwa…</span>
             </div>
             <div className="log-file-meta-item">
               <strong>Total Records</strong>
-              <span>{logs.length} logged events</span>
+              <span>{logs.length} {t.logs_total_events}</span>
             </div>
             <div className="log-file-meta-item">
               <strong>Current User</strong>
@@ -6600,10 +6678,10 @@ function SystemLogsView({
 
           <div className="log-export-actions">
             <Button variant="primary" onClick={handleDownloadLog}>
-              <Icon name="download" /> Export .log File
+              <Icon name="download" /> {t.logs_export_log_btn}
             </Button>
             <Button variant="secondary" onClick={handleDownloadJson}>
-              <Icon name="fileText" /> Export .json File
+              <Icon name="fileText" /> {t.logs_export_json_btn}
             </Button>
           </div>
           <div style={{ marginTop: "4px" }}>
@@ -6613,14 +6691,14 @@ function SystemLogsView({
               onClick={handleDiagnosticPing}
               disabled={isSubmittingPing}
             >
-              {isSubmittingPing ? "Writing to DB…" : "+ Record Diagnostic Ping in Firestore"}
+              {isSubmittingPing ? "Writing to DB…" : t.logs_diagnostic_btn}
             </Button>
           </div>
         </div>
 
         <div style={{ marginBottom: "12px" }}>
           <TextInput
-            placeholder="Search action, message, or user..."
+            placeholder={t.logs_search_placeholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: "100%", padding: "8px 12px", fontSize: "12.5px" }}
@@ -6688,8 +6766,36 @@ function SystemLogsView({
 }
 
 function BottomNav({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
-  const nav: [Tab, string, string][] = [["chat", "Chatbot", "chat"], ["memory", "Memory Vault", "memory"], ["community", "Community", "community"], ["market", "Marketplace", "market"], ["profile", "Profile", "profile"]];
-  return <nav className="bottom-nav">{nav.map(([id, label, icon]) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon name={icon} /><span>{label}</span></button>)}</nav>;
+  const { t } = useLanguage();
+  const nav: [Tab, string, string][] = [
+    ["chat", t.nav_chat, "chat"],
+    ["memory", t.nav_memory, "memory"],
+    ["community", t.nav_community, "community"],
+    ["market", t.nav_market, "market"],
+    ["profile", t.nav_profile, "profile"],
+  ];
+  return (
+    <nav className="bottom-nav">
+      {nav.map(([id, label, icon]) => (
+        <button
+          key={id}
+          className={tab === id ? "active" : ""}
+          onClick={() => setTab(id)}
+        >
+          <Icon name={icon} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function App() {
+  return (
+    <LanguageProvider>
+      <AppInner />
+    </LanguageProvider>
+  );
 }
 
 export default App;
