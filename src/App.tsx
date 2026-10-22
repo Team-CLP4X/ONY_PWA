@@ -117,7 +117,8 @@ type Screen =
   | "riskDemo"
   | "resources"
   | "legal"
-  | "systemLogs";
+  | "systemLogs"
+  | "language";
 
 type Theme = "ocean" | "sunset" | "forest" | "lavender" | "peach" | "neutral";
 type Companion = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
@@ -1019,6 +1020,34 @@ function AppInner() {
     }
   };
 
+  const handleSelectLanguage = async (nextLang: AppLanguage) => {
+    setLanguage(nextLang);
+    const toastMsg =
+      nextLang === "Bahasa Melayu"
+        ? "Bahasa aplikasi ditukar ke Bahasa Melayu"
+        : nextLang === "中文"
+          ? "应用语言已切换为中文"
+          : "App language switched to English";
+    notify(toastMsg);
+    if (currentUser) {
+      try {
+        await updateUserProfile(currentUser.uid, {
+          preferredLanguage: nextLang,
+        });
+        writeSystemLog({
+          level: "audit",
+          category: "auth",
+          action: "LANGUAGE_PREFERENCE_UPDATED",
+          message: `Language updated to ${nextLang} for ${currentUser.email || currentUser.uid}. Synced to Cloud Firestore.`,
+          userId: currentUser.uid,
+          userEmail: currentUser.email,
+        }).catch(() => {});
+      } catch (e) {
+        console.warn("[ONY] Firestore language update warning:", e);
+      }
+    }
+  };
+
   const handleOnboardingComplete = async (nextStep: number) => {
     setOnboarding(nextStep);
     if (nextStep >= 9 && currentUser) {
@@ -1060,7 +1089,7 @@ function AppInner() {
       consent={memoryConsent}
       setConsent={setMemoryConsent}
       language={language}
-      setLanguage={(v) => setLanguage(v as AppLanguage)}
+      setLanguage={(v) => void handleSelectLanguage(v as AppLanguage)}
       selectedTopics={selectedTopics}
       setSelectedTopics={setSelectedTopics}
       theme={theme}
@@ -1245,16 +1274,40 @@ function AppInner() {
                 {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
                 {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} />}
                 {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
-                {tab === "profile" && <Profile navigate={navigate} displayName={displayName} language={language} persona={persona} theme={theme} companion={companion} trustedName={trustedName} contactStatus={contactStatus} pendingIncomingCount={pendingIncomingTrusted.length} unreadNotificationsCount={unreadNotificationsCount} subscriptionStatus={subscriptionStatus} onLogout={handleLogout} />}
+                {tab === "profile" && (
+                  <Profile
+                    navigate={navigate}
+                    displayName={displayName}
+                    language={language}
+                    persona={persona}
+                    theme={theme}
+                    companion={companion}
+                    trustedName={trustedName}
+                    contactStatus={contactStatus}
+                    pendingIncomingCount={pendingIncomingTrusted.length}
+                    unreadNotificationsCount={unreadNotificationsCount}
+                    subscriptionStatus={subscriptionStatus}
+                    onLogout={handleLogout}
+                    onSelectLanguage={handleSelectLanguage}
+                  />
+                )}
               </main>
             </>
           ) : (
             <main className="overlay-page">
+              {screen === "language" && (
+                <LanguagePreferences
+                  back={back}
+                  currentLanguage={language}
+                  onSelectLanguage={handleSelectLanguage}
+                  notify={notify}
+                />
+              )}
               {screen === "mood" && <MoodCheck back={back} navigate={navigate} entries={moodEntries} setEntries={handleSetMoodEntries} notify={notify} />}
               {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={handleSetMoodEntries} />}
               {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
               {screen === "help" && <Help back={back} navigate={navigate} />}
-              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => setLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
+              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => void handleSelectLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
                 if (currentUser) {
                   updateUserProfile(currentUser.uid, {
                     theme,
@@ -1391,6 +1444,7 @@ function AuthFlowContent({
   pendingInvite,
   onComplete,
 }: AuthFlowProps) {
+  const { t, language, setLanguage } = useLanguage();
   const [stage, setStage] = useState<"welcome" | "login" | "register" | "forgot" | "name" | "consent">("welcome");
   const [legal, setLegal] = useState<LegalDocumentId | null>(null);
   const [email, setEmail] = useState("");
@@ -1405,20 +1459,52 @@ function AuthFlowContent({
 
   const translateFirebaseError = (err: unknown): string => {
     const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-    if (msg.includes("email-already-in-use")) return "An account with this email already exists. Try logging in.";
-    if (msg.includes("invalid-credential") || msg.includes("wrong-password") || msg.includes("user-not-found")) {
-      return "Incorrect email or password. Please verify and try again.";
+    if (msg.includes("email-already-in-use")) {
+      return language === "Bahasa Melayu"
+        ? "Akaun dengan emel ini telah wujud. Sila cuba log masuk."
+        : language === "中文"
+          ? "该邮箱已注册，请直接登录。"
+          : "An account with this email already exists. Try logging in.";
     }
-    if (msg.includes("weak-password")) return "Password should be at least 6 characters.";
-    if (msg.includes("invalid-email")) return "Please enter a valid email address.";
-    if (msg.includes("network-request-failed")) return "Network error. Please check your connection.";
-    return "Authentication failed. Please verify your details and try again.";
+    if (msg.includes("invalid-credential") || msg.includes("wrong-password") || msg.includes("user-not-found")) {
+      return language === "Bahasa Melayu"
+        ? "Emel atau kata laluan tidak betul. Sila semak dan cuba lagi."
+        : language === "中文"
+          ? "邮箱或密码错误，请核对后重试。"
+          : "Incorrect email or password. Please verify and try again.";
+    }
+    if (msg.includes("weak-password")) {
+      return language === "Bahasa Melayu"
+        ? "Kata laluan mestilah sekurang-kurangnya 6 aksara."
+        : language === "中文"
+          ? "密码长度至少需要 6 个字符。"
+          : "Password should be at least 6 characters.";
+    }
+    if (msg.includes("invalid-email")) {
+      return language === "Bahasa Melayu"
+        ? "Sila masukkan alamat emel yang sah."
+        : language === "中文"
+          ? "请输入有效的电子邮箱地址。"
+          : "Please enter a valid email address.";
+    }
+    if (msg.includes("network-request-failed")) {
+      return language === "Bahasa Melayu"
+        ? "Ralat rangkaian. Sila semak sambungan internet anda."
+        : language === "中文"
+          ? "网络连接失败，请检查网络后重试。"
+          : "Network error. Please check your connection.";
+    }
+    return language === "Bahasa Melayu"
+      ? "Pengesahan gagal. Sila semak butiran anda dan cuba lagi."
+      : language === "中文"
+        ? "验证失败，请核实信息后重试。"
+        : "Authentication failed. Please verify your details and try again.";
   };
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
-    if (!validEmail) return setError("Enter a valid email address.");
-    if (password.length < 6) return setError("Password must be at least 6 characters.");
+    if (!validEmail) return setError(language === "Bahasa Melayu" ? "Masukkan alamat emel yang sah." : language === "中文" ? "请输入有效的邮箱地址。" : "Enter a valid email address.");
+    if (password.length < 6) return setError(language === "Bahasa Melayu" ? "Kata laluan mestilah sekurang-kurangnya 6 aksara." : language === "中文" ? "密码长度至少需要 6 个字符。" : "Password must be at least 6 characters.");
     setLoading(true);
     setError("");
     try {
@@ -1433,21 +1519,21 @@ function AuthFlowContent({
 
   const handleRegisterStage1 = (event: FormEvent) => {
     event.preventDefault();
-    if (!validEmail) return setError("Enter a valid email address.");
+    if (!validEmail) return setError(language === "Bahasa Melayu" ? "Masukkan alamat emel yang sah." : language === "中文" ? "请输入有效的邮箱地址。" : "Enter a valid email address.");
     if (!userPhone.trim() || userPhone.trim().length < 6) {
-      return setError("Please enter a valid phone number so it can be saved for emergency contact.");
+      return setError(language === "Bahasa Melayu" ? "Sila masukkan nombor telefon yang sah untuk kecemasan." : language === "中文" ? "请输入有效的紧急联系手机号码。" : "Please enter a valid phone number so it can be saved for emergency contact.");
     }
-    if (password.length < 6) return setError("Password must be at least 6 characters.");
-    if (password !== confirmPassword) return setError("Passwords do not match.");
+    if (password.length < 6) return setError(language === "Bahasa Melayu" ? "Kata laluan mestilah sekurang-kurangnya 6 aksara." : language === "中文" ? "密码长度至少需要 6 个字符。" : "Password must be at least 6 characters.");
+    if (password !== confirmPassword) return setError(language === "Bahasa Melayu" ? "Kata laluan tidak sepadan." : language === "中文" ? "两次输入的密码不一致。" : "Passwords do not match.");
     setError("");
     setStage("name");
   };
 
   const handleNameStage = (event: FormEvent) => {
     event.preventDefault();
-    if (displayName.trim().length < 2) return setError("Enter a display name with at least 2 characters.");
+    if (displayName.trim().length < 2) return setError(language === "Bahasa Melayu" ? "Masukkan nama panggilan sekurang-kurangnya 2 aksara." : language === "中文" ? "请输入至少2个字符的昵称。" : "Enter a display name with at least 2 characters.");
     if (!userPhone.trim() || userPhone.trim().length < 6) {
-      return setError("Please enter a valid emergency phone number.");
+      return setError(language === "Bahasa Melayu" ? "Sila masukkan nombor telefon kecemasan yang sah." : language === "中文" ? "请输入有效的紧急联系手机号码。" : "Please enter a valid emergency phone number.");
     }
     setError("");
     setStage("consent");
@@ -1470,12 +1556,18 @@ function AuthFlowContent({
 
   const handleForgotPassword = async (event: FormEvent) => {
     event.preventDefault();
-    if (!validEmail) return setError("Enter the email associated with your account.");
+    if (!validEmail) return setError(language === "Bahasa Melayu" ? "Masukkan emel akaun anda." : language === "中文" ? "请输入与您账号绑定的电子邮箱。" : "Enter the email associated with your account.");
     setLoading(true);
     setError("");
     try {
       await sendPasswordReset(email);
-      setNotice(`A password reset link has been sent to ${email}. Please check your inbox.`);
+      setNotice(
+        language === "Bahasa Melayu"
+          ? `Pautan set semula kata laluan telah dihantar ke ${email}. Sila semak peti masuk anda.`
+          : language === "中文"
+            ? `重置密码链接已发送至 ${email}，请查收您的收件箱。`
+            : `A password reset link has been sent to ${email}. Please check your inbox.`,
+      );
     } catch (err) {
       setError(translateFirebaseError(err));
     } finally {
@@ -1486,7 +1578,33 @@ function AuthFlowContent({
   if (legal) return <div className={`app-shell theme-${theme}`}><div className="phone auth-phone"><LegalDocument document={legal} back={() => setLegal(null)} /></div></div>;
   return <div className={`app-shell theme-${theme}`}><div className="phone auth-phone"><div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
     <section className="auth-page">
-      <div className="auth-brand"><img src={logo} alt="Official ONY logo" /><span className="secure-badge"><Icon name="shield" />Secure Firebase Auth</span></div>
+      <div className="auth-brand">
+        <img src={logo} alt="Official ONY logo" />
+        <span className="secure-badge"><Icon name="shield" />{t.auth_secure_badge}</span>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center", gap: "8px", marginBottom: "12px" }}>
+        {(["English", "Bahasa Melayu", "中文"] as AppLanguage[]).map((l) => (
+          <button
+            key={l}
+            type="button"
+            className={`lang-pill-btn ${language === l ? "active" : ""}`}
+            style={{
+              padding: "4px 12px",
+              borderRadius: "9999px",
+              fontSize: "12px",
+              border: language === l ? "1.5px solid var(--accent, #e07a5f)" : "1px solid var(--line, #e2ded9)",
+              background: language === l ? "var(--surface-strong, #fff)" : "var(--surface, #faf7f4)",
+              fontWeight: language === l ? 700 : 500,
+              cursor: "pointer",
+            }}
+            onClick={() => setLanguage(l)}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
       {pendingInvite && (
         <div
           className="card"
@@ -1506,12 +1624,107 @@ function AuthFlowContent({
           </small>
         </div>
       )}
-      {stage === "welcome" && <div className="auth-panel welcome-panel"><span className="eyebrow">Welcome to ONY</span><h1>A gentle space that starts with you.</h1><p>Private reflection, supportive conversation, and practical resources—at your pace.</p><Button className="full" onClick={() => setStage("register")}>Create account</Button><Button className="full" variant="secondary" onClick={() => setStage("login")}>Log in</Button><Button className="full" variant="ghost" onClick={onComplete}>Continue as guest (local only)</Button><small>Sign in to safely persist your reflections, check-ins, and personal settings.</small></div>}
-      {stage === "login" && <form className="auth-panel" onSubmit={handleLogin}><div className="auth-heading"><Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}><Icon name="back" />Back</Button><span className="eyebrow">Welcome back</span></div><h1>Log in to ONY</h1><p className="muted">Your private space is secured with Firebase Authentication.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /><label className="field-label">Password</label><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="current-password" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit" disabled={loading}>{loading ? "Signing in…" : "Log in"}</Button><Button variant="ghost" className="full" onClick={() => { setStage("forgot"); setError(""); }}>Forgot password?</Button></form>}
-      {stage === "register" && <form className="auth-panel" onSubmit={handleRegisterStage1}><div className="auth-heading"><Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}><Icon name="back" />Back</Button><span className="eyebrow">Create your space</span></div><h1>Create an ONY account</h1><p className="muted">Start your journey with private reflections and secure cloud backup.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /><label className="field-label">Phone number (saved for emergency contact)</label><TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" /><label className="field-label">Password</label><TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="new-password" /><label className="field-label">Confirm password</label><TextInput type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit" disabled={loading}>Continue</Button></form>}
-      {stage === "forgot" && <form className="auth-panel" onSubmit={handleForgotPassword}><Button variant="ghost" className="auth-back" onClick={() => setStage("login")}><Icon name="back" />Back</Button><span className="eyebrow">Account access</span><h1>Reset your password</h1><p className="muted">We will send a secure reset link to your email via Firebase Auth.</p><label className="field-label">Email</label><TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />{error && <div className="form-error"><Icon name="info" />{error}</div>}{notice ? <div className="form-success"><Icon name="check" />{notice}</div> : <Button className="full" type="submit" disabled={loading}>{loading ? "Sending reset link…" : "Send reset link"}</Button>}</form>}
-      {stage === "name" && <form className="auth-panel" onSubmit={handleNameStage}><span className="eyebrow">Your profile details</span><h1>What should ONY call you?</h1><p className="muted">Use a preferred display name and confirm your phone number for emergency support.</p><label className="field-label">Display name</label><TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} /><label className="field-label">Emergency contact phone number</label><TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" type="submit">Continue</Button></form>}
-      {stage === "consent" && <div className="auth-panel consent-panel"><span className="eyebrow">Before you continue</span><h1>Understand ONY’s role.</h1><p>ONY is an AI-based emotional-support and reflection companion. It is not a psychologist, therapist, diagnostic tool, or emergency medical service. AI responses may occasionally vary.</p><div className="legal-links"><Button variant="secondary" onClick={() => setLegal("disclaimer")}>Disclaimer & Boundaries</Button><Button variant="secondary" onClick={() => setLegal("terms")}>Terms of Service</Button><Button variant="secondary" onClick={() => setLegal("privacy")}>Privacy Policy</Button><Button variant="secondary" onClick={() => setLegal("crisis")}>Crisis Resources</Button></div><label className="check-row consent-check"><TextInput type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>I have read and accept the Terms of Service and Privacy Policy, and understand ONY’s role and safety boundaries.</span></label>{error && <div className="form-error"><Icon name="info" />{error}</div>}<Button className="full" disabled={!accepted || loading} onClick={handleCompleteRegistration}>{loading ? "Creating space…" : "Accept and create space"}</Button><small>ONY is committed to user safety, ethical artificial intelligence, and data privacy.</small></div>}
+      {stage === "welcome" && (
+        <div className="auth-panel welcome-panel">
+          <span className="eyebrow">{t.auth_welcome_eyebrow}</span>
+          <h1>{t.auth_welcome_title}</h1>
+          <p>{t.auth_welcome_lead}</p>
+          <Button className="full" onClick={() => setStage("register")}>{t.auth_create_account}</Button>
+          <Button className="full" variant="secondary" onClick={() => setStage("login")}>{t.auth_login}</Button>
+          <Button className="full" variant="ghost" onClick={onComplete}>{t.auth_continue_guest}</Button>
+          <small>{t.auth_guest_hint}</small>
+        </div>
+      )}
+      {stage === "login" && (
+        <form className="auth-panel" onSubmit={handleLogin}>
+          <div className="auth-heading">
+            <Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}>
+              <Icon name="back" />{t.common_back}
+            </Button>
+            <span className="eyebrow">{t.auth_welcome_eyebrow}</span>
+          </div>
+          <h1>{t.auth_login_title}</h1>
+          <p className="muted">{t.auth_login_lead}</p>
+          <label className="field-label">{t.auth_email_label}</label>
+          <TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" />
+          <label className="field-label">{t.auth_password_label}</label>
+          <TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="current-password" />
+          {error && <div className="form-error"><Icon name="info" />{error}</div>}
+          <Button className="full" type="submit" disabled={loading}>{loading ? t.common_loading : t.auth_login}</Button>
+          <Button variant="ghost" className="full" onClick={() => { setStage("forgot"); setError(""); }}>{t.auth_forgot_password_btn}</Button>
+        </form>
+      )}
+      {stage === "register" && (
+        <form className="auth-panel" onSubmit={handleRegisterStage1}>
+          <div className="auth-heading">
+            <Button variant="ghost" className="auth-back" onClick={() => { setStage("welcome"); setError(""); }}>
+              <Icon name="back" />{t.common_back}
+            </Button>
+            <span className="eyebrow">{t.auth_welcome_eyebrow}</span>
+          </div>
+          <h1>{t.auth_register_title}</h1>
+          <p className="muted">{t.auth_register_lead}</p>
+          <label className="field-label">{t.auth_email_label}</label>
+          <TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" />
+          <label className="field-label">{t.auth_phone_label}</label>
+          <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />
+          <label className="field-label">{t.auth_password_label}</label>
+          <TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
+          <label className="field-label">{t.auth_confirm_password_label}</label>
+          <TextInput type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" />
+          {error && <div className="form-error"><Icon name="info" />{error}</div>}
+          <Button className="full" type="submit" disabled={loading}>{t.onboarding_btn_continue}</Button>
+        </form>
+      )}
+      {stage === "forgot" && (
+        <form className="auth-panel" onSubmit={handleForgotPassword}>
+          <Button variant="ghost" className="auth-back" onClick={() => setStage("login")}>
+            <Icon name="back" />{t.common_back}
+          </Button>
+          <span className="eyebrow">{t.auth_welcome_eyebrow}</span>
+          <h1>{t.auth_forgot_title}</h1>
+          <p className="muted">{t.auth_forgot_lead}</p>
+          <label className="field-label">{t.auth_email_label}</label>
+          <TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+          {error && <div className="form-error"><Icon name="info" />{error}</div>}
+          {notice ? <div className="form-success"><Icon name="check" />{notice}</div> : <Button className="full" type="submit" disabled={loading}>{loading ? t.auth_sending_reset : t.auth_send_reset_btn}</Button>}
+        </form>
+      )}
+      {stage === "name" && (
+        <form className="auth-panel" onSubmit={handleNameStage}>
+          <span className="eyebrow">{t.auth_welcome_eyebrow}</span>
+          <h1>{t.auth_name_stage_title}</h1>
+          <p className="muted">{t.auth_name_stage_lead}</p>
+          <label className="field-label">{t.auth_name_label}</label>
+          <TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} />
+          <label className="field-label">{t.auth_phone_label}</label>
+          <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />
+          {error && <div className="form-error"><Icon name="info" />{error}</div>}
+          <Button className="full" type="submit">{t.onboarding_btn_continue}</Button>
+        </form>
+      )}
+      {stage === "consent" && (
+        <div className="auth-panel consent-panel">
+          <span className="eyebrow">{t.auth_welcome_eyebrow}</span>
+          <h1>{t.auth_consent_title}</h1>
+          <p>{t.auth_consent_lead}</p>
+          <div className="legal-links">
+            <Button variant="secondary" onClick={() => setLegal("disclaimer")}>{t.auth_disclaimer_btn}</Button>
+            <Button variant="secondary" onClick={() => setLegal("terms")}>{t.auth_terms_btn}</Button>
+            <Button variant="secondary" onClick={() => setLegal("privacy")}>{t.auth_privacy_btn}</Button>
+            <Button variant="secondary" onClick={() => setLegal("crisis")}>{t.auth_crisis_btn}</Button>
+          </div>
+          <label className="check-row consent-check">
+            <TextInput type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />
+            <span>{t.auth_consent_agree}</span>
+          </label>
+          {error && <div className="form-error"><Icon name="info" />{error}</div>}
+          <Button className="full" disabled={!accepted || loading} onClick={handleCompleteRegistration}>
+            {loading ? t.auth_creating_space : t.auth_create_space_btn}
+          </Button>
+          <small>ONY is committed to user safety, ethical artificial intelligence, and data privacy.</small>
+        </div>
+      )}
     </section>
   </div></div>;
 }
@@ -1623,6 +1836,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
   persona: Persona; setPersona: (v: Persona) => void;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
 }) {
+  const { t } = useLanguage();
   const [acknowledged, setAcknowledged] = useState(false);
   return (
     <div className={`app-shell onboarding-shell theme-${theme}`}>
@@ -1632,62 +1846,67 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
         <div className="onboarding-body">
           {step === 0 && <>
             <img className={`brand-art ${step === 0 ? "hero-art" : ""}`} src={logo} alt="Official ONY cat mascot with green leaves" />
-            <div className="eyebrow">Welcome to</div><h1>ONY</h1>
-            <p className="lead">A gentle place to pause, share, and feel a little less alone.</p>
+            <div className="eyebrow">{t.onboarding_welcome_eyebrow}</div><h1>{t.onboarding_welcome_title}</h1>
+            <p className="lead">{t.onboarding_welcome_lead}</p>
+            <div className="segmented" style={{ marginTop: "16px" }}>
+              {(["English", "Bahasa Melayu", "中文"] as AppLanguage[]).map((x) => (
+                <Button key={x} variant={language === x ? "primary" : "secondary"} onClick={() => setLanguage(x)}>{x}</Button>
+              ))}
+            </div>
           </>}
           {step === 1 && <>
             <img className="brand-art compact-art" src={logo} alt="Official ONY logo" />
-            <div className="eyebrow">Meet ONY</div><h1>Your low-pressure companion</h1>
-            <p className="lead">ONY is a gentle first layer for everyday emotional support—always at your pace.</p>
+            <div className="eyebrow">{t.onboarding_meet_eyebrow}</div><h1>{t.onboarding_meet_title}</h1>
+            <p className="lead">{t.onboarding_meet_lead}</p>
           </>}
           {step === 2 && <>
-            <SmallLogo /><div className="eyebrow">Make ONY yours</div><h1>Choose your ONY companion</h1>
-            <p className="lead">Choose a companion appearance that feels right. Your companion is always called ONY.</p>
+            <SmallLogo /><div className="eyebrow">{t.onboarding_companion_eyebrow}</div><h1>{t.onboarding_companion_title}</h1>
+            <p className="lead">{t.onboarding_companion_lead}</p>
             <CompanionPicker value={companion} setValue={setCompanion} />
           </>}
           {step === 3 && <>
-            <SmallLogo /><div className="eyebrow">Your calming space</div><h1>Choose a space that feels comfortable for you</h1>
-            <p className="lead">Pick a visual theme. Your choice applies throughout the app and can be changed later.</p>
+            <SmallLogo /><div className="eyebrow">{t.onboarding_theme_eyebrow}</div><h1>{t.onboarding_theme_title}</h1>
+            <p className="lead">{t.onboarding_theme_lead}</p>
             <ThemePicker value={theme} setValue={setTheme} />
           </>}
           {step === 4 && <>
-            <SmallLogo /><div className="eyebrow">Optional ambience</div><h1>Add a calming sound</h1>
-            <p className="lead">Listen to soothing {themeOptions.find((item) => item.id === theme)?.name.toLowerCase()} ambience. You can pause or change it anytime.</p>
+            <SmallLogo /><div className="eyebrow">{t.onboarding_sound_eyebrow}</div><h1>{t.onboarding_sound_title}</h1>
+            <p className="lead">{t.onboarding_sound_lead}</p>
             <div className="ambient-onboarding"><span className={`sound-orb ${soundOn ? "playing" : ""}`}><i /><i /><i /></span><strong>{soundOn ? "Ambience playing" : "Ambience paused"}</strong><Button onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div>
-            <Button className="full" variant="ghost" onClick={() => setSoundOn(false)}>Continue without sound</Button>
+            <Button className="full" variant="ghost" onClick={() => setSoundOn(false)}>{t.onboarding_sound_continue_without}</Button>
           </>}
           {step === 5 && <>
-            <SmallLogo /><div className="eyebrow">Personalise ONY</div><h1>What would feel helpful?</h1>
-            <p className="lead">Choose how ONY communicates, a language, and any topics on your mind.</p>
+            <SmallLogo /><div className="eyebrow">{t.onboarding_personalise_eyebrow}</div><h1>{t.onboarding_personalise_title}</h1>
+            <p className="lead">{t.onboarding_personalise_lead}</p>
             <PersonaPicker value={persona} setValue={setPersona} compact />
-            <div className="segmented">{["English", "Bahasa Melayu", "中文"].map((x) => <Button key={x} variant={language === x ? "primary" : "secondary"} onClick={() => setLanguage(x)}>{x}</Button>)}</div>
+            <div className="segmented">{(["English", "Bahasa Melayu", "中文"] as AppLanguage[]).map((x) => <Button key={x} variant={language === x ? "primary" : "secondary"} onClick={() => setLanguage(x)}>{x}</Button>)}</div>
             <div className="chips">{topics.map((x) => <Button key={x} variant={selectedTopics.includes(x) ? "primary" : "secondary"} onClick={() => setSelectedTopics(selectedTopics.includes(x) ? selectedTopics.filter((t) => t !== x) : [...selectedTopics, x])}>{x}</Button>)}</div>
           </>}
           {step === 6 && <>
             <img className="brand-art compact-art" src={logo} alt="Official ONY logo" />
-            <div className="eyebrow">Clear boundaries</div><h1>Support, not treatment</h1>
-            <p className="lead">ONY offers AI-based emotional support and self-help resources. It is not a psychologist, therapist, diagnostic tool, or emergency service.</p>
-            <div className="boundary-list"><span>Not therapy</span><span>No diagnosis</span><span>Not emergency care</span></div>
-            <p className="disclaimer"><Icon name="info" />AI responses may be inaccurate. Safety information, crisis resources, and privacy details remain available in the app.</p>
-            <label className="check-row"><TextInput type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I understand ONY’s role and limitations.</span></label>
+            <div className="eyebrow">{t.onboarding_boundaries_eyebrow}</div><h1>{t.onboarding_boundaries_title}</h1>
+            <p className="lead">{t.onboarding_boundaries_lead}</p>
+            <div className="boundary-list"><span>{t.onboarding_boundaries_tag1}</span><span>{t.onboarding_boundaries_tag2}</span><span>{t.onboarding_boundaries_tag3}</span></div>
+            <p className="disclaimer"><Icon name="info" />{t.chat_ai_notice}</p>
+            <label className="check-row"><TextInput type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>{t.onboarding_boundaries_ack}</span></label>
           </>}
           {step === 7 && <>
             <SmallLogo />
-            <div className="eyebrow">Your privacy</div><h1>What should ONY remember?</h1>
-            <p className="lead">You are always in control. Review, pause, or delete memories anytime.</p>
-            <Choice active={consent === "allow"} onClick={() => setConsent("allow")} title="Allow relevant memories" text="ONY may save helpful context you share." />
-            <Choice active={consent === "control"} onClick={() => setConsent("control")} title="Let me control memories" text="Ask before anything is saved." />
+            <div className="eyebrow">{t.onboarding_privacy_eyebrow}</div><h1>{t.onboarding_privacy_title}</h1>
+            <p className="lead">{t.onboarding_privacy_lead}</p>
+            <Choice active={consent === "allow"} onClick={() => setConsent("allow")} title={t.onboarding_privacy_allow_title} text={t.onboarding_privacy_allow_desc} />
+            <Choice active={consent === "control"} onClick={() => setConsent("control")} title={t.onboarding_privacy_control_title} text={t.onboarding_privacy_control_desc} />
           </>}
           {step === 8 && <>
             <div className="companion-confirm"><CompanionAvatar companion={companion} large /><img src={logo} alt="Official ONY logo" /></div>
-            <div className="eyebrow">You’re all set</div><h1>Enter ONY</h1>
-            <p className="lead">Experience compassionate companion conversations, daily mood check-ins, and verified wellbeing resources.</p>
+            <div className="eyebrow">{t.onboarding_complete_eyebrow}</div><h1>{t.onboarding_complete_title}</h1>
+            <p className="lead">{t.onboarding_complete_lead}</p>
             <div className="demo-profile"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{companion} companion · {themeOptions.find((item) => item.id === theme)?.name} theme</small></div><Icon name="check" /></div>
           </>}
         </div>
         <div className="onboarding-actions">
-          {step > 0 && <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button>}
-          <Button className="grow" disabled={step === 6 && !acknowledged} onClick={() => setStep(step + 1)}>{step === 8 ? "Enter ONY" : "Continue"}</Button>
+          {step > 0 && <Button variant="ghost" onClick={() => setStep(step - 1)}>{t.common_back}</Button>}
+          <Button className="grow" disabled={step === 6 && !acknowledged} onClick={() => setStep(step + 1)}>{step === 8 ? t.onboarding_btn_enter : t.onboarding_btn_continue}</Button>
         </div>
       </div>
     </div>
@@ -1738,7 +1957,6 @@ function PageHeader({
   back,
   action,
   hideNotifications = false,
-  hideLanguage = false,
 }: {
   title: string;
   subtitle?: string;
@@ -1748,7 +1966,6 @@ function PageHeader({
   hideLanguage?: boolean;
 }) {
   const { unreadCount, openNotifications } = useNotifications();
-  const { language, setLanguage } = useLanguage();
   return (
     <header className="page-header">
       {back ? (
@@ -1764,37 +1981,6 @@ function PageHeader({
       </div>
       <div className="header-right-actions">
         {action}
-        {!hideLanguage && (
-          <div className="header-lang-switch" role="group" aria-label="Language selector">
-            <button
-              type="button"
-              className={`lang-pill-btn ${language === "English" ? "active" : ""}`}
-              onClick={() => setLanguage("English")}
-              title="English"
-              aria-label="Switch to English"
-            >
-              EN
-            </button>
-            <button
-              type="button"
-              className={`lang-pill-btn ${language === "Bahasa Melayu" ? "active" : ""}`}
-              onClick={() => setLanguage("Bahasa Melayu")}
-              title="Bahasa Melayu"
-              aria-label="Tukar ke Bahasa Melayu"
-            >
-              BM
-            </button>
-            <button
-              type="button"
-              className={`lang-pill-btn ${language === "中文" ? "active" : ""}`}
-              onClick={() => setLanguage("中文")}
-              title="中文"
-              aria-label="切换至中文"
-            >
-              中文
-            </button>
-          </div>
-        )}
         {!hideNotifications && (
           <button
             type="button"
@@ -2177,14 +2363,14 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
 
   return <div className="chat-page">
     <PageHeader
-      title="Chat with ONY"
-      subtitle="Here with you, at your pace"
+      title={t.chat_title}
+      subtitle={t.chat_subtitle}
       action={
         <div className="chat-header-actions">
           <Button
             variant="secondary"
             onClick={() => navigate(todayMoodEntry ? "trend" : "mood")}
-            title={todayMoodEntry ? `Today's mood check-in completed (${todayMoodEntry.emoji} ${todayMoodEntry.label})` : "Check in your mood for today"}
+            title={todayMoodEntry ? `Today's mood check-in completed (${todayMoodEntry.emoji} ${todayMoodEntry.label})` : t.chat_mood_prompt}
           >
             {todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : "Mood"}
           </Button>
@@ -2193,16 +2379,16 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       }
     />
     <div className="chat-scroll" ref={chatScrollRef}>
-    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />Chats</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? "ONY voice on · Replies will be read aloud" : "ONY voice off"); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? "Voice on" : "Voice off"}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>Safety protocols</Button><Button variant="ghost" onClick={() => navigate("resources")}>Resources</Button></div></div>
+    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />{t.chat_chats_btn}</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button><Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button></div></div>
     {!todayMoodEntry && messages.length === 0 && (
       <div className="memory-note" style={{ marginBottom: "8px" }}>
         <span>🌱</span>
-        <span>You haven’t checked in your mood yet today.</span>
-        <Button variant="secondary" onClick={() => navigate("mood")}>Check in</Button>
+        <span>{t.chat_mood_reminder}</span>
+        <Button variant="secondary" onClick={() => navigate("mood")}>{t.chat_mood_checkin_btn}</Button>
       </div>
     )}
-    {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? "Memory is on · You’re in control" : "Memory sharing paused · You’re in control"}</span><Button variant="ghost" onClick={() => goTab("memory")}>View</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>Hi {displayName}, I’m here.</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
+    {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
+    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
@@ -2240,20 +2426,20 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     </div>}
     </div>
     <div className="chat-composer">
-      <Button variant="ghost" className="ai-notice" onClick={() => navigate("resources")}><Icon name="info" />AI can be inaccurate · Not diagnosis or treatment</Button>
+      <Button variant="ghost" className="ai-notice" onClick={() => navigate("resources")}><Icon name="info" />{t.chat_ai_notice}</Button>
       {isLimitReached ? (
         <div className="chat-limit-banner">
           <div className="limit-banner-text">
-            <strong><Icon name="shield" /> Free message allowance reached ({freeUsage}/{freeLimit})</strong>
-            <p>You’ve reached the free message limit. Please choose a plan or activate your free trial to continue chatting with ONY.</p>
+            <strong><Icon name="shield" /> {t.chat_limit_title} ({freeUsage}/{freeLimit})</strong>
+            <p>{t.chat_limit_desc}</p>
           </div>
           <Button variant="primary" className="full upgrade-btn" onClick={() => navigate("subscription")}>
-            View Subscription Plans & Unlock
+            {t.chat_limit_unlock_btn}
           </Button>
         </div>
       ) : (
         <>
-          <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />Voice</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />Text</button></div>
+          <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />{t.chat_mode_voice}</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />{t.chat_mode_text}</button></div>
           {inputMode === "voice" ? (
             <div className={`voice-composer state-${voiceState}`}>
               <div className="voice-composer-row">
@@ -2269,20 +2455,20 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                 <div className="voice-composer-info">
                   <strong>
                     {voiceState === "idle"
-                      ? "Tap mic to speak"
+                      ? t.chat_voice_tap_mic
                       : voiceState === "listening"
-                      ? (voiceTranscript || voiceInterim ? "Listening… tap send when ready" : "Listening… speak into your mic")
+                      ? (voiceTranscript || voiceInterim ? t.chat_voice_ready_send : t.chat_voice_listening_speak)
                       : voiceState === "sent"
-                      ? "Message sent"
-                      : "Processing voice"}
+                      ? t.chat_voice_sent
+                      : t.chat_voice_processing}
                   </strong>
                   <small>
                     {voiceState === "idle"
-                      ? "ONY listens and transcribes in real time"
+                      ? t.chat_voice_sub_idle
                       : voiceState === "listening"
-                      ? "Speak at your own pace"
+                      ? t.chat_voice_sub_listening
                       : voiceState === "sent"
-                      ? "Tap mic again anytime to speak"
+                      ? t.chat_voice_tap_mic
                       : "Voice stays in this session"}
                   </small>
                   {voiceState === "listening" && (
@@ -2306,17 +2492,17 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                         {voiceInterim && <span className="interim"> {voiceInterim}</span>}
                       </>
                     ) : (
-                      <span className="placeholder">Say whatever is on your mind…</span>
+                      <span className="placeholder">{t.chat_input_placeholder}</span>
                     )}
                   </div>
                   <div className="voice-composer-actions">
-                    <Button variant="ghost" onClick={() => stopVoiceListening(false)}>Cancel</Button>
+                    <Button variant="ghost" onClick={() => stopVoiceListening(false)}>{t.common_cancel}</Button>
                     <Button
                       variant="primary"
                       disabled={!voiceTranscript.trim() && !voiceInterim.trim()}
                       onClick={() => stopVoiceListening(true)}
                     >
-                      Send to ONY
+                      {t.chat_voice_send_btn}
                     </Button>
                   </div>
                 </>
@@ -2353,11 +2539,11 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                 value={input}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Share what's on your mind.."
+                placeholder={t.chat_input_placeholder}
                 aria-label="Message ONY"
                 maxLength={2000}
               />
-              <Button className="send-btn" type="submit" disabled={typing || !input.trim()}><Icon name="send" /></Button>
+              <Button className="send-btn" type="submit" disabled={typing || !input.trim()} title={t.chat_send_button}><Icon name="send" /></Button>
             </form>
           )}
         </>
@@ -2367,11 +2553,23 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
 }
 
 function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () => void; navigate: (s: Screen) => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void; notify: (s: string) => void }) {
+  const { t } = useLanguage();
   const [mood, setMood] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const todayKey = getLocalDateKey();
   const todayEntry = entries.find((entry) => getMoodDateKey(entry) === todayKey) || null;
   const selected = mood === null ? null : moodOptions[mood];
+
+  const getMoodLabel = (index: number) => {
+    switch (index) {
+      case 0: return t.mood_difficult;
+      case 1: return t.mood_low;
+      case 2: return t.mood_okay;
+      case 3: return t.mood_good;
+      case 4: return t.mood_great;
+      default: return moodOptions[index]?.label || "";
+    }
+  };
 
   const save = () => {
     if (!selected || mood === null || todayEntry) return;
@@ -2381,13 +2579,13 @@ function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () =
       dateKey: todayKey,
       level: mood + 1,
       emoji: selected.emoji,
-      label: selected.label,
+      label: getMoodLabel(mood),
       note: note.trim(),
       createdAt: nowIso,
       reportAllowed: true,
     };
     setEntries([newEntry, ...entries.filter((item) => getMoodDateKey(item) !== todayKey)]);
-    notify("Today’s mood check-in saved to database");
+    notify(t.mood_saved_toast);
   };
 
   // If the user has already done the mood check-in for today, do NOT prompt them to input the mood again
@@ -2396,7 +2594,7 @@ function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () =
       <div className="centered-state">
         <img src={logo} alt="ONY" />
         <div className="success-mark"><Icon name="check" /></div>
-        <span className="eyebrow">Daily Check-in Complete · {todayKey}</span>
+        <span className="eyebrow">{t.mood_today_badge} · {todayKey}</span>
         <h1>Check-in saved for today</h1>
         <p>
           You checked in today as <strong>{todayEntry.emoji} {todayEntry.label}</strong>
@@ -2409,21 +2607,22 @@ function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () =
     );
   }
 
-  return <><PageHeader title="Mood check-in" subtitle="A quick moment for you" back={back} /><section className="page-pad">
-    <div className="eyebrow">Right now · {todayKey}</div><h1>How is your mood today?</h1><p className="muted">Choose the closest fit. Your check-in is saved once per day to your private database history.</p>
-    <div className="mood-scale emoji-scale">{moodOptions.map((option, index) => <button key={option.label} onClick={() => setMood(index)} className={mood === index ? "active" : ""} aria-pressed={mood === index}><span>{option.emoji}</span><small>{option.label}</small></button>)}</div>
-    <div className="selected-mood">{selected ? <><span>{selected.emoji}</span><strong>{selected.label}</strong></> : <p>Select a mood to continue.</p>}</div>
-    <label className="field-label">What’s contributing to your mood today? <small>Optional</small></label><TextArea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Write as much or as little as you like…" />
-    <Button className="full" disabled={!selected} onClick={save}>Save check-in</Button>
+  return <><PageHeader title={t.mood_modal_title} subtitle={t.mood_modal_subtitle} back={back} /><section className="page-pad">
+    <div className="eyebrow">Right now · {todayKey}</div><h1>{t.mood_question}</h1><p className="muted">Choose the closest fit. Your check-in is saved once per day to your private database history.</p>
+    <div className="mood-scale emoji-scale">{moodOptions.map((option, index) => <button key={option.label} onClick={() => setMood(index)} className={mood === index ? "active" : ""} aria-pressed={mood === index}><span>{option.emoji}</span><small>{getMoodLabel(index)}</small></button>)}</div>
+    <div className="selected-mood">{selected ? <><span>{selected.emoji}</span><strong>{getMoodLabel(mood!)}</strong></> : <p>Select a mood to continue.</p>}</div>
+    <label className="field-label">{t.mood_note_label} <small>Optional</small></label><TextArea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder={t.mood_note_placeholder} />
+    <Button className="full" disabled={!selected} onClick={save}>{t.mood_save_btn}</Button>
     <Button className="full" variant="ghost" onClick={() => navigate("trend")}>Review previous check-ins</Button>
   </section></>;
 }
 
 function MoodTrend({ back, entries, setEntries }: { back: () => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void }) {
+  const { t } = useLanguage();
   const recent = entries[0];
   const todayKey = getLocalDateKey();
   const todayEntry = entries.find((entry) => getMoodDateKey(entry) === todayKey) || null;
-  return <><PageHeader title="Mood history" subtitle="Saved daily in Cloud Firestore" back={back} /><section className="page-pad">
+  return <><PageHeader title={t.mood_trends_title} subtitle={t.mood_trends_subtitle} back={back} /><section className="page-pad">
     {todayEntry && (
       <div className="community-note" style={{ marginBottom: "12px" }}>
         <Icon name="check" />
@@ -2446,12 +2645,13 @@ function MemoryVault({ memories: items, setMemories: setItems, navigate, setEdit
   memories: Memory[]; setMemories: (v: Memory[]) => void; navigate: (s: Screen) => void;
   setEditingMemory: (v: Memory | null) => void; companion: Companion; notify: (s: string) => void;
 }) {
+  const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const update = (id: number, patch: Partial<Memory>) => setItems(items.map((x) => x.id === id ? { ...x, ...patch } : x));
-  return <><PageHeader title="Memory Vault" subtitle={`${items.filter((x) => x.active).length} active memories`} /><section className="page-pad topless">
+  return <><PageHeader title={t.memory_title} subtitle={`${items.filter((x) => x.active).length} ${t.memory_card_active}`} /><section className="page-pad topless">
     <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search memories" /></div>
     <div className="vault-intro"><div><span className="eyebrow">You’re in control</span><h2>What ONY remembers</h2><p>Pause, edit, or remove anything. Changes affect future conversations.</p></div><Icon name="memory" /></div>
-    <Button className="full add-memory-btn" onClick={() => { setEditingMemory(null); navigate("addMemory"); }}>+ Add Memory</Button>
+    <Button className="full add-memory-btn" onClick={() => { setEditingMemory(null); navigate("addMemory"); }}>+ {t.memory_add_btn}</Button>
     <div className="section-head"><h3>Saved memories</h3><Button variant="ghost" onClick={() => { setItems([]); notify("All memories cleared"); }}>Clear all</Button></div>
     {items.filter((x) => x.text.toLowerCase().includes(query.toLowerCase())).map((item) => <div className={`memory-card ${!item.active ? "paused" : ""}`} key={item.id}>
       <div className="memory-top"><span className="memory-icon"><Icon name="memory" /></span><Toggle on={item.active} setOn={(v) => update(item.id, { active: v })} /></div>
@@ -2536,6 +2736,7 @@ function Community({
   mySupportMessages?: FirestoreCommunityMessage[];
   setMySupportMessages?: React.Dispatch<React.SetStateAction<FirestoreCommunityMessage[]>>;
 }) {
+  const { t } = useLanguage();
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"globe" | "posts" | "myNode">(() => {
@@ -2688,21 +2889,21 @@ function Community({
   const visibleUsers = normalizedGlobeUsers.filter((user) => user.discoverable && user.minLevel <= regionLevel);
   const selectedUser = normalizedGlobeUsers.find((user) => user.id === selectedNode) || null;
   const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title="Community" subtitle="Connected gently, across the world" action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">Syncing…</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ Create Post</Button></div>} /><section className="page-pad community-page">
+  return <><PageHeader title={t.community_title} subtitle={t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">Syncing…</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className="page-pad community-page">
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-      <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>Globe</Button>
-      <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>Posts</Button>
-      <Button variant={view === "myNode" ? "primary" : "secondary"} onClick={() => setView("myNode")}>My Node ({mySupportMessages.length})</Button>
+      <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
+      <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
+      <Button variant={view === "myNode" ? "primary" : "secondary"} onClick={() => setView("myNode")}>{t.community_my_node} ({mySupportMessages.length})</Button>
     </div>
     {view === "globe" && <>
       <div className="community-world full-globe">
         <div className="world-copy">
-          <span className="eyebrow">Discoverable people · Anonymous</span>
+          <span className="eyebrow">{t.community_discoverable_eyebrow}</span>
           <div className="region-breadcrumb">{regions.slice(0, regionLevel + 1).map((item, index) => <span key={item.label}>{index > 0 && "›"} {item.label}</span>)}</div>
           <h2>{region.label}</h2><p>{region.note}. Tap your glowing node ("You") or any member node to connect.</p>
         </div>
-        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>Zoom out</Button><span>{visibleUsers.length} discoverable nodes</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>Zoom in</Button></div>
-        {regionLevel > 0 && <Button variant="ghost" className="back-world" onClick={() => { setRegionLevel(0); setSelectedNode(null); }}>Back to world</Button>}
+        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>{t.community_zoom_out}</Button><span>{visibleUsers.length} discoverable nodes</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>{t.community_zoom_in}</Button></div>
+        {regionLevel > 0 && <Button variant="ghost" className="back-world" onClick={() => { setRegionLevel(0); setSelectedNode(null); }}>{t.community_back_world}</Button>}
         <div className="globe-stage"><div className={`globe globe-level-${regionLevel}`} aria-label={`Interactive user globe for ${region.label}`} style={{ backgroundPosition: `${rotation * 1.4}px center` }} onPointerDown={(event) => { drag.current = { active: true, moved: false, x: event.clientX, rotation }; if (!(event.target as HTMLElement).closest(".globe-node")) event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (drag.current.active) { const distance = event.clientX - drag.current.x; if (Math.abs(distance) > 5) drag.current.moved = true; setRotation(drag.current.rotation + distance * .7); } }} onPointerUp={() => { drag.current.active = false; }} onPointerCancel={() => { drag.current.active = false; }}><i className="orbit one" /><i className="orbit two" />{visibleUsers.map((user) => {
           const isMeNode = Boolean(user.isMe || user.id === 0);
           const angle = (user.lon + rotation) * Math.PI / 180;
@@ -2723,7 +2924,7 @@ function Community({
                 }
               }}
             >
-              {isMeNode && <small className="my-node-indicator">You</small>}
+              {isMeNode && <small className="my-node-indicator">{t.community_you_node}</small>}
               <span />
             </button>
           );
@@ -2734,13 +2935,13 @@ function Community({
             <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
             <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
             <span className="prototype-label">Your Anonymous Node · Malaysia</span>
-            <strong>Your light on the globe</strong>
+            <strong>{t.community_your_light}</strong>
             <p>
               Others see your anonymous mood check-in ({selectedUser.moodLabel.toLowerCase()}) with zero personal identity or exact location. You have <strong>{mySupportMessages.length}</strong> support {mySupportMessages.length === 1 ? "message" : "messages"} from others.
             </p>
             <div>
-              <Button onClick={() => setView("myNode")}>View Support Sent to Me ({mySupportMessages.length})</Button>
-              <Button variant="secondary" onClick={() => setSelectedNode(null)}>Close</Button>
+              <Button onClick={() => setView("myNode")}>{t.community_view_support_sent} ({mySupportMessages.length})</Button>
+              <Button variant="secondary" onClick={() => setSelectedNode(null)}>{t.common_close}</Button>
             </div>
           </div>
         ) : (
@@ -3780,37 +3981,65 @@ function PostDetail({
 const fallbackMerchants: Merchant[] = DEFAULT_MERCHANTS;
 
 function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, dbSyncing }: { navigate: (s: Screen) => void; openMerchant: (name: string) => void; merchants?: Merchant[]; dbSyncing?: boolean }) {
+  const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const cats = ["All", "Café", "Art / creative", "Yoga / meditation", "Music", "Relaxation", "Wellness products", "Professional support"];
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const shown = list.filter((m) => (category === "All" || m.category === category) && `${m.name} ${m.offer}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title="Discover" subtitle="Wellness & Partner Offers" action={<span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{dbSyncing ? "Syncing…" : "Verified Partners"}</span>} /><section className="page-pad topless">
-    <div className="market-hero"><span className="eyebrow">Wellness, Nearby</span><h2>Make a little room for you.</h2><p>Exclusive partner privileges, calming spaces, and verified care directory.</p></div>
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search providers or offers" /></div>
+  return <><PageHeader title={t.market_title} subtitle={t.market_subtitle} action={<span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{dbSyncing ? "Syncing…" : t.market_verified_partners}</span>} /><section className="page-pad topless">
+    <div className="market-hero"><span className="eyebrow">{t.market_nearby_eyebrow}</span><h2>{t.market_hero_title}</h2><p>{t.market_hero_desc}</p></div>
+    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.market_search_placeholder} /></div>
     <div className="scroll-chips">{cats.map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => x === "Professional support" ? navigate("professional") : setCategory(x)}>{x}</Button>)}</div>
-    <div className="market-section-head"><h3>Wellness Vouchers</h3><Button variant="ghost" onClick={() => setCategory("All")}>View all</Button></div>
-    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{m.category}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{m.category} · Partner</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>Tap to open voucher</i></span></button>)}</div>
-    <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>Find professional support nearby</strong><small>Registered clinics, MENTARI centres, and certified counsellors</small></span><Icon name="chevron" /></button>
+    <div className="market-section-head"><h3>{t.market_wellness_vouchers}</h3><Button variant="ghost" onClick={() => setCategory("All")}>{t.market_view_all}</Button></div>
+    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{m.category}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{m.category} · Partner</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>{t.market_claim_voucher}</i></span></button>)}</div>
+    <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>{t.market_prof_banner_title}</strong><small>{t.market_prof_banner_desc}</small></span><Icon name="chevron" /></button>
     <p className="disclaimer"><Icon name="info" /> All partner privileges and wellness offers are verified with our local merchant community.</p>
   </section></>;
 }
 
 function MerchantDetail({ back, navigate, merchantName, notify, merchants = fallbackMerchants }: { back: () => void; navigate: (s: Screen) => void; merchantName: string; notify: (s: string) => void; merchants?: Merchant[] }) {
+  const { t } = useLanguage();
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <><PageHeader title="Voucher Details" subtitle="Wellness Partner Offer" back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>Partner Offer</span></div><div className="physical-voucher-main"><small>{merchant.category} · Verified Partner</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · PASS · 2026</div></div><div className="voucher-terms"><h3>Terms & conditions</h3><p>Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions.</p></div><Button className="full redeem-voucher" onClick={() => { notify("Voucher activated! Show barcode at counter"); navigate("voucher"); }}>Redeem Voucher</Button><p className="disclaimer"><Icon name="info" />Show this pass directly to the partner cashier to redeem.</p></section></>;
+  return <><PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>Partner Offer</span></div><div className="physical-voucher-main"><small>{merchant.category} · Verified Partner</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · PASS · 2026</div></div><div className="voucher-terms"><h3>{t.voucher_terms_title}</h3><p>Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions.</p></div><Button className="full redeem-voucher" onClick={() => { notify("Voucher activated! Show barcode at counter"); navigate("voucher"); }}>{t.voucher_redeem_btn}</Button><p className="disclaimer"><Icon name="info" />Show this pass directly to the partner cashier to redeem.</p></section></>;
 }
 
 function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: () => void; merchantName: string; merchants?: Merchant[] }) {
+  const { t } = useLanguage();
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <div className="voucher-page"><PageHeader title="Voucher Ready!" subtitle="Digital Member Pass" back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">Your voucher is ready to use</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>Active Digital Member Pass</small></div><div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />Present this barcode to the staff upon placing your order or booking.</div><Button className="full" onClick={back}>Done</Button></section></div>;
+  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>Active Digital Member Pass</small></div><div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />Present this barcode to the staff upon placing your order or booking.</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
 }
 
-function Profile({ navigate, displayName, language, persona, theme, companion, trustedName, contactStatus, pendingIncomingCount = 0, unreadNotificationsCount = 0, subscriptionStatus, onLogout }: {
-  navigate: (s: Screen) => void; displayName: string; language: string; persona: Persona; theme: Theme; companion: Companion; trustedName: string;
-  contactStatus: ContactStatus; pendingIncomingCount?: number; unreadNotificationsCount?: number; subscriptionStatus: SubscriptionStatus; onLogout: () => void;
+function Profile({
+  navigate,
+  displayName,
+  language,
+  persona,
+  theme,
+  companion,
+  trustedName,
+  contactStatus,
+  pendingIncomingCount = 0,
+  unreadNotificationsCount = 0,
+  subscriptionStatus,
+  onLogout,
+  onSelectLanguage,
+}: {
+  navigate: (s: Screen) => void;
+  displayName: string;
+  language: string;
+  persona: Persona;
+  theme: Theme;
+  companion: Companion;
+  trustedName: string;
+  contactStatus: ContactStatus;
+  pendingIncomingCount?: number;
+  unreadNotificationsCount?: number;
+  subscriptionStatus: SubscriptionStatus;
+  onLogout: () => void;
+  onSelectLanguage: (lang: AppLanguage) => void;
 }) {
   const { t } = useLanguage();
   const contactLabel =
@@ -3832,7 +4061,14 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
         : subscriptionStatus === "trialEnded"
           ? "Free · Trial ended"
           : "Free · Free access";
+  const languageDisplayLabel =
+    language === "Bahasa Melayu"
+      ? "Bahasa Melayu"
+      : language === "中文"
+        ? "中文 (简体)"
+        : "English";
   const menu = [
+    ["language", t.profile_menu_language, languageDisplayLabel],
     ["personalise", t.profile_menu_personalise, t.profile_menu_personalise_sub],
     ["monthlyReport", t.profile_menu_monthly, t.profile_menu_monthly_sub],
     ["trusted", t.profile_menu_trusted, contactLabel],
@@ -3850,12 +4086,174 @@ function Profile({ navigate, displayName, language, persona, theme, companion, t
     ["help", t.profile_menu_help, t.profile_menu_help_sub],
     ["about", t.profile_menu_about, "Version 1.0.0 (Release)"],
   ] as [Screen, string, string][];
-  return <><PageHeader title={t.profile_title} subtitle={t.profile_subtitle} /><section className="page-pad top-row">
-    <div className="profile-card"><CompanionAvatar companion={companion} /><div><h2>{displayName} & ONY</h2><p>Preferred display name · {language}</p><span>{companion} · {personaOptions.find((item) => item.id === persona)?.name}</span></div><SmallLogo /></div>
-    <div className="section-head"><h3>{t.profile_settings_head}</h3></div><div className="menu">{menu.map(([id, title, text]) => <button key={id} onClick={() => navigate(id)}><span className="menu-icon"><Icon name={id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : id === "systemLogs" ? "fileText" : "profile"} /></span><span><strong>{title}</strong><small>{text}</small></span><Icon name="chevron" /></button>)}</div>
-    <Button variant="secondary" className="full logout" onClick={onLogout}>{t.profile_menu_logout}</Button>
-    <p className="prototype-foot">ONY Secure Platform · Protected by Firebase Authentication & Cloud Firestore. End-to-end secure synchronization.</p>
-  </section></>;
+  return (
+    <>
+      <PageHeader title={t.profile_title} subtitle={t.profile_subtitle} />
+      <section className="page-pad top-row">
+        <div className="profile-card">
+          <CompanionAvatar companion={companion} />
+          <div>
+            <h2>{displayName} & ONY</h2>
+            <p>Preferred display name · {language}</p>
+            <span>{companion} · {personaOptions.find((item) => item.id === persona)?.name}</span>
+          </div>
+          <SmallLogo />
+        </div>
+
+        <div className="section-head">
+          <h3>{t.profile_settings_head}</h3>
+        </div>
+        <div className="menu">
+          {menu.map(([id, title, text]) => (
+            <button key={id} onClick={() => navigate(id)}>
+              <span className="menu-icon">
+                <Icon name={id === "language" ? "settings" : id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : id === "systemLogs" ? "fileText" : "profile"} />
+              </span>
+              <span>
+                <strong>{title}</strong>
+                <small>{text}</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+          ))}
+        </div>
+        <Button variant="secondary" className="full logout" onClick={onLogout}>
+          {t.profile_menu_logout}
+        </Button>
+        <p className="prototype-foot">
+          ONY Secure Platform · Protected by Firebase Authentication & Cloud Firestore. End-to-end secure synchronization.
+        </p>
+      </section>
+    </>
+  );
+}
+
+function LanguagePreferences({
+  back,
+  currentLanguage,
+  onSelectLanguage,
+  notify,
+}: {
+  back: () => void;
+  currentLanguage: AppLanguage;
+  onSelectLanguage: (lang: AppLanguage) => void;
+  notify: (msg: string) => void;
+}) {
+  const { t } = useLanguage();
+  const options: {
+    id: AppLanguage;
+    label: string;
+    sub: string;
+    desc: string;
+    flag: string;
+  }[] = [
+    {
+      id: "English",
+      label: "English",
+      sub: "English (Malaysia / Global)",
+      desc: t.language_en_note,
+      flag: "🇬🇧",
+    },
+    {
+      id: "Bahasa Melayu",
+      label: "Bahasa Melayu",
+      sub: "Bahasa Kebangsaan Malaysia",
+      desc: t.language_bm_note,
+      flag: "🇲🇾",
+    },
+    {
+      id: "中文",
+      label: "中文",
+      sub: "简体中文 · 华语",
+      desc: t.language_zh_note,
+      flag: "🇨🇳",
+    },
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title={t.language_screen_title}
+        subtitle={t.language_screen_subtitle}
+        back={back}
+      />
+      <section className="page-pad">
+        <div className="help-hero">
+          <Icon name="settings" />
+          <div>
+            <h2>{t.language_screen_title}</h2>
+            <p>{t.language_screen_desc}</p>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: "8px", marginBottom: "16px" }}>
+          {options.map((item) => {
+            const isSelected = currentLanguage === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`language-selection-row ${isSelected ? "selected" : ""}`}
+                onClick={() => {
+                  onSelectLanguage(item.id);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  padding: "14px 16px",
+                  borderRadius: "14px",
+                  border: isSelected ? "2px solid var(--accent, #e07a5f)" : "1px solid var(--line, #e2ded9)",
+                  background: isSelected ? "var(--surface-strong, #fff)" : "var(--surface, #faf7f4)",
+                  marginBottom: "8px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <span style={{ fontSize: "26px", lineHeight: 1 }}>{item.flag}</span>
+                  <div>
+                    <strong style={{ display: "block", fontSize: "15px", color: "var(--text)" }}>
+                      {item.label}
+                    </strong>
+                    <small style={{ display: "block", color: "var(--muted)", fontSize: "12px", marginTop: "1px" }}>
+                      {item.sub}
+                    </small>
+                    <span style={{ display: "block", color: "var(--muted)", fontSize: "11px", marginTop: "3px" }}>
+                      {item.desc}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "50%",
+                    border: isSelected ? "6px solid var(--accent, #e07a5f)" : "2px solid var(--muted, #aaa)",
+                    background: "#fff",
+                    flexShrink: 0,
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="community-note" style={{ background: "var(--sage-soft, #e8f5e9)", borderColor: "var(--sage, #a5d6a7)", color: "#2e7d32" }}>
+          <Icon name="shield" />
+          <span>{t.language_sync_notice}</span>
+        </div>
+
+        <div style={{ marginTop: "16px" }}>
+          <Button className="full" onClick={back}>
+            {t.common_done}
+          </Button>
+        </div>
+      </section>
+    </>
+  );
 }
 
 function Personalise({ back, language, setLanguage, conversationStyle, setConversationStyle, responseLength, setResponseLength, useActiveMemories, setUseActiveMemories, theme, setTheme, companion, setCompanion, persona, setPersona, soundOn, setSoundOn, volume, setVolume, notify, onSave }: {
@@ -3873,17 +4271,67 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
     <div className="setting-block"><h3>{t.personalise_theme}</h3><p>Choose a calming space for the whole app.</p><ThemePicker value={theme} setValue={setTheme} /></div>
     <div className="ambient-settings"><div><strong>{themeOptions.find((item) => item.id === theme)?.name} ambience</strong><small>Soothing ambient soundscape</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button><label>Volume <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
     <div className="setting-block"><h3>{t.personalise_persona}</h3><p>Tone changes, but ONY’s safety rules never do.</p><PersonaPicker value={persona} setValue={setPersona} /></div>
-    <SettingChoices title={t.personalise_style} values={["Reflective", "Practical", "A mix"]} value={conversationStyle} setValue={setConversationStyle} />
-    <SettingChoices title={t.personalise_response_length} values={["Short", "Balanced", "Detailed"]} value={responseLength} setValue={setResponseLength} />
+    <SettingChoices
+      title={t.personalise_style}
+      values={["Reflective", "Practical", "A mix"]}
+      value={conversationStyle}
+      setValue={setConversationStyle}
+      labels={{
+        Reflective: t.personalise_style_reflective,
+        Practical: t.personalise_style_practical,
+        "A mix": t.personalise_style_mix,
+      }}
+    />
+    <SettingChoices
+      title={t.personalise_response_length}
+      values={["Short", "Balanced", "Detailed"]}
+      value={responseLength}
+      setValue={setResponseLength}
+      labels={{
+        Short: t.personalise_len_short,
+        Balanced: t.personalise_len_balanced,
+        Detailed: t.personalise_len_detailed,
+      }}
+    />
     <SettingChoices title={t.personalise_language} values={["English", "Bahasa Melayu", "中文"]} value={language} setValue={setLanguage} />
-    <div className="setting-toggle"><div><strong>Relevant memories</strong><p>Let ONY use active Vault memories.</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
+    <div className="setting-toggle"><div><strong>{t.personalise_memories_toggle}</strong><p>{t.personalise_memories_desc}</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
     <div className="preview-bubble"><CompanionAvatar companion={companion} /><div><span>Your preview</span><p>{personaOptions.find((item) => item.id === persona)?.preview}</p></div></div>
     <Button className="full" onClick={() => { if (onSave) onSave(); notify(t.personalise_save_toast); }}>{t.common_save}</Button>
   </section></>;
 }
 
-function SettingChoices({ title, subtitle, values, value, setValue }: { title: string; subtitle?: string; values: string[]; value: string; setValue: (v: string) => void }) {
-  return <div className="setting-block"><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}<div className="segmented">{values.map((x) => <Button key={x} variant={value === x ? "primary" : "secondary"} onClick={() => setValue(x)}>{x}</Button>)}</div></div>;
+function SettingChoices<T extends string = string>({
+  title,
+  subtitle,
+  values,
+  value,
+  setValue,
+  labels,
+}: {
+  title: string;
+  subtitle?: string;
+  values: T[];
+  value: T;
+  setValue: (v: T) => void;
+  labels?: Record<T, string>;
+}) {
+  return (
+    <div className="setting-block">
+      <h3>{title}</h3>
+      {subtitle && <p>{subtitle}</p>}
+      <div className="segmented">
+        {values.map((x) => (
+          <Button
+            key={x}
+            variant={value === x ? "primary" : "secondary"}
+            onClick={() => setValue(x)}
+          >
+            {labels ? labels[x] || x : x}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ChatHistory({ back, navigate, conversations, setConversations, activeChatId, setActiveChatId, folders, setFolders, selectedFolderId, setSelectedFolderId }: {
@@ -4532,6 +4980,7 @@ function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen
 }
 
 function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
+  const { t } = useLanguage();
   useEffect(() => {
     writeSystemLog({
       level: "info",
@@ -4540,7 +4989,7 @@ function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => v
       message: "User opened verified Malaysian helplines and emergency directory.",
     }).catch(() => {});
   }, []);
-  return <><PageHeader title="Get support" subtitle="Professional and urgent help" back={back} /><section className="page-pad">
+  return <><PageHeader title={t.profile_menu_help} subtitle={t.profile_menu_help_sub} back={back} /><section className="page-pad">
     <div className="help-hero"><Icon name="shield" /><div><h2>You deserve the right support.</h2><p>ONY provides emotional support and information. It is not a replacement for professional or emergency care.</p></div></div>
     <h3 className="group-title">Immediate danger</h3><a className="resource emergency-resource" href="tel:999"><span><strong>Malaysian Emergency Services</strong><small>Police, ambulance, emergency medical response</small></span><b>Call 999</b></a>
     <h3 className="group-title">Crisis & Emotional Support Helplines</h3>
