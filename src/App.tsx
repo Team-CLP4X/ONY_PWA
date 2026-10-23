@@ -83,7 +83,15 @@ import {
   type FirestoreTrustedContactRequest,
 } from "./firebase/firestore";
 import { LanguageProvider, useLanguage } from "./i18n/LanguageContext";
-import { type AppLanguage, getTranslation } from "./i18n/translations";
+import {
+  type AppLanguage,
+  getTranslation,
+  formatFriendlyTime,
+  getCategoryLabel,
+  getCompanionLabel,
+  getThemeDetails,
+  getPersonaDetails,
+} from "./i18n/translations";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -1730,7 +1738,8 @@ function AuthFlowContent({
 }
 
 function LegalDocument({ document, back }: { document: LegalDocumentId; back: () => void }) {
-  const content: Record<LegalDocumentId, { title: string; subtitle: string; sections: { heading: string; text: string }[] }> = {
+  const { language } = useLanguage();
+  const contentEn: Record<LegalDocumentId, { title: string; subtitle: string; sections: { heading: string; text: string }[] }> = {
     disclaimer: {
       title: "Disclaimer & AI Limitations",
       subtitle: "Safety boundaries and conversational scope",
@@ -1769,12 +1778,96 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       ]
     },
   };
-  const item = content[document];
+
+  const contentBm: Record<LegalDocumentId, { title: string; subtitle: string; sections: { heading: string; text: string }[] }> = {
+    disclaimer: {
+      title: "Penafian & Batasan AI",
+      subtitle: "Sempadan keselamatan dan skop perbualan",
+      sections: [
+        { heading: "Apakah ONY", text: "ONY direka untuk sokongan emosi harian, refleksi kendiri, dan teman kesejahteraan yang lembut. Ia bukan rawatan perubatan, psikoterapi, diagnosis klinikal, atau perkhidmatan kecemasan." },
+        { heading: "Skop Model Generatif AI", text: "Perbualan dikuasakan oleh kecerdasan buatan generatif pelayan selamat. Walaupun kawalan keselamatan dan protokol krisis sentiasa aktif, jawapan generatif kadangkala mungkin tidak sempurna. Sentiasa gunakan pertimbangan peribadi." },
+        { heading: "Pilihan & Autonomi Anda", text: "Anda mengekalkan kuasa penuh untuk menamatkan perbualan, menukar persona nada, mengurus atau memadam memori, dan beralih kepada bantuan profesional manusia bertauliah pada bila-bila masa." }
+      ]
+    },
+    terms: {
+      title: "Syarat Perkhidmatan",
+      subtitle: "Garis panduan penggunaan dan persetujuan ahli",
+      sections: [
+        { heading: "Penggunaan Wajar", text: "Gunakan ONY untuk refleksi peribadi, daftar masuk emosi harian, dan sokongan komuniti yang membina. Jangan bergantung pada ONY untuk campur tangan perubatan kecemasan, penyelamatan krisis, keputusan undang-undang, atau mencederakan diri." },
+        { heading: "Ketersediaan & Keselamatan Perkhidmatan", text: "ONY beroperasi dengan storan awan selamat dan pengesahan Firebase. Kami berusaha untuk ketersediaan berterusan sambil sentiasa mengemas kini perlindungan keselamatan kami." },
+        { heading: "Standard Komuniti", text: "Siaran awam dan nota sokongan rakan sebaya mesti menghormati privasi, empati, dan keselamatan peribadi. Sebarang gangguan, ucapan kebencian, atau perkongsian maklumat peribadi tanpa persetujuan dilarang sama sekali." }
+      ]
+    },
+    privacy: {
+      title: "Dasar Privasi",
+      subtitle: "Bagaimana ONY melindungi data peribadi anda",
+      sections: [
+        { heading: "Maklumat Yang Kami Lindungi", text: "Profil akaun, rekod emosi, memori yang dipersetujui, dan refleksi perbualan disimpan dengan selamat dalam Google Cloud Firestore dengan kawalan akses ketat." },
+        { heading: "Kerahsiaan & Tiada Penjualan Data", text: "Rekod emosi peribadi dan sembang anda adalah sulit. ONY tidak akan sesekali menjual, memajak, atau menyewakan data peribadi anda kepada pengiklan atau pihak ketiga." },
+        { heading: "Kawalan Pengguna & Pemadaman", text: "Anda berhak menyemak, mengeksport, atau memadam akaun anda dan semua data perbualan pada bila-bila masa daripada tetapan Privasi anda." },
+        { heading: "Privasi Lokasi", text: "Pilihan kawasan serantau luas untuk sokongan berdekatan adalah pilihan sepenuhnya. ONY tidak pernah menjejaki koordinat GPS masa nyata tanpa persetujuan jelas anda." }
+      ]
+    },
+    crisis: {
+      title: "Talian Krisis & Kecemasan",
+      subtitle: "Sumber sokongan Malaysia yang disahkan 24/7",
+      sections: [
+        { heading: "Bahaya Mengancam Nyawa Segera", text: "Sekiranya anda atau sesiapa di sekeliling anda berada dalam bahaya kecederaan atau bunuh diri serta-merta, sila hubungi 999 dengan segera atau pergi ke jabatan kecemasan hospital terdekat." },
+        { heading: "Talian HEAL 15555 (KKM Malaysia)", text: "Talian krisis kesihatan mental kebangsaan 24 jam percuma dan sulit yang dikendalikan oleh kaunselor bertauliah Kementerian Kesihatan Malaysia." },
+        { heading: "Befrienders Kuala Lumpur (03-7627 2929)", text: "Talian sokongan emosi 24 jam untuk sesiapa sahaja di Malaysia yang mengalami kesunyian, kemurungan, atau tekanan emosi. Percuma dan sulit." }
+      ]
+    },
+  };
+
+  const contentZh: Record<LegalDocumentId, { title: string; subtitle: string; sections: { heading: string; text: string }[] }> = {
+    disclaimer: {
+      title: "免责声明与 AI 边界",
+      subtitle: "安全界限与对话范围说明",
+      sections: [
+        { heading: "关于 ONY 的定位", text: "ONY 专为日常情绪舒缓、自我倾听反思和温和身心陪伴而设计。它绝非医疗服务、心理治疗、精神科临床诊断或紧急危机救援。" },
+        { heading: "生成式 AI 模型范围", text: "对话由严格受控的服务端生成式人工智能驱动。尽管全天候激活多级危机防护与安全护栏，生成式回应偶有不尽完美之处。请始终保留个人的理性判断。" },
+        { heading: "您的自主掌控权", text: "您拥有随时结束对话、更换陪伴语调、编辑或删除记忆宝库记录，以及直接转介至核实专业人类援助的完整自主权利。" }
+      ]
+    },
+    terms: {
+      title: "服务条款",
+      subtitle: "使用守则与用户协议",
+      sections: [
+        { heading: "合规使用", text: "使用 ONY 进行个人反思、每日心情登记和社区互助陪伴。请勿将 ONY 用于紧急医疗救治、人身危机救援、法律争议裁决或自残自伤行为。" },
+        { heading: "服务可用性与数据安全", text: "ONY 采用高标准云端加密与 Firebase 身份体系运行。我们全力保障服务稳定，并持续迭代安全风控算法。" },
+        { heading: "社区准则", text: "公开帖子与同伴鼓励留言必须尊重隐私、抱持同理心并确保人身安全。严禁任何形式的骚扰、仇恨言论或未经允许公开他人联系方式。" }
+      ]
+    },
+    privacy: {
+      title: "隐私政策",
+      subtitle: "ONY 如何守护您的个人数据安全",
+      sections: [
+        { heading: "我们守护的数据范围", text: "您的账户资料、每日心情轨迹、征得同意的宝库记忆及对话反思均通过细粒度安全规则加密存储于 Google Cloud Firestore。" },
+        { heading: "严格保密与绝不出售数据", text: "您的私人情绪轨迹与对话记录具有最高保密级别。ONY 绝不会向任何广告商或第三方机构出售、出借或商业出租您的个人数据。" },
+        { heading: "用户自主控制与彻底删除", text: "您始终拥有永久权利在隐私设置中随时查阅、导出个人数据归档，或彻底注销账户并清除全部关联数据记录。" },
+        { heading: "地理位置隐私", text: "用于寻找周边心理资源或星球同伴的宽泛区域选择纯属自愿。未经您明确确认，ONY 绝不采集实时高精度 GPS 门牌坐标。" }
+      ]
+    },
+    crisis: {
+      title: "危机干预与紧急援助热线",
+      subtitle: "24小时全天候核实的马来西亚官方支持热线",
+      sections: [
+        { heading: "危及生命的紧急险情", text: "如果您或身旁人员面临即刻的人身伤害或自残自杀危险，请立即拨打 999 报警或前往就近医院的急诊部（A&E）。" },
+        { heading: "Talian HEAL 15555 (马来西亚卫生部 MOH)", text: "由马来西亚卫生部注册辅导员运营的免费、保密 24 小时国家心理健康危机干预热线。" },
+        { heading: "吉隆坡心灵扶助会 Befrienders (03-7627 2929)", text: "面向马来西亚全境感到孤独、抑郁或情绪困扰人士的 24 小时免费情感支持热线。全程严格保密。" }
+      ]
+    },
+  };
+
+  const selectedContent = language === "Bahasa Melayu" ? contentBm : language === "中文" ? contentZh : contentEn;
+  const item = selectedContent[document];
   return (
     <>
       <PageHeader title={item.title} subtitle={item.subtitle} back={back} />
       <section className="page-pad legal-document">
-        <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>Official Document</span>
+        <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>
+          {language === "Bahasa Melayu" ? "Dokumen Rasmi" : language === "中文" ? "官方政策文档" : "Official Document"}
+        </span>
         {item.sections.map((section) => (
           <div className="card" key={section.heading}>
             <h3>{section.heading}</h3>
@@ -1783,7 +1876,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
         ))}
         <p className="disclaimer">
           <Icon name="info" />
-          ONY is committed to transparent data practices, user safety, and adherence to Malaysian digital service standards.
+          {language === "Bahasa Melayu" ? "ONY komited terhadap amalan data telus, keselamatan pengguna, dan pematuhan piawaian perkhidmatan digital Malaysia." : language === "中文" ? "ONY 坚定践行透明的数据规范与用户安全准则，严格遵从马来西亚数字服务伦理标准。" : "ONY is committed to transparent data practices, user safety, and adherence to Malaysian digital service standards."}
         </p>
       </section>
     </>
@@ -1791,37 +1884,38 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
 }
 
 function LegalHub({ back, navigate }: { back: () => void; navigate: (screen: Screen) => void }) {
+  const { t, language } = useLanguage();
   const [document, setDocument] = useState<LegalDocumentId | null>(null);
   if (document) return <LegalDocument document={document} back={() => setDocument(null)} />;
   return (
     <>
-      <PageHeader title="Legal & Safety" subtitle="Service terms, privacy & standards" back={back} />
+      <PageHeader title={t.profile_menu_legal} subtitle={t.profile_menu_legal_sub} back={back} />
       <section className="page-pad">
         <div className="help-hero">
           <Icon name="shield" />
           <div>
-            <h2>Clear information, always accessible.</h2>
-            <p>Read our commitment to your privacy, ethical artificial intelligence, and safety boundaries.</p>
+            <h2>{t.legal_hero_title}</h2>
+            <p>{t.legal_hero_desc}</p>
           </div>
         </div>
         <div className="menu legal-menu">
           {([
-            ["disclaimer", "Disclaimer & AI Boundaries"],
-            ["terms", "Terms of Service"],
-            ["privacy", "Privacy Policy"],
-            ["crisis", "Crisis & Emergency Information"],
+            ["disclaimer", language === "Bahasa Melayu" ? "Penafian & Batasan AI" : language === "中文" ? "免责声明与 AI 边界" : "Disclaimer & AI Boundaries"],
+            ["terms", language === "Bahasa Melayu" ? "Syarat Perkhidmatan" : language === "中文" ? "服务条款" : "Terms of Service"],
+            ["privacy", language === "Bahasa Melayu" ? "Dasar Privasi" : language === "中文" ? "隐私政策" : "Privacy Policy"],
+            ["crisis", language === "Bahasa Melayu" ? "Maklumat Krisis & Kecemasan" : language === "中文" ? "危机与紧急援助信息" : "Crisis & Emergency Information"],
           ] as [LegalDocumentId, string][]).map(([id, title]) => (
             <Button key={id} variant="ghost" onClick={() => setDocument(id)}>
               <span>
                 <strong>{title}</strong>
-                <small>Official policy</small>
+                <small>{language === "Bahasa Melayu" ? "Dasar rasmi" : language === "中文" ? "官方政策文档" : "Official policy"}</small>
               </span>
               <Icon name="chevron" />
             </Button>
           ))}
         </div>
         <Button className="full" variant="secondary" onClick={() => navigate("privacy")}>
-          Open privacy controls
+          {language === "Bahasa Melayu" ? "Buka kawalan privasi" : language === "中文" ? "打开隐私控制面板" : "Open privacy controls"}
         </Button>
       </section>
     </>
@@ -1914,7 +2008,22 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
 }
 
 function PersonaPicker({ value, setValue, compact = false }: { value: Persona; setValue: (v: Persona) => void; compact?: boolean }) {
-  return <div className={`persona-grid ${compact ? "compact" : ""}`}>{personaOptions.map((item) => <Button key={item.id} variant="secondary" className={value === item.id ? "active" : ""} onClick={() => setValue(item.id)}><span className="persona-check">{value === item.id && <Icon name="check" />}</span><strong>{item.name}</strong><small>{item.note}</small>{!compact && <p>“{item.preview}”</p>}</Button>)}</div>;
+  const { language } = useLanguage();
+  return (
+    <div className={`persona-grid ${compact ? "compact" : ""}`}>
+      {personaOptions.map((item) => {
+        const details = getPersonaDetails(item.id, item.name, item.note, item.preview, language);
+        return (
+          <Button key={item.id} variant="secondary" className={value === item.id ? "active" : ""} onClick={() => setValue(item.id)}>
+            <span className="persona-check">{value === item.id && <Icon name="check" />}</span>
+            <strong>{details.name}</strong>
+            <small>{details.note}</small>
+            {!compact && <p>“{details.preview}”</p>}
+          </Button>
+        );
+      })}
+    </div>
+  );
 }
 
 function CompanionAvatar({ companion, large = false }: { companion: Companion; large?: boolean }) {
@@ -1923,12 +2032,38 @@ function CompanionAvatar({ companion, large = false }: { companion: Companion; l
 }
 
 function CompanionPicker({ value, setValue }: { value: Companion; setValue: (v: Companion) => void }) {
+  const { language } = useLanguage();
   const companions: Companion[] = ["Cat", "Dog", "Bunny", "Bear", "Fox", "Panda"];
-  return <div className="companion-grid">{companions.map((item) => <button key={item} className={value === item ? "active" : ""} onClick={() => setValue(item)}><CompanionAvatar companion={item} /><strong>{item}</strong>{value === item && <span><Icon name="check" /></span>}</button>)}</div>;
+  return (
+    <div className="companion-grid">
+      {companions.map((item) => (
+        <button key={item} className={value === item ? "active" : ""} onClick={() => setValue(item)}>
+          <CompanionAvatar companion={item} />
+          <strong>{getCompanionLabel(item, language)}</strong>
+          {value === item && <span><Icon name="check" /></span>}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function ThemePicker({ value, setValue }: { value: Theme; setValue: (v: Theme) => void }) {
-  return <div className="theme-grid">{themeOptions.map((item) => <button key={item.id} className={`theme-option ${value === item.id ? "active" : ""}`} onClick={() => setValue(item.id)}><span className={`theme-preview preview-${item.id}`}><i /><i /><i /></span><strong>{item.name}</strong><small>{item.note}</small>{value === item.id && <b><Icon name="check" /></b>}</button>)}</div>;
+  const { language } = useLanguage();
+  return (
+    <div className="theme-grid">
+      {themeOptions.map((item) => {
+        const details = getThemeDetails(item.id, item.name, item.note, language);
+        return (
+          <button key={item.id} className={`theme-option ${value === item.id ? "active" : ""}`} onClick={() => setValue(item.id)}>
+            <span className={`theme-preview preview-${item.id}`}><i /><i /><i /></span>
+            <strong>{details.name}</strong>
+            <small>{details.note}</small>
+            {value === item.id && <b><Icon name="check" /></b>}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function SmallLogo() {
@@ -2370,11 +2505,11 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
           <Button
             variant="secondary"
             onClick={() => navigate(todayMoodEntry ? "trend" : "mood")}
-            title={todayMoodEntry ? `Today's mood check-in completed (${todayMoodEntry.emoji} ${todayMoodEntry.label})` : t.chat_mood_prompt}
+            title={todayMoodEntry ? `${t.mood_complete_banner} (${todayMoodEntry.emoji} ${todayMoodEntry.label})` : t.chat_mood_prompt}
           >
-            {todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : "Mood"}
+            {todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
           </Button>
-          <Button variant="secondary" onClick={() => navigate("help")}>Help</Button>
+          <Button variant="secondary" onClick={() => navigate("help")}>{t.profile_menu_help}</Button>
         </div>
       }
     />
@@ -2388,7 +2523,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       </div>
     )}
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div></div>}
+    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
@@ -2398,8 +2533,8 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
             type="button"
             className={`tts-btn ${speakingMsgId === `ony-msg-${i}` ? "speaking" : ""}`}
             onClick={() => toggleSpeakMessage(m.text, `ony-msg-${i}`)}
-            title={speakingMsgId === `ony-msg-${i}` ? "Stop speaking" : "Listen to ONY"}
-            aria-label={speakingMsgId === `ony-msg-${i}` ? "Stop speaking" : "Listen to ONY"}
+            title={speakingMsgId === `ony-msg-${i}` ? t.chat_voice_stop_speaking : t.chat_voice_listen}
+            aria-label={speakingMsgId === `ony-msg-${i}` ? t.chat_voice_stop_speaking : t.chat_voice_listen}
           >
             <Icon name={speakingMsgId === `ony-msg-${i}` ? "volumeOff" : "volume"} />
           </button>
@@ -2409,18 +2544,18 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       {chatError && !typing && <div className="chat-error-banner" role="alert">
         <div><Icon name="info" /><span>{chatError}</span></div>
         <div className="chat-error-actions">
-          <Button variant="ghost" onClick={() => setChatError(null)}>Dismiss</Button>
-          {failedUserText && <Button variant="secondary" onClick={retryLastMessage}>Retry</Button>}
+          <Button variant="ghost" onClick={() => setChatError(null)}>{t.common_dismiss}</Button>
+          {failedUserText && <Button variant="secondary" onClick={retryLastMessage}>{t.common_retry}</Button>}
         </div>
       </div>}
       {!typing && <div className="context-actions">
-        {safetyContext && <><Button variant="danger" onClick={() => navigate("safety")}>Get help now</Button><Button variant="secondary" onClick={() => navigate("professional")}>Find professional support</Button><Button variant="secondary" onClick={() => navigate("trusted")}>Contact trusted person</Button></>}
-        {!safetyContext && serverSafetyAction === "offer_human_support" && <><Button variant="secondary" onClick={() => navigate("professional")}>Find professional support</Button><Button variant="secondary" onClick={() => navigate("help")}>View support resources</Button></>}
-        {!safetyContext && memoryContext && (savedMemoryId === null ? <Button variant="secondary" onClick={saveContextMemory}><Icon name="memory" />Remember this</Button> : <div className="memory-saved"><Icon name="check" /><span>Saved to your Memory Vault.</span><Button variant="ghost" onClick={undoContextMemory}>Undo</Button></div>)}
-        {!safetyContext && anxietyContext && <><Button variant="secondary" onClick={() => navigate("wellbeing")}>Try something calming</Button><Button variant="secondary" onClick={() => notify("One-minute breathing activity opened")}>Breathing activity</Button><Button variant="secondary" onClick={() => navigate("wellbeing")}>Calming music</Button></>}
-        {!safetyContext && studyContext && <><Button variant="secondary" onClick={() => reply("Help me make a study plan")}>Study plan</Button><Button variant="secondary" onClick={() => notify("A five-minute break timer started")}>Take a break</Button><Button variant="secondary" onClick={() => reply("I want to talk about my study pressure")}>Talk about it</Button></>}
-        {!safetyContext && jobContext && <><Button variant="secondary" onClick={() => navigate("jobs")}>Find job opportunities</Button><Button variant="secondary" onClick={() => navigate("jobPrefs")}>Set job preferences</Button></>}
-        {!safetyContext && relationshipContext && <><Button variant="secondary" onClick={() => reply("I want to tell you more about it")}>Tell me more</Button><Button variant="secondary" onClick={() => reply("Help me reflect on this relationship")}>Help me reflect</Button></>}
+        {safetyContext && <><Button variant="danger" onClick={() => navigate("safety")}>{t.chat_action_get_help}</Button><Button variant="secondary" onClick={() => navigate("professional")}>{t.chat_action_find_support}</Button><Button variant="secondary" onClick={() => navigate("trusted")}>{t.chat_action_contact_trusted}</Button></>}
+        {!safetyContext && serverSafetyAction === "offer_human_support" && <><Button variant="secondary" onClick={() => navigate("professional")}>{t.chat_action_find_support}</Button><Button variant="secondary" onClick={() => navigate("help")}>{t.chat_action_view_resources}</Button></>}
+        {!safetyContext && memoryContext && (savedMemoryId === null ? <Button variant="secondary" onClick={saveContextMemory}><Icon name="memory" />{t.chat_action_remember_this}</Button> : <div className="memory-saved"><Icon name="check" /><span>{t.chat_action_saved_vault}</span><Button variant="ghost" onClick={undoContextMemory}>{t.common_undo}</Button></div>)}
+        {!safetyContext && anxietyContext && <><Button variant="secondary" onClick={() => navigate("wellbeing")}>{t.chat_action_try_calming}</Button><Button variant="secondary" onClick={() => notify(t.chat_action_breathing)}>{t.chat_action_breathing}</Button><Button variant="secondary" onClick={() => navigate("wellbeing")}>{t.chat_action_calming_music}</Button></>}
+        {!safetyContext && studyContext && <><Button variant="secondary" onClick={() => reply(t.chat_action_study_plan)}>{t.chat_action_study_plan}</Button><Button variant="secondary" onClick={() => notify(t.chat_action_take_break)}>{t.chat_action_take_break}</Button><Button variant="secondary" onClick={() => reply(t.chat_action_talk_about_it)}>{t.chat_action_talk_about_it}</Button></>}
+        {!safetyContext && jobContext && <><Button variant="secondary" onClick={() => navigate("jobs")}>{t.chat_action_find_jobs}</Button><Button variant="secondary" onClick={() => navigate("jobPrefs")}>{t.chat_action_job_prefs}</Button></>}
+        {!safetyContext && relationshipContext && <><Button variant="secondary" onClick={() => reply(t.chat_action_tell_more)}>{t.chat_action_tell_more}</Button><Button variant="secondary" onClick={() => reply(t.chat_action_help_reflect)}>{t.chat_action_help_reflect}</Button></>}
       </div>}
       <div ref={messagesEndRef} className="chat-bottom-spacer" />
     </div>}
@@ -2469,7 +2604,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                       ? t.chat_voice_sub_listening
                       : voiceState === "sent"
                       ? t.chat_voice_tap_mic
-                      : "Voice stays in this session"}
+                      : t.chat_voice_session_privacy}
                   </small>
                   {voiceState === "listening" && (
                     <div className="voice-live-waves">
@@ -2514,9 +2649,13 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                     <span>{micNotice}</span>
                   </div>
                   <div className="voice-mic-notice-prompts">
-                    <small>Quick voice prompts to speak with ONY:</small>
+                    <small>{t.chat_voice_quick_prompts}</small>
                     <div className="voice-prompt-chips">
-                      {["I'm feeling overwhelmed today", "Help me relax with a breathing exercise", "I want to talk about how I feel"].map((phrase) => (
+                      {[
+                        t.chat_voice_prompt_overwhelmed,
+                        t.chat_voice_prompt_breathing,
+                        t.chat_voice_prompt_talk,
+                      ].map((phrase) => (
                         <button key={phrase} type="button" onClick={() => handleSimulateVoice(phrase)}>
                           💬 "{phrase}"
                         </button>
@@ -2524,8 +2663,8 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                    <Button variant="secondary" onClick={() => { setMicNotice(null); void startVoiceListening(); }}>Try Mic Again</Button>
-                    <Button variant="ghost" onClick={() => setMicNotice(null)}>Dismiss</Button>
+                    <Button variant="secondary" onClick={() => { setMicNotice(null); void startVoiceListening(); }}>{t.chat_voice_try_mic_again}</Button>
+                    <Button variant="ghost" onClick={() => setMicNotice(null)}>{t.common_dismiss}</Button>
                   </div>
                 </div>
               )}
@@ -2595,30 +2734,34 @@ function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () =
         <img src={logo} alt="ONY" />
         <div className="success-mark"><Icon name="check" /></div>
         <span className="eyebrow">{t.mood_today_badge} · {todayKey}</span>
-        <h1>Check-in saved for today</h1>
+        <h1>{t.mood_saved_today_title}</h1>
         <p>
-          You checked in today as <strong>{todayEntry.emoji} {todayEntry.label}</strong>
-          {todayEntry.note ? <> — <em>“{todayEntry.note}”</em></> : "."}{" "}
-          Your mood is saved in the database for today. Come back tomorrow for your next daily check-in.
+          {language === "Bahasa Melayu" ? (
+            <>Anda telah mendaftar masuk hari ini sebagai <strong>{todayEntry.emoji} {todayEntry.label}</strong>{todayEntry.note ? <> — <em>“{todayEntry.note}”</em></> : "."} {t.mood_saved_today_desc}</>
+          ) : language === "中文" ? (
+            <>您今天的记录为 <strong>{todayEntry.emoji} {todayEntry.label}</strong>{todayEntry.note ? <> — <em>“{todayEntry.note}”</em></> : "。"} {t.mood_saved_today_desc}</>
+          ) : (
+            <>You checked in today as <strong>{todayEntry.emoji} {todayEntry.label}</strong>{todayEntry.note ? <> — <em>“{todayEntry.note}”</em></> : "."} {t.mood_saved_today_desc}</>
+          )}
         </p>
-        <Button onClick={() => navigate("trend")}>View mood history</Button>
-        <Button variant="ghost" onClick={back}>Back to chat</Button>
+        <Button onClick={() => navigate("trend")}>{t.mood_view_history}</Button>
+        <Button variant="ghost" onClick={back}>{t.mood_back_chat}</Button>
       </div>
     );
   }
 
   return <><PageHeader title={t.mood_modal_title} subtitle={t.mood_modal_subtitle} back={back} /><section className="page-pad">
-    <div className="eyebrow">Right now · {todayKey}</div><h1>{t.mood_question}</h1><p className="muted">Choose the closest fit. Your check-in is saved once per day to your private database history.</p>
+    <div className="eyebrow">{t.mood_right_now} · {todayKey}</div><h1>{t.mood_question}</h1><p className="muted">{t.mood_scale_hint}</p>
     <div className="mood-scale emoji-scale">{moodOptions.map((option, index) => <button key={option.label} onClick={() => setMood(index)} className={mood === index ? "active" : ""} aria-pressed={mood === index}><span>{option.emoji}</span><small>{getMoodLabel(index)}</small></button>)}</div>
-    <div className="selected-mood">{selected ? <><span>{selected.emoji}</span><strong>{getMoodLabel(mood!)}</strong></> : <p>Select a mood to continue.</p>}</div>
-    <label className="field-label">{t.mood_note_label} <small>Optional</small></label><TextArea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder={t.mood_note_placeholder} />
+    <div className="selected-mood">{selected ? <><span>{selected.emoji}</span><strong>{getMoodLabel(mood!)}</strong></> : <p>{t.mood_select_prompt}</p>}</div>
+    <label className="field-label">{t.mood_note_label} <small>{t.common_optional}</small></label><TextArea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder={t.mood_note_placeholder} />
     <Button className="full" disabled={!selected} onClick={save}>{t.mood_save_btn}</Button>
-    <Button className="full" variant="ghost" onClick={() => navigate("trend")}>Review previous check-ins</Button>
+    <Button className="full" variant="ghost" onClick={() => navigate("trend")}>{t.mood_review_previous}</Button>
   </section></>;
 }
 
 function MoodTrend({ back, entries, setEntries }: { back: () => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const recent = entries[0];
   const todayKey = getLocalDateKey();
   const todayEntry = entries.find((entry) => getMoodDateKey(entry) === todayKey) || null;
@@ -2627,17 +2770,17 @@ function MoodTrend({ back, entries, setEntries }: { back: () => void; entries: M
       <div className="community-note" style={{ marginBottom: "12px" }}>
         <Icon name="check" />
         <span>
-          <strong>Today’s check-in complete ({todayKey}):</strong> {todayEntry.emoji} {todayEntry.label}. You are all set for today.
+          <strong>{t.mood_complete_banner} ({todayKey}):</strong> {todayEntry.emoji} {todayEntry.label}
         </span>
       </div>
     )}
-    {recent && <div className="trend-summary"><div><span>Most recent ({getMoodDateKey(recent) === todayKey ? "Today" : getMoodDateKey(recent)})</span><strong>{recent.emoji} {recent.label}</strong><small>{new Date(recent.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}</small></div><span className="score">{recent.level}/5</span></div>}
-    {entries.length === 0 ? <div className="empty"><span className="empty-emoji">😐</span><h3>No mood check-ins yet</h3><p>Your daily mood check-ins will appear here after you record one.</p></div> : <><div className="card"><div className="card-title"><h3>Daily check-ins</h3><span>{entries.length} {entries.length === 1 ? "day" : "days"} saved</span></div><div className="mood-history-list">{entries.map((entry) => {
+    {recent && <div className="trend-summary"><div><span>{t.mood_most_recent} ({getMoodDateKey(recent) === todayKey ? t.mood_today_label : getMoodDateKey(recent)})</span><strong>{recent.emoji} {recent.label}</strong><small>{new Date(recent.createdAt).toLocaleDateString(language === "Bahasa Melayu" ? "ms-MY" : language === "中文" ? "zh-CN" : "en-MY", { day: "numeric", month: "short", year: "numeric" })}</small></div><span className="score">{recent.level}/5</span></div>}
+    {entries.length === 0 ? <div className="empty"><span className="empty-emoji">😐</span><h3>{t.mood_empty_title}</h3><p>{t.mood_empty_desc}</p></div> : <><div className="card"><div className="card-title"><h3>{t.mood_daily_checkins}</h3><span>{entries.length} {entries.length === 1 ? t.mood_day_saved : t.mood_days_saved}</span></div><div className="mood-history-list">{entries.map((entry) => {
       const dKey = getMoodDateKey(entry);
       const isToday = dKey === todayKey;
-      return <div key={dKey || entry.id}><span className="history-emoji">{entry.emoji}</span><div><strong>{entry.label} {isToday ? "· Today" : ""}</strong><small>{dKey} · {new Date(entry.createdAt).toLocaleString("en-MY", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</small>{entry.note && <p>{entry.note}</p>}</div><Toggle on={entry.reportAllowed} setOn={(value) => setEntries(entries.map((item) => getMoodDateKey(item) === dKey ? { ...item, reportAllowed: value } : item))} /><Button variant="ghost" onClick={() => setEntries(entries.filter((item) => getMoodDateKey(item) !== dKey))}><Icon name="trash" /></Button></div>;
-    })}</div></div>{entries.length >= 3 ? <div className="card"><h3>Recent pattern</h3><div className="bars mood-entry-bars">{[...entries].reverse().slice(-7).map((entry) => <div key={getMoodDateKey(entry) || entry.id}><span style={{ height: `${entry.level * 20}%` }} /><small>{entry.emoji}</small></div>)}</div><p className="muted">A simple view of your daily entries, not a clinical interpretation.</p></div> : <div className="community-note"><Icon name="info" />At least three daily check-ins are needed before ONY shows a simple trend.</div>}</>}
-    <p className="disclaimer"><Icon name="info" />Each mood check-in is saved per day in Cloud Firestore. Use the switch beside an entry to include or exclude it from monthly reports.</p>
+      return <div key={dKey || entry.id}><span className="history-emoji">{entry.emoji}</span><div><strong>{entry.label} {isToday ? `· ${t.mood_today_label}` : ""}</strong><small>{dKey} · {new Date(entry.createdAt).toLocaleString(language === "Bahasa Melayu" ? "ms-MY" : language === "中文" ? "zh-CN" : "en-MY", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</small>{entry.note && <p>{entry.note}</p>}</div><Toggle on={entry.reportAllowed} setOn={(value) => setEntries(entries.map((item) => getMoodDateKey(item) === dKey ? { ...item, reportAllowed: value } : item))} /><Button variant="ghost" onClick={() => setEntries(entries.filter((item) => getMoodDateKey(item) !== dKey))}><Icon name="trash" /></Button></div>;
+    })}</div></div>{entries.length >= 3 ? <div className="card"><h3>{t.mood_recent_pattern}</h3><div className="bars mood-entry-bars">{[...entries].reverse().slice(-7).map((entry) => <div key={getMoodDateKey(entry) || entry.id}><span style={{ height: `${entry.level * 20}%` }} /><small>{entry.emoji}</small></div>)}</div><p className="muted">{t.mood_pattern_disclaimer}</p></div> : <div className="community-note"><Icon name="info" />{t.mood_need_three}</div>}</>}
+    <p className="disclaimer"><Icon name="info" />{t.mood_firestore_disclaimer}</p>
   </section></>;
 }
 
@@ -2645,23 +2788,23 @@ function MemoryVault({ memories: items, setMemories: setItems, navigate, setEdit
   memories: Memory[]; setMemories: (v: Memory[]) => void; navigate: (s: Screen) => void;
   setEditingMemory: (v: Memory | null) => void; companion: Companion; notify: (s: string) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [query, setQuery] = useState("");
   const update = (id: number, patch: Partial<Memory>) => setItems(items.map((x) => x.id === id ? { ...x, ...patch } : x));
   return <><PageHeader title={t.memory_title} subtitle={`${items.filter((x) => x.active).length} ${t.memory_card_active}`} /><section className="page-pad topless">
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search memories" /></div>
-    <div className="vault-intro"><div><span className="eyebrow">You’re in control</span><h2>What ONY remembers</h2><p>Pause, edit, or remove anything. Changes affect future conversations.</p></div><Icon name="memory" /></div>
+    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.memory_search_placeholder} /></div>
+    <div className="vault-intro"><div><span className="eyebrow">{t.memory_vault_control}</span><h2>{t.memory_vault_heading}</h2><p>{t.memory_vault_desc}</p></div><Icon name="memory" /></div>
     <Button className="full add-memory-btn" onClick={() => { setEditingMemory(null); navigate("addMemory"); }}>+ {t.memory_add_btn}</Button>
-    <div className="section-head"><h3>Saved memories</h3><Button variant="ghost" onClick={() => { setItems([]); notify("All memories cleared"); }}>Clear all</Button></div>
+    <div className="section-head"><h3>{t.memory_saved_section}</h3><Button variant="ghost" onClick={() => { setItems([]); notify(t.memory_cleared_toast); }}>{t.memory_clear_all}</Button></div>
     {items.filter((x) => x.text.toLowerCase().includes(query.toLowerCase())).map((item) => <div className={`memory-card ${!item.active ? "paused" : ""}`} key={item.id}>
       <div className="memory-top"><span className="memory-icon"><Icon name="memory" /></span><Toggle on={item.active} setOn={(v) => update(item.id, { active: v })} /></div>
-      {item.kind === "image" && <div className={`memory-image ${item.imageTone || "forest"}`}><span>Image memory</span></div>}
-      {item.category && <span className="memory-category">{item.category}</span>}<strong>{item.text}</strong>
-      <details><summary>ONY remembers this because…</summary><p>{item.reason}</p></details>
-      <div className="memory-actions"><Button variant="ghost" onClick={() => { setEditingMemory(item); navigate("addMemory"); }}><Icon name="edit" />Edit</Button><Button variant="ghost" onClick={() => { setItems(items.filter((x) => x.id !== item.id)); notify("Memory deleted"); }}><Icon name="trash" />Delete</Button></div>
+      {item.kind === "image" && <div className={`memory-image ${item.imageTone || "forest"}`}><span>{t.memory_kind_image}</span></div>}
+      {item.category && <span className="memory-category">{getCategoryLabel(item.category, language)}</span>}<strong>{item.text}</strong>
+      <details><summary>{t.memory_why_remembers}</summary><p>{item.reason}</p></details>
+      <div className="memory-actions"><Button variant="ghost" onClick={() => { setEditingMemory(item); navigate("addMemory"); }}><Icon name="edit" />{t.common_edit}</Button><Button variant="ghost" onClick={() => { setItems(items.filter((x) => x.id !== item.id)); notify(t.memory_deleted_toast); }}><Icon name="trash" />{t.common_delete}</Button></div>
     </div>)}
-    {!items.length && <div className="empty"><CompanionAvatar companion={companion} large /><h3>Your vault is clear</h3><p>New memories will only appear with your permission.</p></div>}
-    <div className="privacy-row"><Icon name="shield" /><div><strong>Memory privacy controls</strong><p>Ask before saving is currently {items.length ? "off" : "on"}.</p></div><Toggle on={memoryConsentOn(items)} setOn={() => notify("Memory preference updated")} /></div>
+    {!items.length && <div className="empty"><CompanionAvatar companion={companion} large /><h3>{t.memory_empty_title}</h3><p>{t.memory_empty_desc}</p></div>}
+    <div className="privacy-row"><Icon name="shield" /><div><strong>{t.memory_privacy_controls}</strong><p>{t.memory_ask_before_saving} {items.length ? (language === "Bahasa Melayu" ? "mati" : language === "中文" ? "关闭" : "off") : (language === "Bahasa Melayu" ? "hidup" : language === "中文" ? "开启" : "on")}.</p></div><Toggle on={memoryConsentOn(items)} setOn={() => notify(t.personalise_save_toast)} /></div>
   </section></>;
 }
 const memoryConsentOn = (items: Memory[]) => items.length > 0;
@@ -2669,42 +2812,30 @@ const memoryConsentOn = (items: Memory[]) => items.length > 0;
 function AddMemory({ back, memories, setMemories, editing, notify }: {
   back: () => void; memories: Memory[]; setMemories: (v: Memory[]) => void; editing: Memory | null; notify: (s: string) => void;
 }) {
+  const { t, language } = useLanguage();
   const [text, setText] = useState(editing?.text || "");
   const [category, setCategory] = useState(editing?.category || "");
   const [active, setActive] = useState(editing?.active ?? true);
   const [kind, setKind] = useState<"text" | "image">(editing?.kind || "text");
   const [imageSelected, setImageSelected] = useState(editing?.kind === "image");
   const save = () => {
-    const item: Memory = { id: editing?.id || Date.now(), text: text || "A special image memory", category: category || undefined, active, kind, imageTone: kind === "image" ? "forest" : undefined, reason: editing?.reason || "You added this directly to your Memory Vault." };
+    const item: Memory = { id: editing?.id || Date.now(), text: text || (language === "Bahasa Melayu" ? "Memori imej istimewa" : language === "中文" ? "特别的心情照片" : "A special image memory"), category: category || undefined, active, kind, imageTone: kind === "image" ? "forest" : undefined, reason: editing?.reason || (language === "Bahasa Melayu" ? "Anda menambah ini terus ke Kubah Memori anda." : language === "中文" ? "您直接将其添加到了记忆宝库中。" : "You added this directly to your Memory Vault.") };
     setMemories(editing ? memories.map((memory) => memory.id === editing.id ? item : memory) : [item, ...memories]);
-    notify(editing ? "Memory updated" : "Memory added to your Vault");
+    notify(editing ? t.memory_updated_toast : t.memory_added_toast);
     back();
   };
-  return <><PageHeader title={editing ? "Edit memory" : "Add memory"} subtitle="Only save what feels helpful" back={back} /><section className="page-pad">
-    <div className="help-hero"><Icon name="memory" /><div><h2>You decide what stays.</h2><p>ONY can only use this memory while the switch below is on.</p></div></div>
-    <div className="memory-type"><Button variant={kind === "text" ? "primary" : "secondary"} onClick={() => setKind("text")}>Text Memory</Button><Button variant={kind === "image" ? "primary" : "secondary"} onClick={() => setKind("image")}>Image Memory</Button></div>
-    {kind === "image" && <button className={`image-upload ${imageSelected ? "selected" : ""}`} onClick={() => { setImageSelected(true); notify("Photo selected for memory"); }}>{imageSelected ? <><span className="sample-photo"><i /></span><strong>Forest walk.jpg</strong><small>Tap to change image</small></> : <><Icon name="market" /><strong>Select an image</strong><small>Attach a calming photo from your gallery</small></>}</button>}
-    <label className="field-label">{kind === "text" ? "What should ONY remember?" : "Caption (optional)"}</label><TextArea rows={kind === "text" ? 5 : 3} value={text} onChange={(e) => setText(e.target.value)} placeholder={kind === "text" ? "For example: I feel calmer when I listen to music." : "A quiet walk that made me feel grounded."} />
-    <label className="field-label">Category</label><div className="chips memory-categories">{["About Me", "Preferences", "Important People", "Goals", "Things That Help Me", "Special Memories"].map((item) => <Button key={item} variant={category === item ? "primary" : "secondary"} onClick={() => setCategory(item)}>{item}</Button>)}</div>
-    <div className="setting-toggle"><div><strong>Allow ONY to use this</strong><p>Applies to future companion conversations.</p></div><Toggle on={active} setOn={setActive} /></div>
-    <Button className="full" disabled={kind === "text" ? !text.trim() : !imageSelected} onClick={save}>Save memory</Button><Button className="full" variant="secondary" onClick={back}>Cancel</Button>
+  return <><PageHeader title={editing ? t.memory_edit_title : t.memory_add_title} subtitle={t.memory_add_sub} back={back} /><section className="page-pad">
+    <div className="help-hero"><Icon name="memory" /><div><h2>{t.memory_hero_title}</h2><p>{t.memory_hero_desc}</p></div></div>
+    <div className="memory-type"><Button variant={kind === "text" ? "primary" : "secondary"} onClick={() => setKind("text")}>{t.memory_kind_text}</Button><Button variant={kind === "image" ? "primary" : "secondary"} onClick={() => setKind("image")}>{t.memory_kind_image}</Button></div>
+    {kind === "image" && <button className={`image-upload ${imageSelected ? "selected" : ""}`} onClick={() => { setImageSelected(true); notify(t.memory_kind_image); }}>{imageSelected ? <><span className="sample-photo"><i /></span><strong>Forest walk.jpg</strong><small>{t.memory_change_image}</small></> : <><Icon name="market" /><strong>{t.memory_select_image}</strong><small>{t.memory_select_image_sub}</small></>}</button>}
+    <label className="field-label">{kind === "text" ? t.memory_what_should_remember : t.memory_caption_label}</label><TextArea rows={kind === "text" ? 5 : 3} value={text} onChange={(e) => setText(e.target.value)} placeholder={kind === "text" ? t.memory_text_placeholder : t.memory_image_placeholder} />
+    <label className="field-label">{t.memory_category_label}</label><div className="chips memory-categories">{["About Me", "Preferences", "Important People", "Goals", "Things That Help Me", "Special Memories"].map((item) => <Button key={item} variant={category === item ? "primary" : "secondary"} onClick={() => setCategory(item)}>{getCategoryLabel(item, language)}</Button>)}</div>
+    <div className="setting-toggle"><div><strong>{t.memory_allow_use}</strong><p>{t.memory_allow_use_sub}</p></div><Toggle on={active} setOn={setActive} /></div>
+    <Button className="full" disabled={kind === "text" ? !text.trim() : !imageSelected} onClick={save}>{t.memory_save_btn}</Button><Button className="full" variant="secondary" onClick={back}>{t.common_cancel}</Button>
   </section></>;
 }
 
-function formatFriendlyTime(isoString: string): string {
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return "Recently";
-    const now = Date.now();
-    const diff = (now - d.getTime()) / 1000;
-    if (diff < 60) return "Just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "Recently";
-  }
-}
+
 
 function Community({
   navigate,
@@ -2736,7 +2867,7 @@ function Community({
   mySupportMessages?: FirestoreCommunityMessage[];
   setMySupportMessages?: React.Dispatch<React.SetStateAction<FirestoreCommunityMessage[]>>;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"globe" | "posts" | "myNode">(() => {
@@ -2828,9 +2959,21 @@ function Community({
     if (sendingSampleToMe) return;
     setSendingSampleToMe(true);
     const sampleNotes = [
-      "Sending you a quiet moment of peace from across the globe. Whatever you are carrying today, you don’t have to carry it alone 🌱",
-      "Hey there traveler—just wanted to remind you to rest your shoulders, unclench your jaw, and take one slow breath. You’re doing enough 💫",
-      "Saw your light on the globe and wanted to send some warmth your way. Hope something gentle makes you smile today ☕",
+      language === "Bahasa Melayu"
+        ? "Menghantar detik kedamaian yang hening merentasi glob. Apa sahaja yang anda pikul hari ini, anda tidak perlu laluinya seorang diri 🌱"
+        : language === "中文"
+        ? "从星球的另一端为您送上一份安静的平和。无论今天背负着什么，你都不必独自承担 🌱"
+        : "Sending you a quiet moment of peace from across the globe. Whatever you are carrying today, you don’t have to carry it alone 🌱",
+      language === "Bahasa Melayu"
+        ? "Hai pengembara—hanya ingin mengingatkan anda untuk merehatkan bahu, melepaskan rahang, dan menarik satu nafas perlahan. Anda telah mencuba yang terbaik 💫"
+        : language === "中文"
+        ? "嘿，同路的旅人——只是想提醒你放松紧绷的双肩，松开咬紧的下颌，深呼吸一次。你已经做得足够好了 💫"
+        : "Hey there traveler—just wanted to remind you to rest your shoulders, unclench your jaw, and take one slow breath. You’re doing enough 💫",
+      language === "Bahasa Melayu"
+        ? "Melihat cahaya anda di glob dan ingin mengirimkan sedikit kehangatan kepada anda. Semoga ada perkara lembut yang membuatkan anda tersenyum hari ini ☕"
+        : language === "中文"
+        ? "在星球上看见了你发出的微光，想送去一份温暖。愿今天有些温柔的小事能让你嘴角微扬 ☕"
+        : "Saw your light on the globe and wanted to send some warmth your way. Hope something gentle makes you smile today ☕",
     ];
     const randomText = sampleNotes[Math.floor(Math.random() * sampleNotes.length)];
     const randomSenderNum = Math.floor(100 + Math.random() * 899);
@@ -2839,8 +2982,8 @@ function Community({
       toUserId: "0",
       toUserMood: myMoodLabel,
       fromUserId: `community_member_${randomSenderNum}`,
-      senderAnonymous: `Anonymous Member #${randomSenderNum}`,
-      recipientAnonymous: "You (Anonymous Traveler)",
+      senderAnonymous: language === "Bahasa Melayu" ? `Ahli Tanpa Nama #${randomSenderNum}` : language === "中文" ? `匿名成员 #${randomSenderNum}` : `Anonymous Member #${randomSenderNum}`,
+      recipientAnonymous: language === "Bahasa Melayu" ? "Anda (Pengembara Tanpa Nama)" : language === "中文" ? "您（匿名同行者）" : "You (Anonymous Traveler)",
       kind: "text",
       text: randomText,
       createdAt: now,
@@ -2849,20 +2992,32 @@ function Community({
     try {
       const id = await createCommunityMessage(payload);
       setMySupportMessages((prev) => [{ id: id || `msg_${Date.now()}`, ...payload }, ...prev]);
-      notify(`New support message received from Anonymous Member #${randomSenderNum} 🌱`);
+      notify(language === "Bahasa Melayu" ? `Mesej sokongan baharu diterima daripada Ahli Tanpa Nama #${randomSenderNum} 🌱` : language === "中文" ? `收到来自匿名成员 #${randomSenderNum} 的暖心留言 🌱` : `New support message received from Anonymous Member #${randomSenderNum} 🌱`);
     } catch {
       setMySupportMessages((prev) => [{ id: `local_${Date.now()}`, ...payload }, ...prev]);
-      notify(`New support message received from Anonymous Member #${randomSenderNum} 🌱`);
+      notify(language === "Bahasa Melayu" ? `Mesej sokongan baharu diterima daripada Ahli Tanpa Nama #${randomSenderNum} 🌱` : language === "中文" ? `收到来自匿名成员 #${randomSenderNum} 的暖心留言 🌱` : `New support message received from Anonymous Member #${randomSenderNum} 🌱`);
     } finally {
       setSendingSampleToMe(false);
     }
   };
 
   const regions = [
-    { label: "World", note: "Discoverable anonymous members across broad, privacy-safe regions" },
-    { label: "Malaysia", note: "Approximate country view; no precise user locations" },
-    { label: "Selangor", note: "Approximate state view with more discoverable members" },
-    { label: "Petaling district", note: "Broad regional area; never an exact address" },
+    {
+      label: language === "Bahasa Melayu" ? "Dunia" : language === "中文" ? "全球" : "World",
+      note: language === "Bahasa Melayu" ? "Ahli tanpa nama yang boleh ditemui merentasi kawasan luas dan selamat privasi" : language === "中文" ? "跨越广阔安全大区的匿名成员" : "Discoverable anonymous members across broad, privacy-safe regions",
+    },
+    {
+      label: language === "Bahasa Melayu" ? "Malaysia" : language === "中文" ? "马来西亚" : "Malaysia",
+      note: language === "Bahasa Melayu" ? "Paparan anggaran negara; tiada lokasi tepat pengguna" : language === "中文" ? "全国概览视图；绝不公开精确坐标" : "Approximate country view; no precise user locations",
+    },
+    {
+      label: language === "Bahasa Melayu" ? "Selangor" : language === "中文" ? "雪兰莪" : "Selangor",
+      note: language === "Bahasa Melayu" ? "Paparan negeri anggaran dengan lebih ramai ahli yang boleh ditemui" : language === "中文" ? "州属概览视图，发现更多同行伙伴" : "Approximate state view with more discoverable members",
+    },
+    {
+      label: language === "Bahasa Melayu" ? "Daerah Petaling" : language === "中文" ? "八打灵区" : "Petaling district",
+      note: language === "Bahasa Melayu" ? "Kawasan wilayah luas; bukan alamat tepat" : language === "中文" ? "宽泛大区视图；绝非具体门牌住址" : "Broad regional area; never an exact address",
+    },
   ];
   const region = regions[regionLevel];
   const drag = useRef({ active: false, moved: false, x: 0, rotation: 0 });
@@ -2889,7 +3044,7 @@ function Community({
   const visibleUsers = normalizedGlobeUsers.filter((user) => user.discoverable && user.minLevel <= regionLevel);
   const selectedUser = normalizedGlobeUsers.find((user) => user.id === selectedNode) || null;
   const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title={t.community_title} subtitle={t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">Syncing…</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className="page-pad community-page">
+  return <><PageHeader title={t.community_title} subtitle={t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className="page-pad community-page">
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
@@ -2900,9 +3055,9 @@ function Community({
         <div className="world-copy">
           <span className="eyebrow">{t.community_discoverable_eyebrow}</span>
           <div className="region-breadcrumb">{regions.slice(0, regionLevel + 1).map((item, index) => <span key={item.label}>{index > 0 && "›"} {item.label}</span>)}</div>
-          <h2>{region.label}</h2><p>{region.note}. Tap your glowing node ("You") or any member node to connect.</p>
+          <h2>{region.label}</h2><p>{region.note}. {language === "Bahasa Melayu" ? "Ketik nod bercahaya anda (\"Anda\") atau mana-mana nod ahli untuk berhubung." : language === "中文" ? "轻点您发光的节点（\"您\"）或任意成员节点即可互动连结。" : "Tap your glowing node (\"You\") or any member node to connect."}</p>
         </div>
-        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>{t.community_zoom_out}</Button><span>{visibleUsers.length} discoverable nodes</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>{t.community_zoom_in}</Button></div>
+        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>{t.community_zoom_out}</Button><span>{visibleUsers.length} {t.community_nodes_count}</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>{t.community_zoom_in}</Button></div>
         {regionLevel > 0 && <Button variant="ghost" className="back-world" onClick={() => { setRegionLevel(0); setSelectedNode(null); }}>{t.community_back_world}</Button>}
         <div className="globe-stage"><div className={`globe globe-level-${regionLevel}`} aria-label={`Interactive user globe for ${region.label}`} style={{ backgroundPosition: `${rotation * 1.4}px center` }} onPointerDown={(event) => { drag.current = { active: true, moved: false, x: event.clientX, rotation }; if (!(event.target as HTMLElement).closest(".globe-node")) event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (drag.current.active) { const distance = event.clientX - drag.current.x; if (Math.abs(distance) > 5) drag.current.moved = true; setRotation(drag.current.rotation + distance * .7); } }} onPointerUp={() => { drag.current.active = false; }} onPointerCancel={() => { drag.current.active = false; }}><i className="orbit one" /><i className="orbit two" />{visibleUsers.map((user) => {
           const isMeNode = Boolean(user.isMe || user.id === 0);
@@ -2912,7 +3067,7 @@ function Community({
           const y = 50 - user.lat * .48;
           return (
             <button
-              aria-label={isMeNode ? `Your anonymous node, mood glow ${user.moodLabel}` : `Anonymous member node, mood glow ${user.moodLabel}`}
+              aria-label={isMeNode ? `${t.community_you_node}, mood glow ${user.moodLabel}` : `Anonymous member node, mood glow ${user.moodLabel}`}
               key={user.id}
               className={`globe-node mood-${user.moodGlow} ${isMeNode ? "is-me" : ""} ${selectedNode === user.id ? "selected" : ""}`}
               style={{ left: `${x}%`, top: `${y}%`, opacity: depth < -.2 ? .38 : depth * .35 + .65, transform: "translate(-50%, -50%)", zIndex: isMeNode ? 45 : Math.round((depth + 1) * 10) }}
@@ -2928,16 +3083,22 @@ function Community({
               <span />
             </button>
           );
-        })}</div><span className="rotate-hint">Drag to pan · Tap "You" to view support messages sent to your node</span></div>
+        })}</div><span className="rotate-hint">{t.community_globe_pan_hint}</span></div>
 
         {selectedUser && (selectedUser.isMe || selectedUser.id === 0 ? (
           <div className="node-card user-node-card">
             <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
             <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="prototype-label">Your Anonymous Node · Malaysia</span>
+            <span className="prototype-label">{language === "Bahasa Melayu" ? "Nod Tanpa Nama Anda · Malaysia" : language === "中文" ? "您的匿名节点 · 马来西亚" : "Your Anonymous Node · Malaysia"}</span>
             <strong>{t.community_your_light}</strong>
             <p>
-              Others see your anonymous mood check-in ({selectedUser.moodLabel.toLowerCase()}) with zero personal identity or exact location. You have <strong>{mySupportMessages.length}</strong> support {mySupportMessages.length === 1 ? "message" : "messages"} from others.
+              {language === "Bahasa Melayu"
+                ? `Ahli lain melihat daftar masuk emosi tanpa nama anda (${selectedUser.moodLabel.toLowerCase()}) tanpa identiti peribadi atau lokasi tepat. Anda mempunyai `
+                : language === "中文"
+                ? `其他人仅能看到您的匿名心情状态（${selectedUser.moodLabel.toLowerCase()}），零个人身份或具体位置暴露。您已收到来自同伴的 `
+                : `Others see your anonymous mood check-in (${selectedUser.moodLabel.toLowerCase()}) with zero personal identity or exact location. You have `}
+              <strong>{mySupportMessages.length}</strong>{" "}
+              {language === "Bahasa Melayu" ? "mesej sokongan daripada orang lain." : language === "中文" ? "条暖心留言。" : mySupportMessages.length === 1 ? "support message from others." : "support messages from others."}
             </p>
             <div>
               <Button onClick={() => setView("myNode")}>{t.community_view_support_sent} ({mySupportMessages.length})</Button>
@@ -2948,32 +3109,37 @@ function Community({
           <div className="node-card user-node-card">
             <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
             <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="prototype-label">Anonymous Member</span>
-            <strong>Someone is here</strong>
-            <p>The light reflects an optional mood check-in: {selectedUser.moodLabel.toLowerCase()}. No personal identity or precise location is shared.</p>
-            {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />This member is visible but is not receiving supportive messages right now.</div>}
+            <span className="prototype-label">{language === "Bahasa Melayu" ? "Ahli Tanpa Nama" : language === "中文" ? "匿名成员" : "Anonymous Member"}</span>
+            <strong>{t.community_someone_here}</strong>
+            <p>
+              {language === "Bahasa Melayu"
+                ? `Cahaya ini menggambarkan daftar masuk emosi pilihan: ${selectedUser.moodLabel.toLowerCase()}. Tiada identiti peribadi atau lokasi tepat dikongsi.`
+                : language === "中文"
+                ? `微光反映可选的心情状态：${selectedUser.moodLabel.toLowerCase()}。绝不共享任何个人身份或精确位置。`
+                : `The light reflects an optional mood check-in: ${selectedUser.moodLabel.toLowerCase()}. No personal identity or precise location is shared.`}
+            </p>
+            {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />{language === "Bahasa Melayu" ? "Ahli ini kelihatan tetapi tidak menerima mesej sokongan buat masa ini." : language === "中文" ? "该成员目前可见，但暂时关闭了接收支持留言。" : "This member is visible but is not receiving supportive messages right now."}</div>}
             <div>
-              {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>Send Support</Button> : <Button disabled>Support messages off</Button>}
-              <Button variant="ghost" onClick={() => notify("Thank you for reporting. This member node has been sent for moderation review.")}>Report</Button>
-              <Button variant="ghost" onClick={() => { notify("Anonymous member blocked in this session"); setSelectedNode(null); }}>Block</Button>
+              {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>{t.community_receive_support}</Button> : <Button disabled>{language === "Bahasa Melayu" ? "Mesej sokongan dimatikan" : language === "中文" ? "支持留言已关闭" : "Support messages off"}</Button>}
+              <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih atas laporan anda. Nod ahli ini telah dihantar untuk semakan moderasi." : language === "中文" ? "感谢您的反馈。该成员节点已提交社区审核。" : "Thank you for reporting. This member node has been sent for moderation review.")}>{t.common_report}</Button>
+              <Button variant="ghost" onClick={() => { notify(language === "Bahasa Melayu" ? "Ahli tanpa nama disekat dalam sesi ini" : language === "中文" ? "已在此会话中屏蔽该匿名成员" : "Anonymous member blocked in this session"); setSelectedNode(null); }}>{t.common_block}</Button>
             </div>
           </div>
         ))}
-        <div className="world-legend mood-legend"><span><i className="bright" />Higher mood</span><span><i className="soft" />Okay</span><span><i className="dim" />Lower mood</span><span><i className="neutral" />No check-in</span><Button variant="ghost" onClick={() => navigate("guidelines")}>Guidelines</Button></div>
+        <div className="world-legend mood-legend"><span><i className="bright" />{t.community_mood_higher}</span><span><i className="soft" />{t.community_mood_okay}</span><span><i className="dim" />{t.community_mood_lower}</span><span><i className="neutral" />{t.community_mood_none}</span><Button variant="ghost" onClick={() => navigate("guidelines")}>{t.community_guidelines_btn}</Button></div>
       </div>
-      <div className="globe-privacy-settings"><div><strong>Appear on the globe</strong><p>When off, your anonymous light is hidden from the globe.</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
-      <div className="globe-privacy-settings"><div><strong>Receive supportive messages</strong><p>When on, other community members can send anonymous encouragement to your node.</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
-      <div className="location-choice"><strong>Broad Regional Discovery</strong><p>ONY protects your privacy. We only use broad state or district regions, never precise GPS addresses.</p>{locationChoice === "none" && <div><Button onClick={() => setLocationChoice("allowed")}>Enable Regional Area</Button><Button variant="secondary" onClick={() => setLocationChoice("declined")}>Enter Area Manually</Button></div>}{locationChoice === "allowed" && <div className="form-success"><Icon name="check" />Regional area set to Malaysia (Central / Klang Valley).</div>}{locationChoice === "declined" && <div className="folder-create"><TextInput value={manualArea} onChange={(event) => setManualArea(event.target.value)} placeholder="e.g. Petaling Jaya, Penang, Johor Bahru" /><Button disabled={!manualArea.trim()} onClick={() => notify(`Regional area set to ${manualArea}`)}>Set Area</Button></div>}</div>
-      <div className="community-note"><Icon name="shield" />All members and message delivery are anonymous. Nodes never reveal real-world addresses.</div>
+      <div className="globe-privacy-settings"><div><strong>{t.community_appear_globe}</strong><p>{t.community_appear_globe_desc}</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
+      <div className="globe-privacy-settings"><div><strong>{t.community_receive_support}</strong><p>{t.community_receive_support_desc}</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
+      <div className="location-choice"><strong>{t.community_regional_discovery}</strong><p>{t.community_regional_desc}</p>{locationChoice === "none" && <div><Button onClick={() => setLocationChoice("allowed")}>{t.community_enable_area}</Button><Button variant="secondary" onClick={() => setLocationChoice("declined")}>{t.community_manual_area}</Button></div>}{locationChoice === "allowed" && <div className="form-success"><Icon name="check" />{language === "Bahasa Melayu" ? "Kawasan serantau ditetapkan ke Malaysia (Lembah Klang / Pusat)." : language === "中文" ? "区域已设为马来西亚（中部 / 巴生谷）。" : "Regional area set to Malaysia (Central / Klang Valley)."}</div>}{locationChoice === "declined" && <div className="folder-create"><TextInput value={manualArea} onChange={(event) => setManualArea(event.target.value)} placeholder={t.community_area_placeholder} /><Button disabled={!manualArea.trim()} onClick={() => notify(`${language === "Bahasa Melayu" ? "Kawasan serantau ditetapkan ke" : language === "中文" ? "已将大区设为" : "Regional area set to"} ${manualArea}`)}>{t.community_set_area}</Button></div>}</div>
+      <div className="community-note"><Icon name="shield" />{t.community_safety_note}</div>
     </>}
     {view === "posts" && <>
-      <div className="posts-heading"><div><span className="eyebrow">Community posts</span><h2>Shared gently, together.</h2></div><Button variant="ghost" onClick={() => setView("globe")}>Back to globe</Button></div>
-      <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search posts or topics" /></div>
-      <div className="scroll-chips">{categories.map((x) => <Button key={x} variant={filter === x ? "primary" : "secondary"} onClick={() => setFilter(x)}>{x}</Button>)}</div>
+      <div className="posts-heading"><div><span className="eyebrow">{t.community_posts_heading}</span><h2>{language === "Bahasa Melayu" ? "Berkongsi dengan lembut, bersama-sama." : language === "中文" ? "轻柔分享，一路相伴。" : "Shared gently, together."}</h2></div><Button variant="ghost" onClick={() => setView("globe")}>{t.community_back_globe}</Button></div>
+      <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.community_search_posts} /></div>
+      <div className="scroll-chips">{categories.map((x) => <Button key={x} variant={filter === x ? "primary" : "secondary"} onClick={() => setFilter(x)}>{getCategoryLabel(x, language)}</Button>)}</div>
       <div className="feed">{shown.map((post) => {
         const likeList = Array.isArray(post.likeRecords) ? post.likeRecords : [];
         const commentList = Array.isArray(post.comments) ? post.comments : [];
-        const totalReplies = commentList.reduce((acc, c) => acc + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
         const likedByMe = likeList.some(
           (l) =>
             l.userId === currentUid ||
@@ -2985,27 +3151,27 @@ function Community({
               <span className="mini-avatar">{post.author[0]}</span>
               <div>
                 <strong>{post.author}</strong>
-                <small>{post.category} · {formatFriendlyTime(post.createdAt)}</small>
+                <small>{getCategoryLabel(post.category, language)} · {formatFriendlyTime(post.createdAt, language)}</small>
               </div>
-              <Button variant="ghost" onClick={() => notify("Thank you. Post flagged for community moderation.")}>Report</Button>
+              <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Siaran ditandakan untuk moderasi komuniti." : language === "中文" ? "感谢反馈。帖子已提交社区审核。" : "Thank you. Post flagged for community moderation.")}>{t.common_report}</Button>
             </div>
             <button className="post-open" onClick={() => openPost(post)}>
               <h3>{post.title}</h3>
               <p>{post.body}</p>
             </button>
             {post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}
-            {post.media === "image" && <div className="post-image"><span>Shared calming image</span></div>}
+            {post.media === "image" && <div className="post-image"><span>{t.community_calm_image}</span></div>}
             <div className="post-actions">
               <Button
                 variant={likedByMe ? "primary" : "ghost"}
                 onClick={() => onLikePost && onLikePost(post.id)}
               >
                 <Icon name="heart" />
-                {likedByMe ? "Liked" : "Like"} ({post.likes})
+                {likedByMe ? (language === "Bahasa Melayu" ? "Disukai" : language === "中文" ? "已赞" : "Liked") : (language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "点赞" : "Like")} ({post.likes})
               </Button>
               <Button variant="ghost" onClick={() => openPost(post)}>
                 <Icon name="chat" />
-                {commentList.length} {commentList.length === 1 ? "comment" : "comments"}
+                {commentList.length} {language === "Bahasa Melayu" ? "komen" : language === "中文" ? "条评论" : commentList.length === 1 ? "comment" : "comments"}
               </Button>
             </div>
           </article>
@@ -3015,29 +3181,29 @@ function Community({
     {view === "myNode" && <>
       <div className="posts-heading">
         <div>
-          <span className="eyebrow">Your Personal Globe Node</span>
-          <h2>Support Sent to You</h2>
+          <span className="eyebrow">{language === "Bahasa Melayu" ? "Nod Glob Peribadi Anda" : language === "中文" ? "您的专属星球节点" : "Your Personal Globe Node"}</span>
+          <h2>{t.community_support_sent_to_you}</h2>
         </div>
-        <Button variant="ghost" onClick={fetchMySupportMessages}>{loadingMyMessages ? "Refreshing…" : "Refresh"}</Button>
+        <Button variant="ghost" onClick={fetchMySupportMessages}>{loadingMyMessages ? (language === "Bahasa Melayu" ? "Menyegarkan…" : language === "中文" ? "刷新中…" : "Refreshing…") : (language === "Bahasa Melayu" ? "Segarkan" : language === "中文" ? "刷新" : "Refresh")}</Button>
       </div>
 
       <div className="my-node-card">
         <div className="my-node-card-header">
           <div className="my-node-beacon-large">{latestMood ? latestMood.emoji : "🌱"}</div>
           <div style={{ flex: 1 }}>
-            <span className="prototype-label">Your Anonymous Light · Node #0</span>
-            <h2>You on the Community Globe</h2>
-            <p>Only messages sent by other community members to your node appear here.</p>
+            <span className="prototype-label">{language === "Bahasa Melayu" ? "Cahaya Tanpa Nama Anda · Nod #0" : language === "中文" ? "您的匿名微光 · 节点 #0" : "Your Anonymous Light · Node #0"}</span>
+            <h2>{language === "Bahasa Melayu" ? "Anda di Glob Komuniti" : language === "中文" ? "社区星球上的您" : "You on the Community Globe"}</h2>
+            <p>{t.community_my_node_desc}</p>
           </div>
         </div>
         <div className="my-node-stats-row">
           <div className="my-node-stat-box">
-            <label>Your Current Mood Glow</label>
-            <strong>{myMoodLabel} ({discoverable ? "Visible on Globe" : "Hidden"})</strong>
+            <label>{t.community_current_glow}</label>
+            <strong>{myMoodLabel} ({discoverable ? (language === "Bahasa Melayu" ? "Kelihatan di Glob" : language === "中文" ? "星球上可见" : "Visible on Globe") : (language === "Bahasa Melayu" ? "Tersembunyi" : language === "中文" ? "已隐藏" : "Hidden")})</strong>
           </div>
           <div className="my-node-stat-box">
-            <label>Support Received from Others</label>
-            <strong>{mySupportMessages.length} {mySupportMessages.length === 1 ? "message" : "messages"}</strong>
+            <label>{t.community_support_received}</label>
+            <strong>{mySupportMessages.length} {language === "Bahasa Melayu" ? "mesej" : language === "中文" ? "条鼓励" : mySupportMessages.length === 1 ? "message" : "messages"}</strong>
           </div>
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -3046,7 +3212,7 @@ function Community({
             onClick={handleSimulateIncomingSupport}
             disabled={sendingSampleToMe || !acceptMessages}
           >
-            {sendingSampleToMe ? "Receiving…" : "+ Receive Encouragement from Member"}
+            {sendingSampleToMe ? (language === "Bahasa Melayu" ? "Menerima…" : language === "中文" ? "接收中…" : "Receiving…") : (language === "Bahasa Melayu" ? "+ Terima Kata Semangat daripada Ahli" : language === "中文" ? "+ 接收来自成员的暖心鼓励" : "+ Receive Encouragement from Member")}
           </Button>
           <Button
             variant="ghost"
@@ -3055,17 +3221,17 @@ function Community({
               setView("globe");
             }}
           >
-            Locate My Node on Globe
+            {t.community_locate_globe}
           </Button>
         </div>
       </div>
 
       {loadingMyMessages ? (
-        <div className="empty mini-empty"><Icon name="chat" /><p>Loading support messages sent to your node…</p></div>
+        <div className="empty mini-empty"><Icon name="chat" /><p>{language === "Bahasa Melayu" ? "Memuatkan mesej sokongan ke nod anda…" : language === "中文" ? "正在加载发送给您节点的温暖留言…" : "Loading support messages sent to your node…"}</p></div>
       ) : mySupportMessages.length === 0 ? (
         <div className="empty mini-empty">
           <Icon name="chat" />
-          <p>No support messages sent to your node yet. Make sure "Receive supportive messages" is enabled on the Globe!</p>
+          <p>{language === "Bahasa Melayu" ? "Belum ada mesej sokongan dihantar ke nod anda. Pastikan \"Terima mesej sokongan\" diaktifkan di Glob!" : language === "中文" ? "暂无发送给您节点的支持留言。请确认已在星球开启“接收支持留言”！" : "No support messages sent to your node yet. Make sure \"Receive supportive messages\" is enabled on the Globe!"}</p>
         </div>
       ) : (
         <div className="community-thread my-node-bubble-list">
@@ -3076,9 +3242,9 @@ function Community({
               </div>
               <div className="support-bubble-col">
                 <div className="support-bubble-meta">
-                  <strong>{msg.senderAnonymous || "Anonymous Traveler"}</strong>
-                  <span className="to-you-pill">To You</span>
-                  <small>{formatFriendlyTime(msg.createdAt)}</small>
+                  <strong>{msg.senderAnonymous || (language === "Bahasa Melayu" ? "Pengembara Tanpa Nama" : language === "中文" ? "匿名旅人" : "Anonymous Traveler")}</strong>
+                  <span className="to-you-pill">{language === "Bahasa Melayu" ? "Kepada Anda" : language === "中文" ? "写给您" : "To You"}</span>
+                  <small>{formatFriendlyTime(msg.createdAt, language)}</small>
                 </div>
                 <div className="support-bubble member">
                   {msg.kind === "text" ? (
@@ -3109,6 +3275,7 @@ function CreatePost({
   currentUid?: string;
   onPostCreated?: (post: Omit<FirestoreCommunityPost, "id">) => Promise<void>;
 }) {
+  const { t, language } = useLanguage();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [category, setCategory] = useState("General");
@@ -3140,9 +3307,9 @@ function CreatePost({
       const sample = await generateSampleVoiceAudio(10);
       setRecordedAudio(sample);
       setMicError(null);
-      notify("Voice note attached · 00:10");
+      notify(language === "Bahasa Melayu" ? "Nota suara dilampirkan · 00:10" : language === "中文" ? "已附加语音留言 · 00:10" : "Voice note attached · 00:10");
     } catch {
-      notify("Could not attach voice note");
+      notify(language === "Bahasa Melayu" ? "Tidak dapat melampirkan nota suara" : language === "中文" ? "无法附加语音留言" : "Could not attach voice note");
     }
   };
 
@@ -3163,11 +3330,12 @@ function CreatePost({
         maxDurationSeconds: 120,
         onMaxDurationReached: () => handleStopRecording(),
       });
-      notify("Recording started · speak into your mic");
+      notify(language === "Bahasa Melayu" ? "Rakaman bermula · bercakap ke mikrofon anda" : language === "中文" ? "录音开始 · 请对麦克风倾诉" : "Recording started · speak into your mic");
     } catch (err: any) {
       setRecording(false);
-      setMicError(err.message || "Microphone access is restricted in this preview frame.");
-      notify(err.message || "Could not access microphone.");
+      const errMsg = err?.message || (language === "Bahasa Melayu" ? "Akses mikrofon terhad dalam bingkai pratonton ini." : language === "中文" ? "当前预览环境限制麦克风访问。" : "Microphone access is restricted in this preview frame.");
+      setMicError(errMsg);
+      notify(errMsg);
     }
   };
 
@@ -3177,9 +3345,9 @@ function CreatePost({
       setRecording(false);
       const res = await recorderRef.current.stop();
       setRecordedAudio(res);
-      notify("Voice note recorded");
+      notify(language === "Bahasa Melayu" ? "Nota suara dirakam" : language === "中文" ? "语音已录制完成" : "Voice note recorded");
     } catch {
-      notify("Failed to save audio recording");
+      notify(language === "Bahasa Melayu" ? "Gagal menyimpan rakaman audio" : language === "中文" ? "无法保存音频录音" : "Failed to save audio recording");
     }
   };
 
@@ -3197,7 +3365,7 @@ function CreatePost({
       previewAudioRef.current.play().then(() => {
         setIsPlayingPreview(true);
       }).catch(() => {
-        notify("Unable to play preview audio");
+        notify(language === "Bahasa Melayu" ? "Tidak dapat memainkan audio pratonton" : language === "中文" ? "无法播放预览音频" : "Unable to play preview audio");
       });
     }
   };
@@ -3212,13 +3380,13 @@ function CreatePost({
     setIsPlayingPreview(false);
   };
 
-  if (posted) return <div className="centered-state"><div className="success-mark"><Icon name="check" /></div><h1>Your post is live</h1><p>Thanks for sharing with care. It’s now saved in Cloud Firestore and visible in the community feed.</p><Button onClick={back}>Return to community</Button></div>;
-  return <><PageHeader title="Create a post" subtitle="Share kindly, at your pace" back={back} /><section className="page-pad">
-    <label className="field-label">Post as</label><div className="segmented"><Button variant={postAs === "ONY profile" ? "primary" : "secondary"} onClick={() => setPostAs("ONY profile")}>My ONY profile</Button><Button variant={postAs === "Anonymous" ? "primary" : "secondary"} onClick={() => setPostAs("Anonymous")}>Anonymous</Button></div>
-    <label className="field-label">Format</label><div className="segmented"><Button variant={media === "text" ? "primary" : "secondary"} onClick={() => setMedia("text")}>Text</Button><Button variant={media === "image" ? "primary" : "secondary"} onClick={() => setMedia("image")}>Image</Button><Button variant={media === "voice" ? "primary" : "secondary"} onClick={() => setMedia("voice")}>Voice</Button></div>
-    <label className="field-label">Title</label><TextInput value={title} onChange={(e) => { setTitle(e.target.value); setGuidelineError(null); }} placeholder="What would you like to share?" />
-    {media !== "voice" && <><label className="field-label">Your post</label><TextArea value={body} onChange={(e) => { setBody(e.target.value); setGuidelineError(null); }} rows={5} placeholder="Write what’s on your mind..." /></>}
-    {media === "image" && <button className="image-upload selected" onClick={() => notify("Image selected")}><span className="sample-photo sunset"><i /></span><strong>Sunset moment.jpg</strong><small>Tap to change image</small></button>}
+  if (posted) return <div className="centered-state"><div className="success-mark"><Icon name="check" /></div><h1>{t.community_post_live}</h1><p>{t.community_post_live_desc}</p><Button onClick={back}>{t.community_return_feed}</Button></div>;
+  return <><PageHeader title={t.community_create_post_title} subtitle={t.community_create_post_sub} back={back} /><section className="page-pad">
+    <label className="field-label">{t.community_post_as}</label><div className="segmented"><Button variant={postAs === "ONY profile" ? "primary" : "secondary"} onClick={() => setPostAs("ONY profile")}>{t.community_my_profile}</Button><Button variant={postAs === "Anonymous" ? "primary" : "secondary"} onClick={() => setPostAs("Anonymous")}>{language === "Bahasa Melayu" ? "Tanpa Nama" : language === "中文" ? "匿名" : "Anonymous"}</Button></div>
+    <label className="field-label">{t.community_format}</label><div className="segmented"><Button variant={media === "text" ? "primary" : "secondary"} onClick={() => setMedia("text")}>{t.community_text}</Button><Button variant={media === "image" ? "primary" : "secondary"} onClick={() => setMedia("image")}>{t.community_image}</Button><Button variant={media === "voice" ? "primary" : "secondary"} onClick={() => setMedia("voice")}>{t.community_voice}</Button></div>
+    <label className="field-label">{t.community_title_label}</label><TextInput value={title} onChange={(e) => { setTitle(e.target.value); setGuidelineError(null); }} placeholder={t.community_title_placeholder} />
+    {media !== "voice" && <><label className="field-label">{t.community_body_label}</label><TextArea value={body} onChange={(e) => { setBody(e.target.value); setGuidelineError(null); }} rows={5} placeholder={t.community_body_placeholder} /></>}
+    {media === "image" && <button className="image-upload selected" onClick={() => notify(t.community_image)}><span className="sample-photo sunset"><i /></span><strong>{language === "Bahasa Melayu" ? "Saat matahari terbenam.jpg" : language === "中文" ? "日落治愈时刻.jpg" : "Sunset moment.jpg"}</strong><small>{language === "Bahasa Melayu" ? "Ketik untuk menukar imej" : language === "中文" ? "轻点更换图片" : "Tap to change image"}</small></button>}
     {media === "voice" && (
       <div className="voice-record-card">
         {!recordedAudio ? (
@@ -3227,20 +3395,20 @@ function CreatePost({
               type="button"
               className={recording ? "recording" : ""}
               onClick={recording ? handleStopRecording : handleStartRecording}
-              aria-label={recording ? "Stop recording" : "Record voice message"}
+              aria-label={recording ? t.chat_voice_stop_speaking : t.community_record_voice}
             >
               <Icon name={recording ? "close" : "mic"} />
             </button>
             <div style={{ flex: 1 }}>
               <strong>
                 {recording
-                  ? `Recording · ${formatAudioDuration(recordingSeconds)}`
-                  : "Record voice message"}
+                  ? `${language === "Bahasa Melayu" ? "Merakam" : language === "中文" ? "录音中" : "Recording"} · ${formatAudioDuration(recordingSeconds)}`
+                  : t.community_record_voice}
               </strong>
               <small>
                 {recording
-                  ? "Tap stop when ready (up to 2 minutes)"
-                  : "Speak into your microphone gently"}
+                  ? t.community_record_hint
+                  : (language === "Bahasa Melayu" ? "Bercakap dengan tenang ke dalam mikrofon anda" : language === "中文" ? "轻声对着麦克风诉说即可" : "Speak into your microphone gently")}
               </small>
               {recording && (
                 <div className="voice-live-waves mini">
@@ -3254,18 +3422,18 @@ function CreatePost({
             </div>
             {recording ? (
               <Button variant="danger" onClick={handleStopRecording}>
-                Done
+                {t.common_done}
               </Button>
             ) : (
               <Button variant="secondary" onClick={handleUseVoiceSample} title="Attach an audio note">
-                Quick Audio Note
+                {t.community_quick_audio}
               </Button>
             )}
             {micError && (
               <div className="voice-mic-inline-help">
                 <small>{micError}</small>
                 <Button variant="secondary" onClick={handleUseVoiceSample}>
-                  Attach Voice Note (10s)
+                  {t.community_quick_audio} (10s)
                 </Button>
               </div>
             )}
@@ -3276,44 +3444,44 @@ function CreatePost({
               type="button"
               className="preview-play-btn"
               onClick={handleTogglePreview}
-              aria-label={isPlayingPreview ? "Pause preview" : "Play preview"}
+              aria-label={isPlayingPreview ? t.common_pause : t.common_play}
             >
               <Icon name={isPlayingPreview ? "pause" : "play"} />
             </button>
             <div>
-              <strong>Voice note ready · {formatAudioDuration(recordedAudio.duration)}</strong>
-              <small>Recorded with your mic</small>
+              <strong>{t.community_voice_ready} · {formatAudioDuration(recordedAudio.duration)}</strong>
+              <small>{language === "Bahasa Melayu" ? "Dirakam dengan mikrofon anda" : language === "中文" ? "已通过麦克风录制" : "Recorded with your mic"}</small>
             </div>
             <Button variant="ghost" onClick={handleTogglePreview}>
-              {isPlayingPreview ? "Pause" : "Play"}
+              {isPlayingPreview ? t.common_pause : t.common_play}
             </Button>
             <Button variant="ghost" onClick={handleDiscardRecording}>
-              Re-record
+              {t.community_re_record}
             </Button>
           </>
         )}
       </div>
     )}
-    <label className="field-label">Category</label><div className="chips">{categories.slice(1).map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => setCategory(x)}>{x}</Button>)}</div>
+    <label className="field-label">{language === "Bahasa Melayu" ? "Kategori" : language === "中文" ? "分类" : "Category"}</label><div className="chips">{categories.slice(1).map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => setCategory(x)}>{getCategoryLabel(x, language)}</Button>)}</div>
     {guidelineError && (
       <div className="form-error" role="alert">
         <Icon name="info" />
         <span>{guidelineError}</span>
       </div>
     )}
-    <div className="community-note"><Icon name="info" />Community guidelines and moderation apply. Profanity or unkind content is automatically blocked.</div>
+    <div className="community-note"><Icon name="info" />{t.community_mod_notice}</div>
     <Button className="full" disabled={submitting || !title || (media === "text" && !body) || (media === "voice" && !recordedAudio)} onClick={async () => {
       const titleCheck = validateCommunityCommentText(title);
       if (!titleCheck.valid) {
         setGuidelineError(titleCheck.reason || "Title violates community guidelines.");
-        notify("Post blocked: violates community guidelines");
+        notify(language === "Bahasa Melayu" ? "Siaran disekat: melanggar garis panduan komuniti" : language === "中文" ? "发帖已拦截：违反社区准则" : "Post blocked: violates community guidelines");
         return;
       }
       if (body.trim()) {
         const bodyCheck = validateCommunityCommentText(body);
         if (!bodyCheck.valid) {
           setGuidelineError(bodyCheck.reason || "Post content violates community guidelines.");
-          notify("Post blocked: violates community guidelines");
+          notify(language === "Bahasa Melayu" ? "Siaran disekat: melanggar garis panduan komuniti" : language === "中文" ? "发帖已拦截：违反社区准则" : "Post blocked: violates community guidelines");
           return;
         }
       }
@@ -3338,7 +3506,7 @@ function CreatePost({
         setSubmitting(false);
       }
       setPosted(true);
-    }}>{submitting ? "Publishing to Firestore…" : "Publish post"}</Button></section></>;
+    }}>{submitting ? (language === "Bahasa Melayu" ? "Menerbitkan ke Firestore…" : language === "中文" ? "正在发布至 Firestore…" : "Publishing to Firestore…") : (language === "Bahasa Melayu" ? "Terbitkan siaran" : language === "中文" ? "发布帖子" : "Publish post")}</Button></section></>;
 }
 
 function VoiceNote({
@@ -3448,6 +3616,7 @@ function PostDetail({
   onLikePost?: (id: string) => void;
   onPostUpdated?: (updated: Post) => void;
 }) {
+  const { t, language } = useLanguage();
   const [comment, setComment] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -3636,8 +3805,8 @@ function PostDetail({
   return (
     <div className="post-detail-page">
       <PageHeader
-        title="Community post"
-        subtitle={`${post.category} · ${formatFriendlyTime(post.createdAt)}`}
+        title={t.community_post_detail_title}
+        subtitle={`${getCategoryLabel(post.category, language)} · ${formatFriendlyTime(post.createdAt, language)}`}
         back={back}
       />
       <section className="page-pad post-detail-scroll">
@@ -3647,12 +3816,12 @@ function PostDetail({
             <div>
               <strong>{post.author}</strong>
               <small>
-                {post.author === "Anonymous" ? "Identity kept private" : "ONY community profile"} ·{" "}
-                {formatFriendlyTime(post.createdAt)}
+                {post.author === "Anonymous" ? t.community_private_identity : t.community_profile_identity} ·{" "}
+                {formatFriendlyTime(post.createdAt, language)}
               </small>
             </div>
-            <Button variant="ghost" onClick={() => notify("Thank you. Post flagged for moderation review.")}>
-              Report
+            <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Siaran ditandakan untuk semakan moderasi." : language === "中文" ? "感谢反馈。帖子已提交审核。" : "Thank you. Post flagged for moderation review.")}>
+              {t.common_report}
             </Button>
           </div>
           <h1>{post.title}</h1>
@@ -3662,16 +3831,16 @@ function PostDetail({
           )}
           {post.media === "image" && (
             <div className="post-image detail">
-              <span>Shared calming image</span>
+              <span>{t.community_calm_image}</span>
             </div>
           )}
 
           <div className="post-detail-stats">
             <span>
-              {post.likes} {post.likes === 1 ? "like" : "likes"}
+              {post.likes} {language === "Bahasa Melayu" ? "suka" : language === "中文" ? "个赞" : post.likes === 1 ? "like" : "likes"}
             </span>
             <span>
-              {comments.length} {comments.length === 1 ? "comment" : "comments"}
+              {comments.length} {language === "Bahasa Melayu" ? "komen" : language === "中文" ? "条评论" : comments.length === 1 ? "comment" : "comments"}
             </span>
           </div>
 
@@ -3681,26 +3850,26 @@ function PostDetail({
               onClick={() => onLikePost && onLikePost(post.id)}
             >
               <Icon name="heart" />
-              {isPostLikedByMe ? "Liked" : "Like"} ({post.likes})
+              {isPostLikedByMe ? (language === "Bahasa Melayu" ? "Disukai" : language === "中文" ? "已赞" : "Liked") : (language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "点赞" : "Like")} ({post.likes})
             </Button>
             <Button
               variant="secondary"
               onClick={() => commentInputRef.current?.focus()}
             >
               <Icon name="chat" />
-              Comment ({comments.length})
+              {language === "Bahasa Melayu" ? "Komen" : language === "中文" ? "评论" : "Comment"} ({comments.length})
             </Button>
           </div>
         </article>
 
         <div className="comments-section">
           <div className="comments-section-header">
-            <h3>Comments ({comments.length})</h3>
+            <h3>{t.community_comments_title} ({comments.length})</h3>
           </div>
 
           {comments.length === 0 ? (
             <div className="empty mini-empty">
-              <p>No comments yet. Share a supportive note below.</p>
+              <p>{t.community_no_comments}</p>
             </div>
           ) : (
             comments.map((item) => {
@@ -3720,11 +3889,11 @@ function PostDetail({
                     <strong>
                       <span className="comment-author-wrap">
                         {item.userName}
-                        {isMine && <b className="you-badge">You</b>}
+                        {isMine && <b className="you-badge">{t.common_you}</b>}
                       </span>
                       <small>
-                        {formatFriendlyTime(item.createdAt)}
-                        {item.updatedAt ? " · edited" : ""}
+                        {formatFriendlyTime(item.createdAt, language)}
+                        {item.updatedAt ? ` · ${t.common_edited}` : ""}
                       </small>
                     </strong>
 
@@ -3737,7 +3906,7 @@ function PostDetail({
                             setEditingCommentText(e.target.value);
                             setEditingCommentError(null);
                           }}
-                          placeholder="Edit your comment…"
+                          placeholder={t.community_edit_comment_placeholder}
                         />
                         {editingCommentError && (
                           <div className="form-error" role="alert">
@@ -3751,7 +3920,7 @@ function PostDetail({
                             onClick={() => handleSaveEditedComment(item.id)}
                             disabled={!editingCommentText.trim()}
                           >
-                            Save
+                            {t.common_save}
                           </Button>
                           <Button
                             variant="secondary"
@@ -3760,7 +3929,7 @@ function PostDetail({
                               setEditingCommentError(null);
                             }}
                           >
-                            Cancel
+                            {t.common_cancel}
                           </Button>
                         </div>
                       </div>
@@ -3775,7 +3944,7 @@ function PostDetail({
                         onClick={() => handleToggleCommentLike(item.id)}
                       >
                         <Icon name="heart" />
-                        {likedByMe ? "Liked" : "Like"} ({commentLikes.length})
+                        {likedByMe ? (language === "Bahasa Melayu" ? "Disukai" : language === "中文" ? "已赞" : "Liked") : (language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "点赞" : "Like")} ({commentLikes.length})
                       </button>
 
                       <button
@@ -3792,7 +3961,7 @@ function PostDetail({
                           }
                         }}
                       >
-                        Reply ({replies.length})
+                        {language === "Bahasa Melayu" ? "Balas" : language === "中文" ? "回复" : "Reply"} ({replies.length})
                       </button>
 
                       {isMine && editingCommentId !== item.id && (
@@ -3806,14 +3975,14 @@ function PostDetail({
                               setEditingCommentError(null);
                             }}
                           >
-                            <Icon name="edit" /> Edit
+                            <Icon name="edit" /> {t.common_edit}
                           </button>
                           <button
                             type="button"
                             className="comment-action-btn danger"
                             onClick={() => handleDeleteComment(item.id)}
                           >
-                            <Icon name="trash" /> Delete
+                            <Icon name="trash" /> {t.common_delete}
                           </button>
                         </>
                       )}
@@ -3832,11 +4001,11 @@ function PostDetail({
                               <div className="comment-reply-head">
                                 <strong>
                                   {rep.userName}
-                                  {isMyReply && <b className="you-badge">You</b>}
+                                  {isMyReply && <b className="you-badge">{t.common_you}</b>}
                                 </strong>
                                 <small>
-                                  {formatFriendlyTime(rep.createdAt)}
-                                  {rep.updatedAt ? " · edited" : ""}
+                                  {formatFriendlyTime(rep.createdAt, language)}
+                                  {rep.updatedAt ? ` · ${t.common_edited}` : ""}
                                 </small>
                               </div>
 
@@ -3848,7 +4017,7 @@ function PostDetail({
                                       setEditingReplyText(e.target.value);
                                       setEditingReplyError(null);
                                     }}
-                                    placeholder="Edit your reply…"
+                                    placeholder={t.community_edit_reply_placeholder}
                                   />
                                   {editingReplyError && (
                                     <div className="form-error" role="alert">
@@ -3862,7 +4031,7 @@ function PostDetail({
                                       onClick={() => handleSaveEditedReply(item.id, rep.id)}
                                       disabled={!editingReplyText.trim()}
                                     >
-                                      Save
+                                      {t.common_save}
                                     </Button>
                                     <Button
                                       variant="secondary"
@@ -3871,7 +4040,7 @@ function PostDetail({
                                         setEditingReplyError(null);
                                       }}
                                     >
-                                      Cancel
+                                      {t.common_cancel}
                                     </Button>
                                   </div>
                                 </div>
@@ -3890,14 +4059,14 @@ function PostDetail({
                                       setEditingReplyError(null);
                                     }}
                                   >
-                                    <Icon name="edit" /> Edit
+                                    <Icon name="edit" /> {t.common_edit}
                                   </button>
                                   <button
                                     type="button"
                                     className="comment-action-btn danger"
                                     onClick={() => handleDeleteReply(item.id, rep.id)}
                                   >
-                                    <Icon name="trash" /> Delete
+                                    <Icon name="trash" /> {t.common_delete}
                                   </button>
                                 </div>
                               )}
@@ -3915,7 +4084,7 @@ function PostDetail({
                             setReplyText(e.target.value);
                             setReplyError(null);
                           }}
-                          placeholder={`Reply to ${item.userName}…`}
+                          placeholder={`${t.community_reply_to} ${item.userName}…`}
                         />
                         {replyError && (
                           <div className="form-error" role="alert">
@@ -3929,7 +4098,7 @@ function PostDetail({
                             onClick={() => handleAddReply(item.id)}
                             disabled={!replyText.trim()}
                           >
-                            Reply
+                            {language === "Bahasa Melayu" ? "Balas" : language === "中文" ? "回复" : "Reply"}
                           </Button>
                           <Button
                             variant="secondary"
@@ -3938,7 +4107,7 @@ function PostDetail({
                               setReplyError(null);
                             }}
                           >
-                            Cancel
+                            {t.common_cancel}
                           </Button>
                         </div>
                       </div>
@@ -3966,8 +4135,8 @@ function PostDetail({
               setComment(event.target.value);
               if (commentError) setCommentError(null);
             }}
-            placeholder={`Comment as ${cleanName}…`}
-            aria-label="Add a comment"
+            placeholder={`${t.community_comment_as} ${cleanName}…`}
+            aria-label={t.community_comments_title}
           />
           <Button type="submit" disabled={submittingComment}>
             <Icon name="send" />
@@ -4767,7 +4936,7 @@ function NotificationSettings({
   back: () => void;
   notify: (s: string) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [settings, setSettings] = useState<Record<string, boolean>>(() => {
     try {
       const stored = localStorage.getItem("ony_notification_prefs_v1");
@@ -4834,12 +5003,12 @@ function NotificationSettings({
       <section className="page-pad">
         <div className="card" style={{ padding: "16px", marginBottom: "16px" }}>
           <div className="setting-section-header">
-            <span className="eyebrow">Rest & Peace</span>
+            <span className="eyebrow">{language === "Bahasa Melayu" ? "Rehat & Ketenangan" : language === "中文" ? "静心安歇" : "Rest & Peace"}</span>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
               <div>
-                <h3 style={{ margin: 0 }}>🌙 Quiet Hours</h3>
+                <h3 style={{ margin: 0 }}>🌙 {t.notif_quiet_hours}</h3>
                 <p style={{ margin: "2px 0 0", color: "var(--muted)", fontSize: "12px" }}>
-                  Mute non-urgent alerts during sleep or focus time.
+                  {t.notif_quiet_hours_desc}
                 </p>
               </div>
               <Toggle
@@ -4853,7 +5022,7 @@ function NotificationSettings({
             <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px dashed var(--line)" }}>
               <div className="quiet-hours-time-row">
                 <div className="quiet-hours-time-input">
-                  <label>Start (Bedtime)</label>
+                  <label>{t.notif_bedtime}</label>
                   <TextInput
                     type="time"
                     value={quietHours.start}
@@ -4863,7 +5032,7 @@ function NotificationSettings({
                   />
                 </div>
                 <div className="quiet-hours-time-input">
-                  <label>End (Wake up)</label>
+                  <label>{t.notif_wakeup}</label>
                   <TextInput
                     type="time"
                     value={quietHours.end}
@@ -4877,7 +5046,7 @@ function NotificationSettings({
               <div className="quiet-hours-emergency-callout" style={{ marginTop: "12px" }}>
                 <Icon name="shield" />
                 <span>
-                  <strong>Emergency Override:</strong> Trusted contact requests and safety crisis resources will always alert you immediately, even during quiet hours.
+                  <strong>{language === "Bahasa Melayu" ? "Pengecualian Kecemasan:" : language === "中文" ? "紧急特殊覆盖：" : "Emergency Override:"}</strong> {t.notif_emergency_override}
                 </span>
               </div>
             </div>
@@ -4885,10 +5054,10 @@ function NotificationSettings({
         </div>
 
         <div className="card" style={{ padding: "16px", marginBottom: "20px" }}>
-          <span className="eyebrow">Alert Categories</span>
-          <h3 style={{ margin: "4px 0 6px" }}>🔔 Choose What Updates You Receive</h3>
+          <span className="eyebrow">{t.notif_categories_heading}</span>
+          <h3 style={{ margin: "4px 0 6px" }}>🔔 {language === "Bahasa Melayu" ? "Pilih Kemas Kini Yang Anda Terima" : language === "中文" ? "选择您希望接收的更新" : "Choose What Updates You Receive"}</h3>
           <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: "14px" }}>
-            Toggle the activities you want to receive alerts for in your notification feed.
+            {language === "Bahasa Melayu" ? "Togol aktiviti yang anda ingin terima makluman dalam suapan pemberitahuan." : language === "中文" ? "自定义勾选您希望在通知列表中接收提醒的活动。" : "Toggle the activities you want to receive alerts for in your notification feed."}
           </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
@@ -4902,17 +5071,27 @@ function NotificationSettings({
                 }}
               >
                 <div style={{ paddingRight: "10px" }}>
-                  <strong style={{ fontSize: "13.5px" }}>{name}</strong>
+                  <strong style={{ fontSize: "13.5px" }}>
+                    {name === "Daily check-in"
+                      ? (language === "Bahasa Melayu" ? "Daftar masuk harian" : language === "中文" ? "每日心情打卡" : name)
+                      : name === "Emergency contacts"
+                      ? (language === "Bahasa Melayu" ? "Kenalan kecemasan" : language === "中文" ? "紧急联系人" : name)
+                      : name === "Community activity"
+                      ? (language === "Bahasa Melayu" ? "Aktiviti komuniti" : language === "中文" ? "社区互动提醒" : name)
+                      : name === "Supportive messages"
+                      ? (language === "Bahasa Melayu" ? "Mesej sokongan" : language === "中文" ? "暖心留言接收" : name)
+                      : (language === "Bahasa Melayu" ? "Kemas kini ONY" : language === "中文" ? "ONY 温馨回访" : name)}
+                  </strong>
                   <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "var(--muted)" }}>
                     {name === "Daily check-in"
-                      ? "Gentle reminder for your daily mood check-in."
+                      ? (language === "Bahasa Melayu" ? "Peringatan lembut untuk daftar masuk emosi harian anda." : language === "中文" ? "每日心情状态登记的温和提醒。" : "Gentle reminder for your daily mood check-in.")
                       : name === "Emergency contacts"
-                      ? "Requests and confirmations from your trusted emergency contacts."
+                      ? (language === "Bahasa Melayu" ? "Permintaan dan pengesahan daripada kenalan kecemasan dipercayai anda." : language === "中文" ? "来自您信任的紧急联系人的申请与确认通知。" : "Requests and confirmations from your trusted emergency contacts.")
                       : name === "Community activity"
-                      ? "When other members like or comment on your community posts."
+                      ? (language === "Bahasa Melayu" ? "Apabila ahli lain menyukai atau mengulas siaran komuniti anda." : language === "中文" ? "当其他同伴点赞或评论您的社区发帖时。" : "When other members like or comment on your community posts.")
                       : name === "Supportive messages"
-                      ? "When anonymous members send encouragement to your globe node."
-                      : "Helpful follow-up reflections and gentle check-ins from ONY."}
+                      ? (language === "Bahasa Melayu" ? "Apabila ahli tanpa nama menghantar kata semangat ke nod glob anda." : language === "中文" ? "当匿名成员向您的星球节点发送暖心鼓励时。" : "When anonymous members send encouragement to your globe node.")
+                      : (language === "Bahasa Melayu" ? "Refleksi susulan yang bermanfaat dan pemeriksaan lembut daripada ONY." : language === "中文" ? "来自 ONY 的跟进反思与日常问候。" : "Helpful follow-up reflections and gentle check-ins from ONY.")}
                   </p>
                 </div>
                 <Toggle
@@ -4926,10 +5105,10 @@ function NotificationSettings({
 
         <div className="notification-settings-save-bar">
           <Button className="full" variant="primary" onClick={handleSave}>
-            <Icon name="check" /> Save Preferences
+            <Icon name="check" /> {t.notif_save_btn}
           </Button>
           <Button variant="ghost" className="full" onClick={back}>
-            Back to Notifications
+            {language === "Bahasa Melayu" ? "Kembali ke Pemberitahuan" : language === "中文" ? "返回通知中心" : "Back to Notifications"}
           </Button>
         </div>
       </section>
@@ -4941,24 +5120,260 @@ function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit,
   back: () => void; openHelp: () => void; status: SubscriptionStatus; setStatus: (status: SubscriptionStatus) => void;
   freeUsage: number; freeLimit: number; resetFreeUsage: () => void; notify: (s: string) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const activate = (next: SubscriptionStatus, message: string) => {
     setStatus(next);
     if (next !== "free") resetFreeUsage();
     notify(message);
   };
-  const freeCard = <div className={`subscription-plan free-plan ${status === "free" || status === "trialEnded" ? "current" : ""}`}><div className="plan-heading"><span>Free Tier</span>{(status === "free" || status === "trialEnded") && <b>Current Plan</b>}</div><h2>Free</h2><strong>RM0</strong><ul><li>Unlimited daily mood check-ins</li><li>Core ONY conversational support</li><li>Memory Vault self-reflections</li><li>Essential crisis & helpline resources</li><li>Full community access</li></ul>{freeUsage >= freeLimit && <p className="allowance-note">Daily conversation allowance reached. Upgrade to Premium or continue tomorrow. Safety resources remain 100% free.</p>}<Button variant="secondary" className="full" onClick={() => { setStatus(status === "trialEnded" ? "trialEnded" : "free"); resetFreeUsage(); notify("Continuing with Free Plan"); back(); }}>Continue with Free</Button></div>;
-  const paygCard = <div className={`subscription-plan payg-plan ${status === "payg" ? "current" : ""}`}><div className="plan-heading"><span>Pay As You Go</span>{status === "payg" && <b>Premium Active</b>}</div><h2>ONY 3-Day Pass</h2><strong>RM5 <small>/ 3 days</small></strong><p>Flexible Premium access whenever you need deeper support.</p><ul><li>Instant Premium access for 3 days</li><li>Enhanced AI personalization & depth</li><li>Unlimited conversational continuity</li><li>Advanced weekly mood insights</li></ul>{status === "payg" ? <><div className="days-remaining">2 days remaining</div><Button className="full" variant="secondary" onClick={() => { activate("free", "Returned to Free Plan"); }}>Switch to Free Tier</Button></> : <><small className="best-for">Best for exam weeks or intense moments</small><Button className="full" onClick={() => activate("payg", "3-Day Premium Pass activated · Welcome to Premium!")}>Get 3-Day Pass (RM5)</Button></>}</div>;
-  const monthlyCard = <div className={`subscription-plan monthly-plan ${status === "monthly" ? "current" : ""}`}><div className="plan-heading"><span>Monthly Plan</span>{status === "monthly" && <b>Active Subscription</b>}</div><h2>ONY Premium</h2><strong>RM19.90 <small>/ month</small></strong><p>Continuous Premium companionship with full features unlocked.</p><ul><li>Continuous Premium access</li><li>Deep memory vault retention</li><li>Full emotional trends & monthly analytics</li><li>Priority AI response speed & continuity</li><li>Exclusive companion tones & soundscapes</li></ul>{status === "monthly" ? <div className="days-remaining">Active Monthly Subscription</div> : <><small className="best-for">Best value for continuous well-being</small><Button className="full" onClick={() => activate("monthly", "ONY Monthly Premium active · Thank you for supporting ONY!")}>Subscribe for RM19.90/month</Button></>}</div>;
-  if (status === "trial") return <><PageHeader title="ONY Premium Trial" subtitle="3-Day Free Trial" back={back} /><section className="page-pad"><div className="pricing-status trial"><div className="success-mark"><Icon name="check" /></div><span className="eyebrow">Trial Active</span><h1>ONY Premium Trial</h1><strong>RM0 for 3 days</strong><p>All Premium capabilities are active during your trial period.</p><div className="days-remaining">2 days remaining</div></div><div className="benefits"><h3>Free trial benefits</h3><span><Icon name="check" />Enhanced personalization</span><span><Icon name="check" />Deeper memory retention and continuity</span><span><Icon name="check" />Advanced mood analytics</span><span><Icon name="check" />Expanded Premium experience</span></div><Button className="full" onClick={() => activate("free", "Returned to Free Plan")}>End Trial & Switch to Free</Button><Button className="full" variant="secondary" onClick={back}>Continue with Trial</Button><p className="disclaimer"><Icon name="info" />Transparent pricing. Essential safety and crisis hotlines are always accessible free of charge.</p></section></>;
-  if (status === "trialEnded") return <><PageHeader title="Choose Your Plan" subtitle="Your free trial has ended" back={back} /><section className="page-pad"><div className="trial-ended"><SmallLogo /><span className="eyebrow">Trial Complete</span><h1>Welcome to the next chapter.</h1><p>You can continue using ONY for free forever, or choose a Premium plan that fits your journey.</p></div>{freeCard}<div className="paid-options-heading"><span>Premium Plans</span><p>Choose occasional flexibility or continuous full support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential crisis support</Button><p className="disclaimer"><Icon name="info" />Encrypted billing. Cancel or change your subscription at any time.</p></section></>;
-  if (status === "payg") return <><PageHeader title="ONY Premium" subtitle="Pay As You Go" back={back} /><section className="page-pad">{paygCard}<div className="community-note"><Icon name="info" />After this 3-day pass, access seamlessly returns to Free unless you renew.</div>{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
-  if (status === "monthly") return <><PageHeader title="ONY Premium" subtitle="Monthly Plan" back={back} /><section className="page-pad">{monthlyCard}<div className="community-note"><Icon name="info" />Your monthly subscription renews automatically. You can manage or cancel anytime.</div><Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button></section></>;
-  return <><PageHeader title={t.sub_title} subtitle={t.sub_subtitle} back={back} /><section className="page-pad"><div className="pricing-intro"><span className="eyebrow">Your ONY Sanctuary</span><h1>Choose what fits you best.</h1><p>The Free tier is always available. Upgrade whenever you want deeper continuity and insights.</p></div>{freeCard}<div className="subscription-plan trial-plan"><div className="plan-heading"><span>Try Premium Free</span><b>Eligible</b></div><h2>3-Day Free Trial</h2><strong>RM0 <small>for 3 days</small></strong><p>Experience the complete ONY Premium journey free for 3 days.</p><ul><li>Enhanced personalization</li><li>Deeper memory continuity</li><li>Advanced mood insights</li><li>Expanded Premium features</li></ul><Button className="full" onClick={() => activate("trial", "3-Day Free Trial started · Welcome!")}>Start 3-Day Free Trial</Button><Button className="full" variant="ghost" onClick={back}>Stay on Free</Button></div><div className="paid-options-heading"><span>Or Choose Premium Directly</span><p>Flexible short-term passes or continuous monthly support.</p></div>{paygCard}{monthlyCard}<Button className="full" variant="ghost" onClick={openHelp}><Icon name="shield" />Access essential support</Button><p className="disclaimer"><Icon name="info" />Transparent policies. Core safety and crisis resources remain free forever for all members.</p></section></>;
+  const freeCard = (
+    <div className={`subscription-plan free-plan ${status === "free" || status === "trialEnded" ? "current" : ""}`}>
+      <div className="plan-heading">
+        <span>{t.sub_free_tier}</span>
+        {(status === "free" || status === "trialEnded") && <b>{t.sub_current_plan}</b>}
+      </div>
+      <h2>{t.sub_free_price}</h2>
+      <strong>{t.sub_rm0}</strong>
+      <ul>
+        <li>{t.sub_free_feat1}</li>
+        <li>{t.sub_free_feat2}</li>
+        <li>{t.sub_free_feat3}</li>
+        <li>{t.sub_free_feat4}</li>
+        <li>{t.sub_free_feat5}</li>
+      </ul>
+      {freeUsage >= freeLimit && (
+        <p className="allowance-note">{t.sub_allowance_reached}</p>
+      )}
+      <Button
+        variant="secondary"
+        className="full"
+        onClick={() => {
+          setStatus(status === "trialEnded" ? "trialEnded" : "free");
+          resetFreeUsage();
+          notify(t.sub_continue_free);
+          back();
+        }}
+      >
+        {t.sub_continue_free}
+      </Button>
+    </div>
+  );
+
+  const paygCard = (
+    <div className={`subscription-plan payg-plan ${status === "payg" ? "current" : ""}`}>
+      <div className="plan-heading">
+        <span>{t.sub_payg_heading}</span>
+        {status === "payg" && <b>{t.sub_payg_active}</b>}
+      </div>
+      <h2>{t.sub_payg_title}</h2>
+      <strong>{t.sub_payg_price}</strong>
+      <p>{t.sub_payg_desc}</p>
+      <ul>
+        <li>{t.sub_payg_feat1}</li>
+        <li>{t.sub_payg_feat2}</li>
+        <li>{t.sub_payg_feat3}</li>
+        <li>{t.sub_payg_feat4}</li>
+      </ul>
+      {status === "payg" ? (
+        <>
+          <div className="days-remaining">2 {language === "Bahasa Melayu" ? "hari tinggal" : language === "中文" ? "天剩余" : "days remaining"}</div>
+          <Button className="full" variant="secondary" onClick={() => { activate("free", language === "Bahasa Melayu" ? "Kembali ke Pelan Percuma" : language === "中文" ? "已返回免费版" : "Returned to Free Plan"); }}>
+            {language === "Bahasa Melayu" ? "Tukar ke Peringkat Percuma" : language === "中文" ? "切换至免费版" : "Switch to Free Tier"}
+          </Button>
+        </>
+      ) : (
+        <>
+          <small className="best-for">{language === "Bahasa Melayu" ? "Terbaik untuk minggu peperiksaan atau waktu mencabar" : language === "中文" ? "适合考试周或需要深度支持的时刻" : "Best for exam weeks or intense moments"}</small>
+          <Button className="full" onClick={() => activate("payg", language === "Bahasa Melayu" ? "Pas Premium 3-Hari diaktifkan · Selamat datang ke Premium!" : language === "中文" ? "3天高级通行证已激活 · 欢迎体验 Premium！" : "3-Day Premium Pass activated · Welcome to Premium!")}>
+            {language === "Bahasa Melayu" ? "Dapatkan Pas 3-Hari (RM5)" : language === "中文" ? "获取3天通行证 (RM5)" : "Get 3-Day Pass (RM5)"}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+
+  const monthlyCard = (
+    <div className={`subscription-plan monthly-plan ${status === "monthly" ? "current" : ""}`}>
+      <div className="plan-heading">
+        <span>{t.sub_monthly_heading}</span>
+        {status === "monthly" && <b>{t.sub_monthly_active}</b>}
+      </div>
+      <h2>{t.sub_monthly_title}</h2>
+      <strong>{t.sub_monthly_price}</strong>
+      <p>{t.sub_monthly_desc}</p>
+      <ul>
+        <li>{language === "Bahasa Melayu" ? "Akses Premium berterusan" : language === "中文" ? "全天候无间断高级版体验" : "Continuous Premium access"}</li>
+        <li>{language === "Bahasa Melayu" ? "Pengekalan kubah memori mendalam" : language === "中文" ? "永久深度记忆库沉淀" : "Deep memory vault retention"}</li>
+        <li>{language === "Bahasa Melayu" ? "Trend emosi penuh & analitik bulanan" : language === "中文" ? "完整情绪趋势与月度深度洞察" : "Full emotional trends & monthly analytics"}</li>
+        <li>{language === "Bahasa Melayu" ? "Kelajuan respons AI keutamaan & kesinambungan" : language === "中文" ? "优先 AI 响应速度与连贯对话" : "Priority AI response speed & continuity"}</li>
+        <li>{language === "Bahasa Melayu" ? "Nada teman & landskap bunyi eksklusif" : language === "中文" ? "专属陪伴语调与治愈白噪音" : "Exclusive companion tones & soundscapes"}</li>
+      </ul>
+      {status === "monthly" ? (
+        <div className="days-remaining">{language === "Bahasa Melayu" ? "Langganan Bulanan Aktif" : language === "中文" ? "月度订阅已生效" : "Active Monthly Subscription"}</div>
+      ) : (
+        <>
+          <small className="best-for">{language === "Bahasa Melayu" ? "Nilai terbaik untuk kesejahteraan berterusan" : language === "中文" ? "持续心理健康的最佳长伴选择" : "Best value for continuous well-being"}</small>
+          <Button className="full" onClick={() => activate("monthly", language === "Bahasa Melayu" ? "ONY Premium Bulanan aktif · Terima kasih menyokong ONY!" : language === "中文" ? "ONY 月度高级版已开通 · 感谢支持 ONY！" : "ONY Monthly Premium active · Thank you for supporting ONY!")}>
+            {language === "Bahasa Melayu" ? "Langgan untuk RM19.90/bulan" : language === "中文" ? "按月订阅 RM19.90/月" : "Subscribe for RM19.90/month"}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+
+  if (status === "trial") {
+    return (
+      <>
+        <PageHeader title={t.sub_trial_title} subtitle={language === "Bahasa Melayu" ? "Percubaan Percuma 3-Hari" : language === "中文" ? "3天免费试用" : "3-Day Free Trial"} back={back} />
+        <section className="page-pad">
+          <div className="pricing-status trial">
+            <div className="success-mark"><Icon name="check" /></div>
+            <span className="eyebrow">{language === "Bahasa Melayu" ? "Percubaan Aktif" : language === "中文" ? "试用中" : "Trial Active"}</span>
+            <h1>{t.sub_trial_title}</h1>
+            <strong>{language === "Bahasa Melayu" ? "RM0 untuk 3 hari" : language === "中文" ? "3天免费 RM0" : "RM0 for 3 days"}</strong>
+            <p>{language === "Bahasa Melayu" ? "Semua keupayaan Premium aktif sepanjang tempoh percubaan anda." : language === "中文" ? "在试用期内，您可以尽情享受全部高级版功能。" : "All Premium capabilities are active during your trial period."}</p>
+            <div className="days-remaining">2 {language === "Bahasa Melayu" ? "hari tinggal" : language === "中文" ? "天剩余" : "days remaining"}</div>
+          </div>
+          <div className="benefits">
+            <h3>{language === "Bahasa Melayu" ? "Faedah percubaan percuma" : language === "中文" ? "免费试用专属权益" : "Free trial benefits"}</h3>
+            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Pemperibadian dipertingkat" : language === "中文" ? "更细致的专属个性化" : "Enhanced personalization"}</span>
+            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Pengekalan memori lebih mendalam & kesinambungan" : language === "中文" ? "更长久的记忆沉淀与话题连贯" : "Deeper memory retention and continuity"}</span>
+            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Analitik emosi lanjutan" : language === "中文" ? "进阶情绪多维洞察" : "Advanced mood analytics"}</span>
+            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Pengalaman Premium diperluas" : language === "中文" ? "扩展的高级陪伴功能" : "Expanded Premium experience"}</span>
+          </div>
+          <Button className="full" onClick={() => activate("free", language === "Bahasa Melayu" ? "Kembali ke Pelan Percuma" : language === "中文" ? "已返回免费版" : "Returned to Free Plan")}>
+            {language === "Bahasa Melayu" ? "Tamatkan Percubaan & Tukar ke Percuma" : language === "中文" ? "结束试用并切换至免费版" : "End Trial & Switch to Free"}
+          </Button>
+          <Button className="full" variant="secondary" onClick={back}>
+            {language === "Bahasa Melayu" ? "Teruskan dengan Percubaan" : language === "中文" ? "继续试用体验" : "Continue with Trial"}
+          </Button>
+          <p className="disclaimer">
+            <Icon name="info" />
+            {language === "Bahasa Melayu" ? "Harga telus. Talian krisis dan sumber keselamatan penting sentiasa percuma." : language === "中文" ? "透明定价。核心危机热线与安全资源永远 100% 免费。" : "Transparent pricing. Essential safety and crisis hotlines are always accessible free of charge."}
+          </p>
+        </section>
+      </>
+    );
+  }
+
+  if (status === "trialEnded") {
+    return (
+      <>
+        <PageHeader title={language === "Bahasa Melayu" ? "Pilih Pelan Anda" : language === "中文" ? "选择适合您的方案" : "Choose Your Plan"} subtitle={language === "Bahasa Melayu" ? "Percubaan percuma anda telah tamat" : language === "中文" ? "您的免费试用期已结束" : "Your free trial has ended"} back={back} />
+        <section className="page-pad">
+          <div className="trial-ended">
+            <SmallLogo />
+            <span className="eyebrow">{language === "Bahasa Melayu" ? "Percubaan Selesai" : language === "中文" ? "试用结束" : "Trial Complete"}</span>
+            <h1>{language === "Bahasa Melayu" ? "Selamat datang ke babak seterusnya." : language === "中文" ? "开启下一步陪伴之旅。" : "Welcome to the next chapter."}</h1>
+            <p>{language === "Bahasa Melayu" ? "Anda boleh terus menggunakan ONY secara percuma selamanya, atau pilih pelan Premium yang sesuai dengan anda." : language === "中文" ? "您可以随时永久免费使用基础版 ONY，或选择更适合您节奏的高级版方案。" : "You can continue using ONY for free forever, or choose a Premium plan that fits your journey."}</p>
+          </div>
+          {freeCard}
+          <div className="paid-options-heading">
+            <span>{language === "Bahasa Melayu" ? "Pelan Premium" : language === "中文" ? "高级版选项" : "Premium Plans"}</span>
+            <p>{language === "Bahasa Melayu" ? "Pilih fleksibiliti berkala atau sokongan penuh berterusan." : language === "中文" ? "选择灵活的短期体验，或开启无间断的长久陪伴。" : "Choose occasional flexibility or continuous full support."}</p>
+          </div>
+          {paygCard}
+          {monthlyCard}
+          <Button className="full" variant="ghost" onClick={openHelp}>
+            <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan krisis penting" : language === "中文" ? "获取核心紧急支持" : "Access essential crisis support"}
+          </Button>
+          <p className="disclaimer">
+            <Icon name="info" />
+            {language === "Bahasa Melayu" ? "Pengebilan disulitkan. Batalkan atau tukar langganan anda pada bila-bila masa." : language === "中文" ? "安全加密账单。随时可以调整或取消您的方案。" : "Encrypted billing. Cancel or change your subscription at any time."}
+          </p>
+        </section>
+      </>
+    );
+  }
+
+  if (status === "payg") {
+    return (
+      <>
+        <PageHeader title={t.sub_payg_heading} subtitle={t.sub_payg_title} back={back} />
+        <section className="page-pad">
+          {paygCard}
+          <div className="community-note">
+            <Icon name="info" />
+            {language === "Bahasa Melayu" ? "Selepas pas 3 hari ini, akses akan kembali ke Percuma secara lancar melainkan anda memperbaharuinya." : language === "中文" ? "此 3 天通行证到期后，若未主动续订，将自动平滑转回免费版。" : "After this 3-day pass, access seamlessly returns to Free unless you renew."}
+          </div>
+          {monthlyCard}
+          <Button className="full" variant="ghost" onClick={openHelp}>
+            <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan penting" : language === "中文" ? "获取核心支持" : "Access essential support"}
+          </Button>
+        </section>
+      </>
+    );
+  }
+
+  if (status === "monthly") {
+    return (
+      <>
+        <PageHeader title={t.sub_monthly_heading} subtitle={t.sub_monthly_title} back={back} />
+        <section className="page-pad">
+          {monthlyCard}
+          <div className="community-note">
+            <Icon name="info" />
+            {language === "Bahasa Melayu" ? "Langganan bulanan anda diperbaharui secara automatik. Anda boleh mengurus atau membatalkannya pada bila-bila masa." : language === "中文" ? "您的月度订阅将自动按月续订。您可以随时在设置中管理或取消。" : "Your monthly subscription renews automatically. You can manage or cancel anytime."}
+          </div>
+          <Button className="full" variant="ghost" onClick={openHelp}>
+            <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan penting" : language === "中文" ? "获取核心支持" : "Access essential support"}
+          </Button>
+        </section>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader title={t.sub_title} subtitle={t.sub_subtitle} back={back} />
+      <section className="page-pad">
+        <div className="pricing-intro">
+          <span className="eyebrow">{language === "Bahasa Melayu" ? "Ruang Tenang ONY Anda" : language === "中文" ? "您的 ONY 心灵庇护所" : "Your ONY Sanctuary"}</span>
+          <h1>{t.sub_choose_best || (language === "Bahasa Melayu" ? "Pilih yang paling sesuai untuk anda." : language === "中文" ? "选择最契合您当下需求的节奏。" : "Choose what fits you best.")}</h1>
+          <p>{language === "Bahasa Melayu" ? "Peringkat Percuma sentiasa tersedia. Naik taraf pada bila-bila masa anda inginkan kesinambungan dan wawasan yang lebih mendalam." : language === "中文" ? "免费版永久向所有人开放。当您需要更深度的连贯记忆与洞察时，可随时升级。" : "The Free tier is always available. Upgrade whenever you want deeper continuity and insights."}</p>
+        </div>
+        {freeCard}
+        <div className="subscription-plan trial-plan">
+          <div className="plan-heading">
+            <span>{t.sub_start_trial}</span>
+            <b>{language === "Bahasa Melayu" ? "Layak" : language === "中文" ? "符合资格" : "Eligible"}</b>
+          </div>
+          <h2>{t.sub_trial_hero_title}</h2>
+          <strong>{language === "Bahasa Melayu" ? "RM0 untuk 3 hari" : language === "中文" ? "3天免费 RM0" : "RM0 for 3 days"}</strong>
+          <p>{t.sub_trial_hero_desc}</p>
+          <ul>
+            <li>{language === "Bahasa Melayu" ? "Pemperibadian dipertingkat" : language === "中文" ? "进阶专属个性化" : "Enhanced personalization"}</li>
+            <li>{language === "Bahasa Melayu" ? "Kesinambungan memori lebih mendalam" : language === "中文" ? "更深度长久的记忆连贯" : "Deeper memory continuity"}</li>
+            <li>{language === "Bahasa Melayu" ? "Wawasan emosi lanjutan" : language === "中文" ? "多维度情绪深度洞察" : "Advanced mood insights"}</li>
+            <li>{language === "Bahasa Melayu" ? "Ciri-ciri Premium diperluas" : language === "中文" ? "拓展的高级版完整功能" : "Expanded Premium features"}</li>
+          </ul>
+          <Button className="full" onClick={() => activate("trial", language === "Bahasa Melayu" ? "Percubaan Percuma 3-Hari dimulakan · Selamat datang!" : language === "中文" ? "3天免费试用已开启 · 欢迎体验！" : "3-Day Free Trial started · Welcome!")}>
+            {t.sub_start_trial}
+          </Button>
+          <Button className="full" variant="ghost" onClick={back}>
+            {language === "Bahasa Melayu" ? "Kekal di Percuma" : language === "中文" ? "继续保持免费版" : "Stay on Free"}
+          </Button>
+        </div>
+        <div className="paid-options-heading">
+          <span>{language === "Bahasa Melayu" ? "Atau Pilih Premium Terus" : language === "中文" ? "或直接开通 Premium" : "Or Choose Premium Directly"}</span>
+          <p>{language === "Bahasa Melayu" ? "Pas jangka pendek fleksibel atau sokongan bulanan berterusan." : language === "中文" ? "灵活的短期体验卡，或无忧的月度连续守护。" : "Flexible short-term passes or continuous monthly support."}</p>
+        </div>
+        {paygCard}
+        {monthlyCard}
+        <Button className="full" variant="ghost" onClick={openHelp}>
+          <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan penting" : language === "中文" ? "获取核心支持" : "Access essential support"}
+        </Button>
+        <p className="disclaimer">
+          <Icon name="info" />
+          {language === "Bahasa Melayu" ? "Dasar telus. Sumber keselamatan dan talian krisis kekal percuma selamanya untuk semua ahli." : language === "中文" ? "透明承诺。核心安全指引与危机热线永远对所有用户免费开放。" : "Transparent policies. Core safety and crisis resources remain free forever for all members."}
+        </p>
+      </section>
+    </>
+  );
 }
 
 function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [answer, setAnswer] = useState<"none" | "yes" | "no">("none");
   const handleAnswerYes = () => {
     setAnswer("yes");
@@ -4972,15 +5387,20 @@ function SafetyFlow({ back, navigate }: { back: () => void; navigate: (s: Screen
   return <div className="safety-page"><PageHeader title={t.safety_title} subtitle={t.safety_subtitle} back={back} /><section className="page-pad">
     <div className="safety-mark"><Icon name="shield" /></div><h1>{t.safety_sorry_heading}</h1><p className="lead">{t.safety_lead}</p>
     {answer === "none" && <div className="danger-card"><strong>{t.safety_immediate_question}</strong><p>{t.safety_immediate_desc}</p><Button variant="danger" className="full" onClick={handleAnswerYes}>{t.safety_yes_danger}</Button><Button variant="secondary" className="full" onClick={() => setAnswer("no")}>{t.safety_no_support}</Button></div>}
-    {answer === "yes" && <div className="emergency"><span className="eyebrow">Need immediate help?</span><a href="tel:999">999</a><strong>{t.safety_emergency_services}</strong><p>If you can, move away from anything you could use to hurt yourself and go to a trusted person or public place.</p><Button className="full" onClick={() => navigate("help")}>See Malaysia crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>{t.safety_contact_trusted}</Button></div>}
-    {answer === "no" && <div className="danger-card"><strong>Let’s connect you with someone.</strong><p>Consider contacting a trusted person and staying near others. A befriender, counsellor, or support line can listen without judgment.</p><Button className="full" onClick={() => navigate("help")}>View crisis resources</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>Find Professional Help Near Me</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>{t.safety_contact_trusted}</Button><Button variant="ghost" className="full" onClick={back}>Return when I’m ready</Button></div>}
-    <p className="safety-disclaimer"><strong>ONY is an AI companion and does not replace human emergency services.</strong> {t.safety_disclaimer}</p>
-    <div className="sop"><span>Distress Detection</span><span>Gentle De-escalation</span><span>Immediate Crisis Resources</span><span>User Safety Choice</span></div>
+    {answer === "yes" && <div className="emergency"><span className="eyebrow">{language === "Bahasa Melayu" ? "Perlukan bantuan segera?" : language === "中文" ? "需要即时求助？" : "Need immediate help?"}</span><a href="tel:999">999</a><strong>{t.safety_emergency_services}</strong><p>{language === "Bahasa Melayu" ? "Jika boleh, jauhkan diri dari sebarang perkara yang boleh mencederakan diri dan pergi kepada orang yang dipercayai atau tempat awam." : language === "中文" ? "如果可以，请立即远离任何可能伤害自己的物品，并前往信任的朋友身边或公共场所。" : "If you can, move away from anything you could use to hurt yourself and go to a trusted person or public place."}</p><Button className="full" onClick={() => navigate("help")}>{language === "Bahasa Melayu" ? "Lihat sumber krisis Malaysia" : language === "中文" ? "查看马来西亚危机热线与资源" : "See Malaysia crisis resources"}</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>{language === "Bahasa Melayu" ? "Cari Bantuan Profesional Berdekatan" : language === "中文" ? "寻找附近的专业心理服务" : "Find Professional Help Near Me"}</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>{t.safety_contact_trusted}</Button></div>}
+    {answer === "no" && <div className="danger-card"><strong>{language === "Bahasa Melayu" ? "Mari kami hubungkan anda dengan seseorang." : language === "中文" ? "让我们为您连结一位倾听者。" : "Let’s connect you with someone."}</strong><p>{language === "Bahasa Melayu" ? "Pertimbangkan untuk menghubungi orang yang dipercayai dan tinggal berdekatan orang lain. Kaunselor atau talian sokongan sedia mendengar tanpa menghakimi." : language === "中文" ? "不妨联络一位信任的人并陪伴在身边。辅导员或求助热线会不带偏见地倾听您的心声。" : "Consider contacting a trusted person and staying near others. A befriender, counsellor, or support line can listen without judgment."}</p><Button className="full" onClick={() => navigate("help")}>{language === "Bahasa Melayu" ? "Lihat sumber krisis" : language === "中文" ? "查看危机求助资源" : "View crisis resources"}</Button><Button variant="secondary" className="full" onClick={() => navigate("professional")}>{language === "Bahasa Melayu" ? "Cari Bantuan Profesional Berdekatan" : language === "中文" ? "寻找附近的专业心理服务" : "Find Professional Help Near Me"}</Button><Button variant="secondary" className="full" onClick={() => navigate("trusted")}>{t.safety_contact_trusted}</Button><Button variant="ghost" className="full" onClick={back}>{language === "Bahasa Melayu" ? "Kembali bila saya bersedia" : language === "中文" ? "当我准备好时再回来" : "Return when I’m ready"}</Button></div>}
+    <p className="safety-disclaimer"><strong>{language === "Bahasa Melayu" ? "ONY ialah teman AI dan tidak menggantikan perkhidmatan kecemasan manusia." : language === "中文" ? "ONY 是 AI 心情陪伴助手，绝不替代人类紧急救护服务。" : "ONY is an AI companion and does not replace human emergency services."}</strong> {t.safety_disclaimer}</p>
+    <div className="sop">
+      <span>{language === "Bahasa Melayu" ? "Pengesanan Tekanan" : language === "中文" ? "情绪困扰识别" : "Distress Detection"}</span>
+      <span>{language === "Bahasa Melayu" ? "Peredaan Lembut" : language === "中文" ? "温和情绪降温" : "Gentle De-escalation"}</span>
+      <span>{language === "Bahasa Melayu" ? "Sumber Krisis Segera" : language === "中文" ? "即时危机热线" : "Immediate Crisis Resources"}</span>
+      <span>{language === "Bahasa Melayu" ? "Pilihan Keselamatan Pengguna" : language === "中文" ? "用户自主安全决策" : "User Safety Choice"}</span>
+    </div>
   </section></div>;
 }
 
 function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   useEffect(() => {
     writeSystemLog({
       level: "info",
@@ -4990,15 +5410,17 @@ function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => v
     }).catch(() => {});
   }, []);
   return <><PageHeader title={t.profile_menu_help} subtitle={t.profile_menu_help_sub} back={back} /><section className="page-pad">
-    <div className="help-hero"><Icon name="shield" /><div><h2>You deserve the right support.</h2><p>ONY provides emotional support and information. It is not a replacement for professional or emergency care.</p></div></div>
-    <h3 className="group-title">Immediate danger</h3><a className="resource emergency-resource" href="tel:999"><span><strong>Malaysian Emergency Services</strong><small>Police, ambulance, emergency medical response</small></span><b>Call 999</b></a>
-    <h3 className="group-title">Crisis & Emotional Support Helplines</h3>
-    <a className="resource" href="tel:15555"><span><strong>Talian HEAL 15555 (MOH Malaysia)</strong><small>24/7 National mental health helpline · Free & confidential</small></span><b>Call 15555</b></a>
-    <a className="resource" href="tel:0376272929"><span><strong>Befrienders Kuala Lumpur</strong><small>24/7 Emotional support and suicide prevention hotline</small></span><b>03-7627 2929</b></a>
-    <a className="resource" href="tel:15999"><span><strong>Talian Kasih 15999</strong><small>Ministry of Women, Family and Community Development</small></span><b>Call 15999</b></a>
-    <div className="resource"><span><strong>University Counselling Centre</strong><small>Contact your campus wellbeing or student affairs office</small></span><Icon name="chevron" /></div>
-    <h3 className="group-title">Professional Care & Directory</h3><button className="resource resource-button" onClick={() => navigate("professional")}><span><strong>Find registered professional care near me</strong><small>Government MENTARI centres, hospitals, and licensed counsellors</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" />If you or someone you know is in immediate life-threatening danger, dial 999 immediately.</p>
+    <div className="help-hero"><Icon name="shield" /><div><h2>{language === "Bahasa Melayu" ? "Anda berhak menerima sokongan yang tepat." : language === "中文" ? "您值得获得恰当的温暖支持。" : "You deserve the right support."}</h2><p>{language === "Bahasa Melayu" ? "ONY menyediakan sokongan emosi dan maklumat. Ia bukan pengganti rawatan profesional atau perkhidmatan kecemasan." : language === "中文" ? "ONY 提供日常情感支持与科普指引。它不可替代执业医师诊断或紧急救护服务。" : "ONY provides emotional support and information. It is not a replacement for professional or emergency care."}</p></div></div>
+    <h3 className="group-title">{language === "Bahasa Melayu" ? "Bahaya Segera" : language === "中文" ? "紧急生命安全险情" : "Immediate danger"}</h3>
+    <a className="resource emergency-resource" href="tel:999"><span><strong>{language === "Bahasa Melayu" ? "Perkhidmatan Kecemasan Malaysia" : language === "中文" ? "马来西亚紧急呼救中心" : "Malaysian Emergency Services"}</strong><small>{language === "Bahasa Melayu" ? "Polis, ambulans, tindak balas perubatan kecemasan" : language === "中文" ? "报警、救护车、紧急院前医疗救援" : "Police, ambulance, emergency medical response"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 999" : language === "中文" ? "呼叫 999" : "Call 999"}</b></a>
+    <h3 className="group-title">{language === "Bahasa Melayu" ? "Talian Bantuan Krisis & Sokongan Emosi" : language === "中文" ? "危机干预与情感支持热线" : "Crisis & Emotional Support Helplines"}</h3>
+    <a className="resource" href="tel:15555"><span><strong>Talian HEAL 15555 (MOH Malaysia)</strong><small>{language === "Bahasa Melayu" ? "Talian kesihatan mental kebangsaan 24/7 · Percuma & sulit" : language === "中文" ? "24/7 全天候国家心理健康热线 · 免费且严格保密" : "24/7 National mental health helpline · Free & confidential"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 15555" : language === "中文" ? "拨打 15555" : "Call 15555"}</b></a>
+    <a className="resource" href="tel:0376272929"><span><strong>Befrienders Kuala Lumpur</strong><small>{language === "Bahasa Melayu" ? "Talian sokongan emosi dan pencegahan bunuh diri 24/7" : language === "中文" ? "24/7 全天候情感关怀与危机干预热线" : "24/7 Emotional support and suicide prevention hotline"}</small></span><b>03-7627 2929</b></a>
+    <a className="resource" href="tel:15999"><span><strong>Talian Kasih 15999</strong><small>{language === "Bahasa Melayu" ? "Kementerian Pembangunan Wanita, Keluarga dan Masyarakat" : language === "中文" ? "妇女、家庭及社会发展部关怀热线" : "Ministry of Women, Family and Community Development"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 15999" : language === "中文" ? "拨打 15999" : "Call 15999"}</b></a>
+    <div className="resource"><span><strong>{language === "Bahasa Melayu" ? "Pusat Kaunseling Universiti" : language === "中文" ? "高校学生心理咨询中心" : "University Counselling Centre"}</strong><small>{language === "Bahasa Melayu" ? "Hubungi pejabat kesejahteraan kampus atau hal ehwal pelajar anda" : language === "中文" ? "联络您所在校园的学生事务处或心理健康中心" : "Contact your campus wellbeing or student affairs office"}</small></span><Icon name="chevron" /></div>
+    <h3 className="group-title">{language === "Bahasa Melayu" ? "Penjagaan Profesional & Direktori" : language === "中文" ? "专业心理机构与名录" : "Professional Care & Directory"}</h3>
+    <button className="resource resource-button" onClick={() => navigate("professional")}><span><strong>{language === "Bahasa Melayu" ? "Cari penjagaan profesional berdaftar berdekatan saya" : language === "中文" ? "查找我附近的注册专业心理医疗机构" : "Find registered professional care near me"}</strong><small>{language === "Bahasa Melayu" ? "Pusat MENTARI kerajaan, hospital, dan kaunselor berlesen" : language === "中文" ? "政府社区精神健康中心 MENTARI、公立医院与执业心理咨询师" : "Government MENTARI centres, hospitals, and licensed counsellors"}</small></span><Icon name="chevron" /></button>
+    <p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Sekiranya anda atau seseorang yang anda kenali berada dalam bahaya mengancam nyawa serta-merta, dail 999 dengan segera." : language === "中文" ? "若您或身边人员面临即刻危及生命的险情，请立即拨打 999。" : "If you or someone you know is in immediate life-threatening danger, dial 999 immediately."}</p>
   </section></>;
 }
 
@@ -5173,7 +5595,7 @@ function TrustedContact({
   onRefresh: () => Promise<void>;
   notify: (s: string) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [callState, setCallState] = useState<"idle" | "calling" | "message">("idle");
   const [recipientIdentifier, setRecipientIdentifier] = useState(email || "");
   const [relationshipNote, setRelationshipNote] = useState("");
@@ -5463,10 +5885,10 @@ function TrustedContact({
         <div className={`call-pulse ${callState}`}>
           <Icon name={callState === "calling" ? "profile" : "send"} />
         </div>
-        <span className="eyebrow">Connected Trusted Contact</span>
-        <h1>{callState === "calling" ? `Calling ${name}…` : `Message sent to ${name}`}</h1>
-        <p>{callState === "calling" ? `Connecting to ${name} at ${number || "registered number on file"}…` : "“I could use someone to talk to. Are you free?”"}</p>
-        <Button onClick={() => setCallState("idle")}>{callState === "calling" ? "End Call" : "Done"}</Button>
+        <span className="eyebrow">{language === "Bahasa Melayu" ? "Kenalan Dipercayai Bersambung" : language === "中文" ? "已连接信任紧急联系人" : "Connected Trusted Contact"}</span>
+        <h1>{callState === "calling" ? (language === "Bahasa Melayu" ? `Memanggil ${name}…` : language === "中文" ? `正在拨通 ${name}…` : `Calling ${name}…`) : (language === "Bahasa Melayu" ? `Mesej dihantar kepada ${name}` : language === "中文" ? `已向 ${name} 发送求助消息` : `Message sent to ${name}`)}</h1>
+        <p>{callState === "calling" ? (language === "Bahasa Melayu" ? `Menghubungi ${name} di ${number || "nombor berdaftar dalam profil"}…` : language === "中文" ? `正在拨给 ${name} (${number || "已登记的档案电话"})…` : `Connecting to ${name} at ${number || "registered number on file"}…`) : (language === "Bahasa Melayu" ? "“Saya perlukan seseorang untuk berbual. Adakah anda lapang?”" : language === "中文" ? "“我现在想找个人聊聊，你有空吗？”" : "“I could use someone to talk to. Are you free?”")}</p>
+        <Button onClick={() => setCallState("idle")}>{callState === "calling" ? (language === "Bahasa Melayu" ? "Tamatkan Panggilan" : language === "中文" ? "结束通话" : "End Call") : t.common_done}</Button>
       </div>
     );
   }
@@ -5488,12 +5910,12 @@ function TrustedContact({
         <div className="card" style={{ marginBottom: "14px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
             <div>
-              <span className="eyebrow">Your Account & Emergency Phone</span>
+              <span className="eyebrow">{t.trusted_phone_section}</span>
               <strong style={{ display: "block", fontSize: "14px", marginTop: "2px" }}>
                 {currentName} ({currentEmail})
               </strong>
               <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
-                Saved emergency number: <strong>{currentPhone || "Not set yet"}</strong>
+                {t.trusted_saved_phone}: <strong>{currentPhone || t.trusted_not_set}</strong>
               </small>
             </div>
             <Button
@@ -5503,7 +5925,7 @@ function TrustedContact({
                 setEditingMyPhone((prev) => !prev);
               }}
             >
-              {editingMyPhone ? "Cancel" : currentPhone ? "Edit Phone" : "Add Phone"}
+              {editingMyPhone ? t.common_cancel : currentPhone ? t.trusted_edit_phone : t.trusted_add_phone}
             </Button>
           </div>
           {editingMyPhone && (
@@ -5514,7 +5936,7 @@ function TrustedContact({
                 setCurrentPhone(myPhoneDraft.trim());
                 setInviteFriendPhone(myPhoneDraft.trim());
                 setEditingMyPhone(false);
-                notify("Emergency phone number saved to your profile");
+                notify(language === "Bahasa Melayu" ? "Nombor telefon kecemasan disimpan ke profil anda" : language === "中文" ? "紧急联系电话已保存至您的个人档案" : "Emergency phone number saved to your profile");
               }}
               style={{ marginTop: "10px", display: "flex", gap: "8px" }}
             >
@@ -5525,7 +5947,7 @@ function TrustedContact({
                 placeholder="e.g. 012-345 6789"
               />
               <Button type="submit" disabled={!myPhoneDraft.trim()}>
-                Save
+                {t.common_save}
               </Button>
             </form>
           )}
@@ -5542,19 +5964,24 @@ function TrustedContact({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-              <span className="eyebrow">Invite Link Opened</span>
+              <span className="eyebrow">{language === "Bahasa Melayu" ? "Pautan Jemputan Dibuka" : language === "中文" ? "已打开邀请链接" : "Invite Link Opened"}</span>
               <Button variant="ghost" onClick={() => setPendingInvite(null)}>
-                Dismiss
+                {t.common_dismiss}
               </Button>
             </div>
             <h3 style={{ margin: "4px 0 6px" }}>
-              Request to be {pendingInvite.inviterName}’s Emergency Contact
+              {language === "Bahasa Melayu" ? `Mohon menjadi Kenalan Kecemasan ${pendingInvite.inviterName}` : language === "中文" ? `申请成为 ${pendingInvite.inviterName} 的紧急联系人` : `Request to be ${pendingInvite.inviterName}’s Emergency Contact`}
             </h3>
             <p className="muted" style={{ marginBottom: "12px" }}>
-              <strong>{pendingInvite.inviterName}</strong> {pendingInvite.inviterEmail ? `(${pendingInvite.inviterEmail})` : ""} shared an invite link with you. Send a request below so {pendingInvite.inviterName} can accept or reject you as their Trusted Emergency Contact.
+              <strong>{pendingInvite.inviterName}</strong> {pendingInvite.inviterEmail ? `(${pendingInvite.inviterEmail})` : ""}{" "}
+              {language === "Bahasa Melayu"
+                ? `telah berkongsi pautan jemputan dengan anda. Hantar permohonan di bawah supaya ${pendingInvite.inviterName} boleh menerima atau menolak anda sebagai Kenalan Kecemasan Dipercayai.`
+                : language === "中文"
+                ? `向您分享了专属邀请链接。在下方发送申请，以便 ${pendingInvite.inviterName} 确认您为其受信任的紧急联系人。`
+                : `shared an invite link with you. Send a request below so ${pendingInvite.inviterName} can accept or reject you as their Trusted Emergency Contact.`}
             </p>
             <form onSubmit={handleRequestViaInviteLink}>
-              <label className="field-label">Your emergency phone number (shared with {pendingInvite.inviterName})</label>
+              <label className="field-label">{language === "Bahasa Melayu" ? `Nombor telefon kecemasan anda (dikongsi bersama ${pendingInvite.inviterName})` : language === "中文" ? `您的紧急电话号码 (将与 ${pendingInvite.inviterName} 共享)` : `Your emergency phone number (shared with ${pendingInvite.inviterName})`}</label>
               <TextInput
                 type="tel"
                 value={inviteFriendPhone}
@@ -5565,12 +5992,12 @@ function TrustedContact({
                 placeholder="e.g. 012-345 6789"
               />
               <label className="field-label">
-                Message to {pendingInvite.inviterName} <small>Optional</small>
+                {language === "Bahasa Melayu" ? `Mesej kepada ${pendingInvite.inviterName}` : language === "中文" ? `附言给 ${pendingInvite.inviterName}` : `Message to ${pendingInvite.inviterName}`} <small>{t.common_optional}</small>
               </label>
               <TextInput
                 value={inviteFriendNote}
                 onChange={(e) => setInviteFriendNote(e.target.value)}
-                placeholder={`Hi ${pendingInvite.inviterName}, I clicked your invite link to be your emergency contact.`}
+                placeholder={language === "Bahasa Melayu" ? `Hai ${pendingInvite.inviterName}, saya membuka pautan anda untuk menjadi kenalan kecemasan anda.` : language === "中文" ? `你好 ${pendingInvite.inviterName}，我收到了你的邀请链接，愿作为你的紧急联系人。` : `Hi ${pendingInvite.inviterName}, I clicked your invite link to be your emergency contact.`}
               />
               {inviteLinkError && (
                 <div className="form-error" style={{ marginTop: "8px", marginBottom: "8px" }}>
@@ -5581,8 +6008,8 @@ function TrustedContact({
               <div style={{ marginTop: "8px" }}>
                 <Button className="full" type="submit" disabled={submitting}>
                   {submitting
-                    ? "Sending Request…"
-                    : `Request to be ${pendingInvite.inviterName}’s Emergency Contact`}
+                    ? (language === "Bahasa Melayu" ? "Menghantar Permohonan…" : language === "中文" ? "正在发送申请…" : "Sending Request…")
+                    : (language === "Bahasa Melayu" ? `Mohon menjadi Kenalan Kecemasan ${pendingInvite.inviterName}` : language === "中文" ? `申请成为 ${pendingInvite.inviterName} 的紧急联系人` : `Request to be ${pendingInvite.inviterName}’s Emergency Contact`)}
                 </Button>
               </div>
             </form>
@@ -5592,11 +6019,11 @@ function TrustedContact({
         {/* 2. Share Your Invite Link Card */}
         <div className="card" style={{ marginBottom: "16px" }}>
           <div className="card-title">
-            <h3>Invite a Friend via Link</h3>
-            <span className="prototype-label">Shareable Link</span>
+            <h3>{t.trusted_invite_link_title}</h3>
+            <span className="prototype-label">{language === "Bahasa Melayu" ? "Pautan Boleh Dikongsi" : language === "中文" ? "专属邀请链接" : "Shareable Link"}</span>
           </div>
           <p className="muted" style={{ marginTop: "4px", marginBottom: "10px" }}>
-            Share this link with a friend. When your friend clicks the link, they can request to become your emergency contact, and you can accept or reject their request right here.
+            {t.trusted_invite_link_desc}
           </p>
           <div
             style={{
@@ -5615,23 +6042,23 @@ function TrustedContact({
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <Button className="full" onClick={() => void handleCopyInviteLink()}>
-              <Icon name="check" /> {copiedInvite ? "Invite Link Copied!" : "Copy Invite Link"}
+              <Icon name="check" /> {copiedInvite ? (language === "Bahasa Melayu" ? "Pautan Jemputan Disalin!" : language === "中文" ? "邀请链接已复制！" : "Invite Link Copied!") : t.common_copy}
             </Button>
             <Button variant="secondary" className="full" onClick={() => void handleShareInviteLink()}>
-              Share Invite Link
+              {t.trusted_share_link_btn}
             </Button>
             <Button
               variant="ghost"
               className="full"
               onClick={() => setShowPasteLink((prev) => !prev)}
             >
-              {showPasteLink ? "Hide Paste Invite Link" : "Have a friend’s invite link? Paste it here"}
+              {showPasteLink ? (language === "Bahasa Melayu" ? "Sembunyikan Tampal Pautan" : language === "中文" ? "收起输入框" : "Hide Paste Invite Link") : t.trusted_paste_link_toggle}
             </Button>
           </div>
 
           {showPasteLink && (
             <form onSubmit={handleParsePastedLink} style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
-              <label className="field-label">Paste a friend’s ONY Invite Link</label>
+              <label className="field-label">{language === "Bahasa Melayu" ? "Tampal Pautan Jemputan ONY Rakan Anda" : language === "中文" ? "粘贴好友的 ONY 邀请链接" : "Paste a friend’s ONY Invite Link"}</label>
               <TextInput
                 value={pasteLinkInput}
                 onChange={(e) => {
@@ -5648,7 +6075,7 @@ function TrustedContact({
               )}
               <div style={{ marginTop: "8px" }}>
                 <Button className="full" type="submit" disabled={!pasteLinkInput.trim()}>
-                  Open Friend’s Invite Link
+                  {language === "Bahasa Melayu" ? "Buka Pautan Jemputan Rakan" : language === "中文" ? "打开好友的邀请链接" : "Open Friend’s Invite Link"}
                 </Button>
               </div>
             </form>
@@ -5658,17 +6085,21 @@ function TrustedContact({
         {/* 3. Incoming Requests Section (For when a friend clicks your invite link OR sends you a direct request) */}
         <div className="card" style={{ marginBottom: "16px" }}>
           <div className="card-title">
-            <h3>Requests for Your Approval</h3>
-            <span>{pendingIncoming.length} pending</span>
+            <h3>{t.trusted_requests_section}</h3>
+            <span>{pendingIncoming.length} {language === "Bahasa Melayu" ? "menunggu" : language === "中文" ? "待处理" : "pending"}</span>
           </div>
           <p className="muted" style={{ marginTop: "4px", marginBottom: "12px" }}>
-            When a friend clicks your invite link and requests to be your emergency contact (or when another user invites you), you can accept or reject their request here.
+            {language === "Bahasa Melayu"
+              ? "Apabila rakan membuka pautan jemputan anda atau menghantar jemputan secara langsung, anda boleh menerima atau menolak permohonan mereka di sini."
+              : language === "中文"
+              ? "当好友通过邀请链接申请（或直接向您发起邀请）时，您可以在此处确认或谢绝。"
+              : "When a friend clicks your invite link and requests to be your emergency contact (or when another user invites you), you can accept or reject their request here."}
           </p>
 
           {pendingIncoming.length === 0 ? (
             <div className="community-note" style={{ marginBottom: peopleYouSupport.length > 0 ? "12px" : 0 }}>
               <Icon name="info" />
-              <span>No pending requests waiting for your approval right now.</span>
+              <span>{t.trusted_no_pending}</span>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "12px" }}>
@@ -5691,15 +6122,15 @@ function TrustedContact({
                       <div style={{ flex: 1 }}>
                         <strong style={{ display: "block" }}>{req.fromName}</strong>
                         <small style={{ color: "var(--muted)", display: "block" }}>
-                          {req.fromEmail} {req.contactPhone ? `· Emergency Phone: ${req.contactPhone}` : ""}
+                          {req.fromEmail} {req.contactPhone ? `· ${language === "Bahasa Melayu" ? "Tel Kecemasan" : language === "中文" ? "紧急电话" : "Emergency Phone"}: ${req.contactPhone}` : ""}
                         </small>
                         <small style={{ color: "var(--accent, #e07a5f)", display: "block", fontWeight: 600, marginTop: "2px" }}>
                           {isFromMyInviteLink
-                            ? "Clicked your invite link · Wants to be your Emergency Contact"
-                            : "Wants to add you as their Trusted Contact"}
+                            ? (language === "Bahasa Melayu" ? "Membuka pautan anda · Ingin menjadi Kenalan Kecemasan anda" : language === "中文" ? "通过邀请链接进入 · 申请成为您的紧急联系人" : "Clicked your invite link · Wants to be your Emergency Contact")
+                            : (language === "Bahasa Melayu" ? "Ingin menambah anda sebagai Kenalan Dipercayai mereka" : language === "中文" ? "希望将您添加为其信任联系人" : "Wants to add you as their Trusted Contact")}
                         </small>
                       </div>
-                      <span className="prototype-label">Pending</span>
+                      <span className="prototype-label">{language === "Bahasa Melayu" ? "Menunggu" : language === "中文" ? "待审核" : "Pending"}</span>
                     </div>
                     {req.relationshipNote && (
                       <p style={{ margin: "8px 0 0", fontSize: "13px", fontStyle: "italic" }}>
@@ -5712,7 +6143,7 @@ function TrustedContact({
                         disabled={respondingId === req.id}
                         onClick={() => void handleDecision(req, "accepted")}
                       >
-                        <Icon name="check" /> {isFromMyInviteLink ? "Accept as My Emergency Contact" : "Accept Request"}
+                        <Icon name="check" /> {isFromMyInviteLink ? t.trusted_accept_contact : (language === "Bahasa Melayu" ? "Terima Permohonan" : language === "中文" ? "接受申请" : "Accept Request")}
                       </Button>
                       <Button
                         variant="danger"
@@ -5720,7 +6151,7 @@ function TrustedContact({
                         disabled={respondingId === req.id}
                         onClick={() => void handleDecision(req, "rejected")}
                       >
-                        <Icon name="close" /> Reject
+                        <Icon name="close" /> {t.trusted_reject_contact}
                       </Button>
                     </div>
                   </div>
@@ -5732,7 +6163,7 @@ function TrustedContact({
           {inviteLinkOutgoing.filter((r) => r.status === "pending").length > 0 && (
             <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
               <small style={{ fontWeight: 700, display: "block", marginBottom: "8px" }}>
-                Invite Link Requests You Sent (Waiting for friend to accept)
+                {language === "Bahasa Melayu" ? "Permohonan Pautan Dihantar (Menunggu kelulusan rakan)" : language === "中文" ? "已发出的链接申请 (等待对方确认)" : "Invite Link Requests You Sent (Waiting for friend to accept)"}
               </small>
               {inviteLinkOutgoing
                 .filter((r) => r.status === "pending")
@@ -5749,10 +6180,10 @@ function TrustedContact({
                   >
                     <div>
                       <strong style={{ display: "block", fontSize: "13px" }}>
-                        To {req.toName} ({req.toEmail})
+                        {language === "Bahasa Melayu" ? "Kepada" : language === "中文" ? "发送给" : "To"} {req.toName} ({req.toEmail})
                       </strong>
                       <small style={{ color: "var(--muted)" }}>
-                        Requested via invite link · Waiting for {req.toName}’s approval
+                        {language === "Bahasa Melayu" ? `Dipohon melalui pautan · Menunggu kelulusan ${req.toName}` : language === "中文" ? `通过链接申请 · 等待 ${req.toName} 确认` : `Requested via invite link · Waiting for ${req.toName}’s approval`}
                       </small>
                     </div>
                     <Button
@@ -5760,10 +6191,10 @@ function TrustedContact({
                       onClick={async () => {
                         await deleteTrustedContactRequest(req.id);
                         await onRefresh();
-                        notify("Cancelled invite link request");
+                        notify(language === "Bahasa Melayu" ? "Membatalkan permohonan pautan" : language === "中文" ? "已取消邀请链接申请" : "Cancelled invite link request");
                       }}
                     >
-                      Cancel
+                      {t.common_cancel}
                     </Button>
                   </div>
                 ))}
@@ -5773,7 +6204,7 @@ function TrustedContact({
           {peopleYouSupport.length > 0 && (
             <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
               <small style={{ fontWeight: 700, display: "block", marginBottom: "8px" }}>
-                People You Support as an Emergency Contact ({peopleYouSupport.length})
+                {t.trusted_people_supported} ({peopleYouSupport.length})
               </small>
               {peopleYouSupport.map((item) => (
                 <div
@@ -5789,7 +6220,7 @@ function TrustedContact({
                   <div>
                     <strong style={{ display: "block", fontSize: "13px" }}>{item.personName}</strong>
                     <small style={{ color: "var(--muted)" }}>
-                      {item.personEmail} · {item.via} · Accepted
+                      {item.personEmail} · {item.via} · {language === "Bahasa Melayu" ? "Diterima" : language === "中文" ? "已接受" : "Accepted"}
                     </small>
                   </div>
                   <Button
@@ -5797,10 +6228,10 @@ function TrustedContact({
                     onClick={async () => {
                       await deleteTrustedContactRequest(item.id);
                       await onRefresh();
-                      notify(`Removed ${item.personName}`);
+                      notify(language === "Bahasa Melayu" ? `Mengalih keluar ${item.personName}` : language === "中文" ? `已移出 ${item.personName}` : `Removed ${item.personName}`);
                     }}
                   >
-                    Remove
+                    {t.trusted_remove_btn}
                   </Button>
                 </div>
               ))}
@@ -5814,25 +6245,30 @@ function TrustedContact({
             <div className="help-hero">
               <Icon name="profile" />
               <div>
-                <h2>Or Invite Directly by Email / Name</h2>
+                <h2>{t.trusted_invite_directly}</h2>
                 <p>
-                  Know your friend’s registered ONY email or display name? Send them a request directly so they can accept or reject it in their app.
+                  {language === "Bahasa Melayu"
+                    ? "Ketahui e-mel atau nama paparan akaun ONY berdaftar rakan anda? Hantarkan permohonan secara terus untuk mereka terima dalam aplikasi mereka."
+                    : language === "中文"
+                    ? "知晓好友注册的 ONY 邮箱或显示昵称？直接向对方发送邀请，以便其在应用内直接接受。"
+                    : "Know your friend’s registered ONY email or display name? Send them a request directly so they can accept or reject it in their app."}
                 </p>
               </div>
             </div>
 
-            <label className="field-label">Friend’s ONY Account Email or Display Name</label>
+            <label className="field-label">{language === "Bahasa Melayu" ? "E-mel Akaun ONY atau Nama Paparan Rakan" : language === "中文" ? "好友的 ONY 注册邮箱或显示昵称" : "Friend’s ONY Account Email or Display Name"}</label>
             <TextInput
               value={recipientIdentifier}
               onChange={(e) => {
                 setRecipientIdentifier(e.target.value);
                 setFormError(null);
               }}
-              placeholder="Enter your friend’s email or display name"
+              placeholder={language === "Bahasa Melayu" ? "Masukkan e-mel atau nama paparan rakan" : language === "中文" ? "输入好友的邮箱或昵称" : "Enter your friend’s email or display name"}
             />
 
             <label className="field-label">
-              Emergency phone number <small>(Optional if saved on their account)</small>
+              {language === "Bahasa Melayu" ? "Nombor telefon kecemasan" : language === "中文" ? "紧急联系电话" : "Emergency phone number"}{" "}
+              <small>{language === "Bahasa Melayu" ? "(Pilihan jika telah disimpan dalam akaun mereka)" : language === "中文" ? "(若对方账户已保存则为选填)" : "(Optional if saved on their account)"}</small>
             </label>
             <TextInput
               type="tel"
@@ -5845,12 +6281,12 @@ function TrustedContact({
             />
 
             <label className="field-label">
-              Note to recipient <small>Optional</small>
+              {language === "Bahasa Melayu" ? "Nota kepada penerima" : language === "中文" ? "附言给对方" : "Note to recipient"} <small>{t.common_optional}</small>
             </label>
             <TextInput
               value={relationshipNote}
               onChange={(e) => setRelationshipNote(e.target.value)}
-              placeholder="Hi, I’d like to add you as my trusted emergency contact on ONY."
+              placeholder={language === "Bahasa Melayu" ? "Hai, saya ingin menambah anda sebagai kenalan kecemasan dipercayai saya di ONY." : language === "中文" ? "你好，我想在 ONY 上将你添加为我的信任紧急联系人。" : "Hi, I’d like to add you as my trusted emergency contact on ONY."}
             />
 
             {formError && (
@@ -5865,7 +6301,9 @@ function TrustedContact({
               type="submit"
               disabled={submitting || !recipientIdentifier.trim()}
             >
-              {submitting ? "Sending request…" : "Send Trusted Contact Request"}
+              {submitting
+                ? (language === "Bahasa Melayu" ? "Menghantar permohonan…" : language === "中文" ? "正在发送请求…" : "Sending request…")
+                : (language === "Bahasa Melayu" ? "Hantar Permohonan Kenalan Dipercayai" : language === "中文" ? "发送信任联系人邀请" : "Send Trusted Contact Request")}
             </Button>
           </form>
         )}
@@ -5874,24 +6312,28 @@ function TrustedContact({
           <div className="card">
             <div className="trusted-card">
               <span className="trusted-avatar">{activeDirectOutgoing.toName[0]?.toUpperCase() || "T"}</span>
-              <span className="prototype-label">Request Pending · Waiting for Recipient</span>
+              <span className="prototype-label">{t.trusted_waiting_recipient}</span>
               <h1>{activeDirectOutgoing.toName}</h1>
               <p style={{ margin: "4px 0" }}>
                 <strong>ONY Account:</strong> {activeDirectOutgoing.toEmail}
               </p>
               {activeDirectOutgoing.contactPhone && (
                 <p style={{ margin: "2px 0" }}>
-                  <strong>Emergency Phone:</strong> {activeDirectOutgoing.contactPhone}
+                  <strong>{language === "Bahasa Melayu" ? "Tel Kecemasan:" : language === "中文" ? "紧急电话:" : "Emergency Phone:"}</strong> {activeDirectOutgoing.contactPhone}
                 </p>
               )}
               <p className="muted" style={{ marginTop: "10px" }}>
-                Invitation sent to <strong>{activeDirectOutgoing.toName}</strong>’s ONY account. They can open their ONY app to accept or reject your request.
+                {language === "Bahasa Melayu"
+                  ? `Jemputan telah dihantar ke akaun ONY milik ${activeDirectOutgoing.toName}. Mereka boleh membuka aplikasi ONY untuk menerima atau menolak permohonan anda.`
+                  : language === "中文"
+                  ? `邀请已发送至 ${activeDirectOutgoing.toName} 的 ONY 账户。对方可在其 ONY 应用中接受或谢绝您的申请。`
+                  : `Invitation sent to ${activeDirectOutgoing.toName}’s ONY account. They can open their ONY app to accept or reject your request.`}
               </p>
             </div>
 
             <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
               <Button variant="secondary" className="full" onClick={() => void onRefresh()}>
-                Check Request Status
+                {language === "Bahasa Melayu" ? "Semak Status Permohonan" : language === "中文" ? "刷新申请状态" : "Check Request Status"}
               </Button>
               <Button
                 variant="danger"
@@ -5899,7 +6341,7 @@ function TrustedContact({
                 disabled={submitting}
                 onClick={handleCancelOrRemoveActiveContact}
               >
-                Cancel Request
+                {t.common_cancel}
               </Button>
             </div>
           </div>
@@ -5909,7 +6351,7 @@ function TrustedContact({
           <>
             <div className="trusted-card connected">
               <span className="trusted-avatar">{name[0]?.toUpperCase() || "T"}</span>
-              <span className="status-pill accepted">Accepted · Active Emergency Contact</span>
+              <span className="status-pill accepted">{language === "Bahasa Melayu" ? "Diterima · Kenalan Kecemasan Aktif" : language === "中文" ? "已连接 · 活跃紧急联系人" : "Accepted · Active Emergency Contact"}</span>
               <h1>{name}</h1>
               <p>
                 {acceptedViaMyInviteLink
@@ -5917,16 +6359,16 @@ function TrustedContact({
                   : activeDirectOutgoing?.toEmail || email}
               </p>
               <p>
-                <strong>Emergency Phone:</strong>{" "}
+                <strong>{language === "Bahasa Melayu" ? "Tel Kecemasan:" : language === "中文" ? "紧急电话:" : "Emergency Phone:"}</strong>{" "}
                 {acceptedViaMyInviteLink?.contactPhone ||
                   activeDirectOutgoing?.contactPhone ||
                   number ||
-                  "Saved on account"}
+                  (language === "Bahasa Melayu" ? "Disimpan dalam akaun" : language === "中文" ? "已在账户保存" : "Saved on account")}
               </p>
               <div className="trusted-actions">
-                <Button onClick={() => setCallState("calling")}>Call Contact</Button>
+                <Button onClick={() => setCallState("calling")}>{t.trusted_call_btn}</Button>
                 <Button variant="secondary" onClick={() => setCallState("message")}>
-                  Send Message
+                  {t.trusted_send_msg_btn}
                 </Button>
               </div>
             </div>
@@ -5936,7 +6378,7 @@ function TrustedContact({
               disabled={submitting}
               onClick={handleCancelOrRemoveActiveContact}
             >
-              Remove trusted contact
+              {t.trusted_remove_btn}
             </Button>
           </>
         )}
@@ -5945,10 +6387,14 @@ function TrustedContact({
           <div className="card">
             <div className="trusted-card">
               <span className="trusted-avatar">{name[0]?.toUpperCase() || "T"}</span>
-              <span className="prototype-label">Request Declined</span>
+              <span className="prototype-label">{language === "Bahasa Melayu" ? "Permohonan Ditolak" : language === "中文" ? "请求已被谢绝" : "Request Declined"}</span>
               <h1>{name}</h1>
               <p className="muted">
-                {name} ({activeDirectOutgoing?.toEmail || email}) declined your trusted contact request in their app. You can share your invite link or send a new request anytime.
+                {language === "Bahasa Melayu"
+                  ? `${name} (${activeDirectOutgoing?.toEmail || email}) menolak permohonan kenalan dipercayai dalam aplikasi mereka. Anda boleh berkongsi pautan jemputan atau menghantar permohonan baharu pada bila-bila masa.`
+                  : language === "中文"
+                  ? `${name} (${activeDirectOutgoing?.toEmail || email}) 在其应用中谢绝了此联系人邀请。您可以随时分享专属邀请链接或重新发起邀请。`
+                  : `${name} (${activeDirectOutgoing?.toEmail || email}) declined your trusted contact request in their app. You can share your invite link or send a new request anytime.`}
               </p>
             </div>
             <Button
@@ -5956,13 +6402,18 @@ function TrustedContact({
               disabled={submitting}
               onClick={handleCancelOrRemoveActiveContact}
             >
-              Invite Another Contact
+              {t.trusted_invite_another}
             </Button>
           </div>
         )}
 
         <p className="disclaimer">
-          <Icon name="info" /> Trusted contact requests and emergency phone numbers are stored in Cloud Firestore. Registered user accounts are kept private and are never listed publicly.
+          <Icon name="info" />{" "}
+          {language === "Bahasa Melayu"
+            ? "Permohonan kenalan dipercayai dan nombor telefon kecemasan disimpan dengan selamat dalam Cloud Firestore. Akaun pengguna berdaftar dirahsiakan dan tidak sekali-kali disenaraikan secara awam."
+            : language === "中文"
+            ? "信任联系人请求与紧急电话安全保存在 Cloud Firestore 中。注册用户账户严格保密，绝不会公开列出。"
+            : "Trusted contact requests and emergency phone numbers are stored in Cloud Firestore. Registered user accounts are kept private and are never listed publicly."}
         </p>
       </section>
     </>
@@ -5970,6 +6421,7 @@ function TrustedContact({
 }
 
 function CommunityMember({ back, user, notify }: { back: () => void; user: GlobeUser; notify: (s: string) => void }) {
+  const { t, language } = useLanguage();
   const [composerMode, setComposerMode] = useState<"text" | "voice">("text");
   const [voice, setVoice] = useState<"idle" | "recording" | "ready">("idle");
   const [recordedVoice, setRecordedVoice] = useState<{ dataUrl: string; duration: number } | null>(null);
@@ -6353,20 +6805,34 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     }
   };
 
-  const encouragements = [
-    "You’re doing great 🌱",
-    "Take it one step at a time",
-    "Hope today gets a little lighter",
-    "Sending you some gentle support",
-  ];
+  const encouragements = language === "Bahasa Melayu"
+    ? [
+        "Anda hebat 🌱",
+        "Langkah demi langkah",
+        "Semoga hari ini terasa lebih ringan",
+        "Kirimkan sokongan lembut buat anda",
+      ]
+    : language === "中文"
+    ? [
+        "你做得很棒 🌱",
+        "一步一步来就好",
+        "愿今天变得轻松一点",
+        "给你送上一份温暖的支持",
+      ]
+    : [
+        "You’re doing great 🌱",
+        "Take it one step at a time",
+        "Hope today gets a little lighter",
+        "Sending you some gentle support",
+      ];
 
   if (blocked) {
     return (
       <div className="centered-state">
         <div className="success-mark"><Icon name="shield" /></div>
-        <h1>Anonymous user blocked</h1>
-        <p>This user will be hidden for the rest of this session. No personal profile data was stored.</p>
-        <Button onClick={back}>Return to globe</Button>
+        <h1>{language === "Bahasa Melayu" ? "Pengguna tanpa nama disekat" : language === "中文" ? "已屏蔽此匿名用户" : "Anonymous user blocked"}</h1>
+        <p>{language === "Bahasa Melayu" ? "Pengguna ini akan disembunyikan untuk baki sesi ini. Tiada data profil peribadi disimpan." : language === "中文" ? "该用户在此会话的其余时间内将被隐藏。未存储任何个人档案数据。" : "This user will be hidden for the rest of this session. No personal profile data was stored."}</p>
+        <Button onClick={back}>{t.community_back_globe}</Button>
       </div>
     );
   }
@@ -6374,13 +6840,13 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
   return (
     <div className="node-chat-page">
       <PageHeader
-        title={`Anonymous Node #${user.id}`}
-        subtitle={`Mood check-in: ${user.moodLabel} · Identity-free`}
+        title={`${language === "Bahasa Melayu" ? "Nod Tanpa Nama #" : language === "中文" ? "匿名节点 #" : "Anonymous Node #"}${user.id}`}
+        subtitle={`${language === "Bahasa Melayu" ? "Daftar masuk emosi: " : language === "中文" ? "心情状态: " : "Mood check-in: "}${user.moodLabel} · ${language === "Bahasa Melayu" ? "Bebas identiti" : language === "中文" ? "完全匿名" : "Identity-free"}`}
         back={back}
         action={
           <div style={{ display: "flex", gap: "4px" }}>
-            <Button variant="ghost" onClick={() => notify("Thank you. Node flagged for moderation review.")}>Report</Button>
-            <Button variant="ghost" onClick={() => setBlocked(true)}>Block</Button>
+            <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Nod ditandakan untuk semakan penyederhanaan." : language === "中文" ? "感谢反馈。该节点已标记并提交审核团队。" : "Thank you. Node flagged for moderation review.")}>{t.common_report}</Button>
+            <Button variant="ghost" onClick={() => setBlocked(true)}>{t.common_block}</Button>
           </div>
         }
       />
@@ -6389,15 +6855,15 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
         <div className="anonymous-profile compact">
           <span className={`anonymous-orbit mood-${user.moodGlow}`}><i /></span>
           <div>
-            <span className="prototype-label">Anonymous member · Node #{user.id}</span>
-            <h1>Someone is here</h1>
-            <strong>Current mood glow: {user.moodLabel}</strong>
-            <p>Messages sent by others or by you appear as anonymous chat bubbles below.</p>
+            <span className="prototype-label">{language === "Bahasa Melayu" ? `Ahli tanpa nama · Nod #${user.id}` : language === "中文" ? `匿名成员 · 节点 #${user.id}` : `Anonymous member · Node #${user.id}`}</span>
+            <h1>{t.community_someone_here}</h1>
+            <strong>{language === "Bahasa Melayu" ? `Cahaya emosi semasa: ${user.moodLabel}` : language === "中文" ? `当前心情微光: ${user.moodLabel}` : `Current mood glow: ${user.moodLabel}`}</strong>
+            <p>{language === "Bahasa Melayu" ? "Mesej dihantar oleh orang lain atau anda muncul sebagai buih sembang tanpa nama di bawah." : language === "中文" ? "您或他人发送的支持留言将作为匿名气泡显示在下方。" : "Messages sent by others or by you appear as anonymous chat bubbles below."}</p>
           </div>
         </div>
 
         <div className="encouragement-intro compact">
-          <span className="eyebrow">Quick encouragement</span>
+          <span className="eyebrow">{language === "Bahasa Melayu" ? "Kata perangsang pantas" : language === "中文" ? "快捷温暖语" : "Quick encouragement"}</span>
           <div className="encouragement-chips">
             {encouragements.map((item) => (
               <button
@@ -6419,26 +6885,26 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 
         <label className="check-row community-consent compact">
           <TextInput type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-          <span>Keep messages kind, supportive, and free of personal identifying details.</span>
+          <span>{language === "Bahasa Melayu" ? "Kekalkan mesej yang baik, menyokong, dan tanpa butiran pengenalan peribadi." : language === "中文" ? "请保持言语善意支持，切勿透露个人可识别信息。" : "Keep messages kind, supportive, and free of personal identifying details."}</span>
         </label>
 
         <div className="conversation-label">
-          <span>Support messages for Node #{user.id}</span>
-          <small>{messages.length} {messages.length === 1 ? "bubble" : "bubbles"}</small>
+          <span>{language === "Bahasa Melayu" ? `Mesej sokongan untuk Nod #${user.id}` : language === "中文" ? `给节点 #${user.id} 的支持留言` : `Support messages for Node #${user.id}`}</span>
+          <small>{messages.length} {messages.length === 1 ? (language === "Bahasa Melayu" ? "buih" : language === "中文" ? "条" : "bubble") : (language === "Bahasa Melayu" ? "buih" : language === "中文" ? "条" : "bubbles")}</small>
         </div>
 
         {loadingMessages ? (
-          <div className="empty mini-empty"><Icon name="chat" /><p>Loading support messages…</p></div>
+          <div className="empty mini-empty"><Icon name="chat" /><p>{t.common_loading}</p></div>
         ) : messages.length === 0 ? (
           <div className="empty mini-empty">
             <Icon name="chat" />
-            <p>No support messages yet. Send a text or audio bubble from the bottom bar below.</p>
+            <p>{language === "Bahasa Melayu" ? "Belum ada mesej sokongan lagi. Hantar buih teks atau audio dari bar di bawah." : language === "中文" ? "暂无支持留言。可从下方底栏发送文字或语音鼓励气泡。" : "No support messages yet. Send a text or audio bubble from the bottom bar below."}</p>
           </div>
         ) : (
           <div className="community-thread">
             {messages.map((message) => {
               const isMe = message.from === "me";
-              const timeDisplay = formatFriendlyTime(message.createdAt);
+              const timeDisplay = formatFriendlyTime(message.createdAt, language);
               return (
                 <div className={`support-bubble-row ${isMe ? "me" : "member"}`} key={message.id}>
                   {!isMe && (
@@ -6448,7 +6914,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                   )}
                   <div className="support-bubble-col">
                     <div className="support-bubble-meta">
-                      <strong>{isMe ? "You (Anonymous)" : message.senderAnonymous}</strong>
+                      <strong>{isMe ? (language === "Bahasa Melayu" ? "Anda (Tanpa Nama)" : language === "中文" ? "你 (匿名)" : "You (Anonymous)") : message.senderAnonymous}</strong>
                       <small>{timeDisplay}</small>
                     </div>
                     <div className={`support-bubble ${isMe ? "me" : "member"}`}>
@@ -6490,7 +6956,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
             }}
           >
             <Icon name="chat" />
-            Text
+            {t.community_text}
           </button>
           <button
             type="button"
@@ -6498,7 +6964,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
             onClick={() => setComposerMode("voice")}
           >
             <Icon name="mic" />
-            Audio
+            {t.community_voice}
           </button>
         </div>
 
@@ -6506,8 +6972,8 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           <div className="voice-mic-inline-help" style={{ marginBottom: "8px" }}>
             <small>{micNotice}</small>
             <div style={{ display: "flex", gap: "6px" }}>
-              <Button variant="secondary" onClick={handleUseVoiceSample}>Attach Voice Greeting (8s)</Button>
-              <Button variant="ghost" onClick={() => setMicNotice(null)}>Dismiss</Button>
+              <Button variant="secondary" onClick={handleUseVoiceSample}>{language === "Bahasa Melayu" ? "Sertakan Salam Suara (8s)" : language === "中文" ? "附加问候音频 (8秒)" : "Attach Voice Greeting (8s)"}</Button>
+              <Button variant="ghost" onClick={() => setMicNotice(null)}>{t.common_dismiss}</Button>
             </div>
           </div>
         )}
@@ -6525,11 +6991,11 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                   <Icon name="mic" />
                 </button>
                 <div className="voice-composer-info">
-                  <strong>Tap mic to record audio support</strong>
-                  <small>Or attach a warm voice greeting below</small>
+                  <strong>{language === "Bahasa Melayu" ? "Ketik mikrofon untuk rakam audio sokongan" : language === "中文" ? "点击麦克风录制语音鼓励" : "Tap mic to record audio support"}</strong>
+                  <small>{language === "Bahasa Melayu" ? "Atau sertakan salam suara mesra di bawah" : language === "中文" ? "或在下方附上温暖的语音问候" : "Or attach a warm voice greeting below"}</small>
                 </div>
                 <Button variant="secondary" onClick={handleUseVoiceSample}>
-                  Voice Greeting (8s)
+                  {language === "Bahasa Melayu" ? "Salam Suara (8s)" : language === "中文" ? "问候音频 (8秒)" : "Voice Greeting (8s)"}
                 </Button>
               </div>
             )}
@@ -6545,7 +7011,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                   <Icon name="close" />
                 </button>
                 <div className="voice-composer-info">
-                  <strong>Recording audio · {formatAudioDuration(voiceSeconds)}</strong>
+                  <strong>{language === "Bahasa Melayu" ? "Merakam audio · " : language === "中文" ? "正在录音 · " : "Recording audio · "}{formatAudioDuration(voiceSeconds)}</strong>
                   <div className="voice-live-waves mini">
                     <span style={{ height: `${Math.max(4, voiceVolume * 20)}px` }} />
                     <span style={{ height: `${Math.max(6, voiceVolume * 28)}px` }} />
@@ -6554,8 +7020,8 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                     <span style={{ height: `${Math.max(4, voiceVolume * 18)}px` }} />
                   </div>
                 </div>
-                <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
-                <Button variant="danger" onClick={() => void handleStopVoice()}>Stop</Button>
+                <Button variant="ghost" onClick={handleCancelVoice}>{t.common_cancel}</Button>
+                <Button variant="danger" onClick={() => void handleStopVoice()}>{language === "Bahasa Melayu" ? "Berhenti" : language === "中文" ? "停止" : "Stop"}</Button>
               </div>
             )}
 
@@ -6570,12 +7036,12 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                   <Icon name={isPlayingPreview ? "pause" : "play"} />
                 </button>
                 <div className="voice-composer-info">
-                  <strong>Audio ready · {formatAudioDuration(recordedVoice?.duration || 8)}</strong>
-                  <small>{isPlayingPreview ? "Playing preview…" : "Tap play to review before sending"}</small>
+                  <strong>{language === "Bahasa Melayu" ? "Audio sedia · " : language === "中文" ? "音频就绪 · " : "Audio ready · "}{formatAudioDuration(recordedVoice?.duration || 8)}</strong>
+                  <small>{isPlayingPreview ? (language === "Bahasa Melayu" ? "Memainkan pratonton…" : language === "中文" ? "正在试听…" : "Playing preview…") : (language === "Bahasa Melayu" ? "Ketik main untuk dengar sebelum hantar" : language === "中文" ? "点击播放试听，确认后发送" : "Tap play to review before sending")}</small>
                 </div>
-                <Button variant="ghost" onClick={handleCancelVoice}>Cancel</Button>
+                <Button variant="ghost" onClick={handleCancelVoice}>{t.common_cancel}</Button>
                 <Button disabled={sending} onClick={() => void confirmVoice()}>
-                  {sending ? "Sending…" : "Send Audio"}
+                  {sending ? (language === "Bahasa Melayu" ? "Menghantar…" : language === "中文" ? "发送中…" : "Sending…") : (language === "Bahasa Melayu" ? "Hantar Audio" : language === "中文" ? "发送音频" : "Send Audio")}
                 </Button>
               </div>
             )}
@@ -6598,7 +7064,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
               value={text}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              placeholder="Write a supportive message…"
+              placeholder={language === "Bahasa Melayu" ? "Tulis mesej sokongan…" : language === "中文" ? "写下一句鼓励支持…" : "Write a supportive message…"}
               aria-label="Supportive message"
               maxLength={2000}
             />
@@ -6613,7 +7079,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 }
 
 function CommunityGuidelines({ back }: { back: () => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   return (
     <>
       <PageHeader title={t.guidelines_title} subtitle={t.guidelines_subtitle} back={back} />
@@ -6621,22 +7087,22 @@ function CommunityGuidelines({ back }: { back: () => void }) {
         <div className="help-hero">
           <Icon name="shield" />
           <div>
-            <h2>A safer shared space.</h2>
-            <p>Every post and interaction is protected by human moderation and automated safety protocols.</p>
+            <h2>{language === "Bahasa Melayu" ? "Ruang perkongsian yang lebih selamat." : language === "中文" ? "更安全的共处空间。" : "A safer shared space."}</h2>
+            <p>{language === "Bahasa Melayu" ? "Setiap hantaran dan interaksi dilindungi oleh penyederhanaan manusia dan protokol keselamatan automatik." : language === "中文" ? "每一条动态与互动均受到人工审核与自动化安全协议的保护。" : "Every post and interaction is protected by human moderation and automated safety protocols."}</p>
           </div>
         </div>
         <div className="card">
-          <h3>Be kind</h3>
-          <p>Respond with empathy and patience. Harassment, hate speech, or pressure are strictly not tolerated.</p>
-          <h3>Protect privacy</h3>
-          <p>Never share personal contact info, phone numbers, addresses, or private details of others.</p>
-          <h3>Know the boundary</h3>
-          <p>Community support provides compassionate peer encouragement; it does not replace qualified clinical or emergency care.</p>
-          <h3>Report concerns</h3>
-          <p>Use the report button on any post or anonymous profile to immediately flag content for our safety moderation team.</p>
+          <h3>{language === "Bahasa Melayu" ? "Jadilah baik" : language === "中文" ? "保持善意" : "Be kind"}</h3>
+          <p>{language === "Bahasa Melayu" ? "Balas dengan empati dan kesabaran. Gangguan, ucapan kebencian, atau tekanan sama sekali tidak diterima." : language === "中文" ? "请带着同理心与耐心回复。平台对骚扰、仇恨言论或强迫行为采取零容忍态度。" : "Respond with empathy and patience. Harassment, hate speech, or pressure are strictly not tolerated."}</p>
+          <h3>{language === "Bahasa Melayu" ? "Lindungi privasi" : language === "中文" ? "保护隐私" : "Protect privacy"}</h3>
+          <p>{language === "Bahasa Melayu" ? "Jangan sekali-kali berkongsi maklumat hubungan peribadi, nombor telefon, alamat, atau butiran sulit orang lain." : language === "中文" ? "切勿分享个人联系方式、电话号码、住址或他人的私人隐私信息。" : "Never share personal contact info, phone numbers, addresses, or private details of others."}</p>
+          <h3>{language === "Bahasa Melayu" ? "Ketahui batasan" : language === "中文" ? "明确边界" : "Know the boundary"}</h3>
+          <p>{language === "Bahasa Melayu" ? "Sokongan komuniti menyediakan sokongan rakan sebaya yang prihatin; ia bukan pengganti rawatan klinikal atau kecemasan bertauliah." : language === "中文" ? "社区互助提供富有同理心的同伴鼓励，无法代替专业临床医疗或危机急救。" : "Community support provides compassionate peer encouragement; it does not replace qualified clinical or emergency care."}</p>
+          <h3>{language === "Bahasa Melayu" ? "Laporkan kebimbangan" : language === "中文" ? "举报违规" : "Report concerns"}</h3>
+          <p>{language === "Bahasa Melayu" ? "Gunakan butang lapor pada sebarang hantaran atau profil tanpa nama untuk segera menandakan kandungan kepada pasukan penyederhana keselamatan kami." : language === "中文" ? "使用任意动态或匿名档案上的举报按钮，可立即向我们的安全审核团队标记违规内容。" : "Use the report button on any post or anonymous profile to immediately flag content for our safety moderation team."}</p>
         </div>
         <Button className="full" onClick={back}>
-          I understand
+          {language === "Bahasa Melayu" ? "Saya faham" : language === "中文" ? "我已理解" : "I understand"}
         </Button>
       </section>
     </>
@@ -6644,37 +7110,62 @@ function CommunityGuidelines({ back }: { back: () => void }) {
 }
 
 function RiskDemo({ back, navigate, persona, companion }: { back: () => void; navigate: (s: Screen) => void; persona: Persona; companion: Companion }) {
+  const { t, language } = useLanguage();
   const [level, setLevel] = useState<RiskLevel>("low");
   const scenarios: Record<RiskLevel, { label: string; message: string; response: string; next: string[] }> = {
     low: {
-      label: "Everyday Stress",
-      message: "I’m stressed about an assignment and can’t focus.",
-      response: persona === "friendly" ? "That deadline pressure sounds rough. Want to pick one tiny task and do a short breathing reset first?" : persona === "calm" ? "Let’s slow this down. We can name the next manageable task, then take a brief grounding pause." : "That sounds tiring. We can make it feel smaller together—perhaps one gentle task and a short breathing pause.",
-      next: ["Try a grounding exercise", "Break the task into one step", "Keep talking with ONY"],
+      label: language === "Bahasa Melayu" ? "Tekanan Harian" : language === "中文" ? "日常压力" : "Everyday Stress",
+      message: language === "Bahasa Melayu" ? "Saya tertekan dengan tugasan dan tak dapat fokus." : language === "中文" ? "我对作业任务感到焦虑，无法集中注意力。" : "I’m stressed about an assignment and can’t focus.",
+      response: persona === "friendly"
+        ? (language === "Bahasa Melayu" ? "Tekanan tarikh akhir itu memang meletihkan. Nak pilih satu tugas paling kecil dan buat reset pernafasan ringkas dahulu?" : language === "中文" ? "截稿压力确实让人喘不过气。想先选一个最微小的小任务，然后做个简短的呼吸重置吗？" : "That deadline pressure sounds rough. Want to pick one tiny task and do a short breathing reset first?")
+        : persona === "calm"
+        ? (language === "Bahasa Melayu" ? "Mari kita perlahankan ritma ini. Kita boleh namakan tugas seterusnya yang boleh diurus, kemudian berhenti sejenak untuk menenangkan diri." : language === "中文" ? "让我们把节奏慢下来。我们可以先确定下一个最容易处理的小事，然后做短暂的着陆平复。" : "Let’s slow this down. We can name the next manageable task, then take a brief grounding pause.")
+        : (language === "Bahasa Melayu" ? "Kedengaran meletihkan. Kita boleh ringankan beban ini bersama—mungkin satu tugas lembut dan sedikit jeda pernafasan." : language === "中文" ? "听起来让人很疲惫。我们可以一起把事情拆小——或许先从一个微小的任务和一个温和的呼吸小憩开始。" : "That sounds tiring. We can make it feel smaller together—perhaps one gentle task and a short breathing pause."),
+      next: language === "Bahasa Melayu"
+        ? ["Cuba senaman pembumian (grounding)", "Pecahkan tugas kepada satu langkah kecil", "Teruskan berbual dengan ONY"]
+        : language === "中文"
+        ? ["尝试身心着陆练习", "将任务拆解为最小一步", "继续与 ONY 倾诉"]
+        : ["Try a grounding exercise", "Break the task into one step", "Keep talking with ONY"],
     },
     moderate: {
-      label: "Elevated Distress",
-      message: "I haven’t been coping for days. I feel hopeless and I’m pulling away from everyone.",
-      response: "I’m sorry things have felt this heavy. I won’t assume what this means, but I’d like to understand what support feels possible right now. We can try one grounding step, contact someone you trust, or look at verified human-support options.",
-      next: ["Stay connected to someone", "Try a simple grounding step", "Explore human support"],
+      label: language === "Bahasa Melayu" ? "Tekanan Emosi Meningkat" : language === "中文" ? "情绪高度困扰" : "Elevated Distress",
+      message: language === "Bahasa Melayu" ? "Saya rasa sukar bertahan sejak beberapa hari. Saya rasa putus asa dan menjauhkan diri daripada semua orang." : language === "中文" ? "好几天我都撑不下去了。我感到绝望，并下意识远离身边所有人。" : "I haven’t been coping for days. I feel hopeless and I’m pulling away from everyone.",
+      response: language === "Bahasa Melayu"
+        ? "Maafkan saya jika keadaan terasa seberat ini. Saya tidak akan membuat andaian, tetapi saya ingin memahami apa sokongan yang mungkin membantu sekarang. Kita boleh cuba satu langkah pembumian, hubungi orang yang dipercayai, atau terokai sokongan pakar yang disahkan."
+        : language === "中文"
+        ? "看到你承受如此重压，我很心疼。我不会妄下定论，但希望能了解此刻对你最适切的支持。我们可以尝试一步着陆练习、联系你信任的人，或查看核实的专业医疗求助资源。"
+        : "I’m sorry things have felt this heavy. I won’t assume what this means, but I’d like to understand what support feels possible right now. We can try one grounding step, contact someone you trust, or look at verified human-support options.",
+      next: language === "Bahasa Melayu"
+        ? ["Kekal berhubung dengan seseorang", "Cuba langkah pembumian mudah", "Terokai sokongan profesional"]
+        : language === "中文"
+        ? ["与身边信任的人保持联络", "尝试简单的呼吸着陆步法", "探索经过核实的专业支持"]
+        : ["Stay connected to someone", "Try a simple grounding step", "Explore human support"],
     },
     high: {
-      label: "Immediate Crisis",
-      message: "I’m thinking about ending my life and I don’t feel safe.",
-      response: "I’m really sorry you’re in this much pain. Are you in immediate danger or likely to act now? If yes, call emergency services (999 or Talian HEAL 15555) now, move away from anything you could use to hurt yourself, and go to a trusted person or public place. I can help you open those options.",
-      next: ["Clarify immediate danger", "Contact emergency support", "Reach a trusted person"],
+      label: language === "Bahasa Melayu" ? "Krisis Segera" : language === "中文" ? "即时危机" : "Immediate Crisis",
+      message: language === "Bahasa Melayu" ? "Saya berfikir untuk menamatkan hidup dan rasa tidak selamat." : language === "中文" ? "我产生了结束生命的念头，现在感到很不安全。" : "I’m thinking about ending my life and I don’t feel safe.",
+      response: language === "Bahasa Melayu"
+        ? "Saya amat bersimpati dengan kesakitan berat ini. Adakah anda berada dalam bahaya serta-merta sekarang? Jika ya, sila hubungi talian kecemasan (999 atau Talian HEAL 15555) sekarang, jauhi sebarang benda yang boleh mencederakan, dan pergi ke tempat selamat atau bersama orang yang dipercayai. Saya boleh bantu anda membuka pilihan ini."
+        : language === "中文"
+        ? "非常难过你正在经历如此巨大的痛苦。你目前是否处于紧急危险中？如果是，请立即拨打紧急求助电话 (999 或 Talian HEAL 15555)，远离任何可能伤害自己的物品，前往公共场所或信任的人身边。我可以立即为你打开求助选项。"
+        : "I’m really sorry you’re in this much pain. Are you in immediate danger or likely to act now? If yes, call emergency services (999 or Talian HEAL 15555) now, move away from anything you could use to hurt yourself, and go to a trusted person or public place. I can help you open those options.",
+      next: language === "Bahasa Melayu"
+        ? ["Jelaskan bahaya serta-merta", "Hubungi sokongan kecemasan", "Hubungi kenalan dipercayai"]
+        : language === "中文"
+        ? ["明确当前紧急危险状态", "联系专业危机急救支持", "联系身边的信任联系人"]
+        : ["Clarify immediate danger", "Contact emergency support", "Reach a trusted person"],
     },
   };
   const scenario = scenarios[level];
   return (
     <>
-      <PageHeader title="Safety Protocols" subtitle="Escalation & Care Tier Architecture" back={back} />
+      <PageHeader title={t.chat_safety_protocols || "Safety Protocols"} subtitle={language === "Bahasa Melayu" ? "Seni Bina Tahap Eskalasi & Penjagaan" : language === "中文" ? "升级与护理层级架构" : "Escalation & Care Tier Architecture"} back={back} />
       <section className="page-pad">
         <div className="demo-notice">
           <Icon name="shield" />
           <div>
-            <strong>Safety-First Architecture</strong>
-            <p>ONY is designed with progressive risk assessment to prioritize your safety and connect you with human care whenever distress is detected.</p>
+            <strong>{language === "Bahasa Melayu" ? "Seni Bina Mengutamakan Keselamatan" : language === "中文" ? "安全第一架构" : "Safety-First Architecture"}</strong>
+            <p>{language === "Bahasa Melayu" ? "ONY direka dengan penilaian risiko progresif untuk mengutamakan keselamatan anda dan menghubungkan anda dengan penjagaan manusia setiap kali tekanan dikesan." : language === "中文" ? "ONY 采用渐进式风险评估设计，在检测到情绪困扰时优先保障您的安全，并引导您及时获取人工支持。" : "ONY is designed with progressive risk assessment to prioritize your safety and connect you with human care whenever distress is detected."}</p>
           </div>
         </div>
         <div className="risk-switch" aria-label="Review safety escalation levels">
@@ -6691,23 +7182,23 @@ function RiskDemo({ back, navigate, persona, companion }: { back: () => void; na
         <div className={`risk-indicator risk-${level}`}>
           <span />
           <div>
-            <strong>{scenario.label} Protocol</strong>
-            <small>Automated support paired with direct pathways to professional crisis resources.</small>
+            <strong>{scenario.label} {language === "Bahasa Melayu" ? "Protokol" : language === "中文" ? "协议" : "Protocol"}</strong>
+            <small>{language === "Bahasa Melayu" ? "Sokongan automatik digandingkan dengan laluan terus ke sumber krisis profesional." : language === "中文" ? "自动化同伴陪伴结合直通专业危机资源的保障路径。" : "Automated support paired with direct pathways to professional crisis resources."}</small>
           </div>
         </div>
         <div className="scenario-thread">
-          <span className="scenario-label">User Situation</span>
+          <span className="scenario-label">{language === "Bahasa Melayu" ? "Situasi Pengguna" : language === "中文" ? "用户场景" : "User Situation"}</span>
           <div className="message-row user">
             <div className="message">{scenario.message}</div>
           </div>
-          <span className="scenario-label">ONY Companion Response · {personaOptions.find((item) => item.id === persona)?.name}</span>
+          <span className="scenario-label">{language === "Bahasa Melayu" ? "Balasan Teman ONY" : language === "中文" ? "ONY 伴侣回复" : "ONY Companion Response"} · {personaOptions.find((item) => item.id === persona)?.name}</span>
           <div className="message-row ony">
             <CompanionAvatar companion={companion} />
             <div className="message">{scenario.response}</div>
           </div>
         </div>
         <div className="card next-steps">
-          <h3>Escalation Pathways</h3>
+          <h3>{language === "Bahasa Melayu" ? "Laluan Eskalasi" : language === "中文" ? "转介与求助路径" : "Escalation Pathways"}</h3>
           {scenario.next.map((item) => (
             <span key={item}>
               <Icon name="check" />
@@ -6715,22 +7206,26 @@ function RiskDemo({ back, navigate, persona, companion }: { back: () => void; na
             </span>
           ))}
         </div>
-        {level === "low" && <Button className="full" onClick={() => navigate("resources")}>Open self-help library</Button>}
+        {level === "low" && <Button className="full" onClick={() => navigate("resources")}>{language === "Bahasa Melayu" ? "Buka perpustakaan bantu diri" : language === "中文" ? "打开自助资源库" : "Open self-help library"}</Button>}
         {level === "moderate" && (
           <>
-            <Button className="full" onClick={() => navigate("resources")}>View coping resources</Button>
-            <Button className="full" variant="secondary" onClick={() => navigate("professional")}>Explore verified professionals</Button>
+            <Button className="full" onClick={() => navigate("resources")}>{language === "Bahasa Melayu" ? "Lihat sumber daya tindak" : language === "中文" ? "查看心理调适资源" : "View coping resources"}</Button>
+            <Button className="full" variant="secondary" onClick={() => navigate("professional")}>{language === "Bahasa Melayu" ? "Terokai profesional disahkan" : language === "中文" ? "寻找核实专业医生与咨询师" : "Explore verified professionals"}</Button>
           </>
         )}
         {level === "high" && (
           <>
-            <Button className="full" variant="danger" onClick={() => navigate("safety")}>Open immediate safety steps</Button>
-            <Button className="full" variant="secondary" onClick={() => navigate("trusted")}>Contact a trusted person</Button>
+            <Button className="full" variant="danger" onClick={() => navigate("safety")}>{language === "Bahasa Melayu" ? "Buka langkah keselamatan segera" : language === "中文" ? "开启即时安全保护步骤" : "Open immediate safety steps"}</Button>
+            <Button className="full" variant="secondary" onClick={() => navigate("trusted")}>{t.chat_action_contact_trusted}</Button>
           </>
         )}
         <p className="disclaimer">
-          <Icon name="shield" />
-          Persona styles change tone only. Every interaction adheres strictly to safety boundaries, clinical guidance, and emergency escalation.
+          <Icon name="shield" />{" "}
+          {language === "Bahasa Melayu"
+            ? "Gaya persona hanya mengubah nada suara. Setiap interaksi mematuhi sempadan keselamatan, panduan klinikal, dan eskalasi kecemasan dengan ketat."
+            : language === "中文"
+            ? "人设风格仅改变沟通语调。所有对话均严格遵守安全边界、临床指导原则与危机升级规范。"
+            : "Persona styles change tone only. Every interaction adheres strictly to safety boundaries, clinical guidance, and emergency escalation."}
         </p>
       </section>
     </>
@@ -6738,39 +7233,68 @@ function RiskDemo({ back, navigate, persona, companion }: { back: () => void; na
 }
 
 function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigate: (s: Screen) => void; notify: (s: string) => void }) {
-  const [open, setOpen] = useState("Breathing & grounding");
+  const { t, language } = useLanguage();
+  const [open, setOpen] = useState(language === "Bahasa Melayu" ? "Pernafasan & pembumian" : language === "中文" ? "呼吸与身心着陆" : "Breathing & grounding");
   const resources = [
-    { title: "Stress management", description: "Name the pressure, choose one small next step, and pause before reassessing.", action: "Open stress reset" },
-    { title: "Breathing & grounding", description: "Try a slow exhale and notice five things you can see around you.", action: "Start 60-second guide" },
-    { title: "Reflection & journaling", description: "Write what happened, what you felt, and what support might help.", action: "Open reflection prompt" },
-    { title: "Sleep & relaxation", description: "Build a gentle wind-down routine and reduce stimulation before rest.", action: "View sleep habits" },
-    { title: "Study or work pressure", description: "Reduce a large task to the smallest visible action you can begin.", action: "Make a small plan" },
-    { title: "Professional support", description: "Understand the difference between peer support and qualified care.", action: "Find support" },
-    { title: "Crisis & emergency", description: "Access urgent safety steps and confirm current crisis contact details.", action: "View urgent help" },
+    {
+      title: language === "Bahasa Melayu" ? "Pengurusan tekanan" : language === "中文" ? "压力管理" : "Stress management",
+      description: language === "Bahasa Melayu" ? "Kenal pasti punca tekanan, pilih satu tindakan kecil, dan bertenang sejenak." : language === "中文" ? "明确感受压力来源，选定一个微小的下一步，并在重新评估前稍作停顿。" : "Name the pressure, choose one small next step, and pause before reassessing.",
+      action: language === "Bahasa Melayu" ? "Buka set semula tekanan" : language === "中文" ? "开启减压重置" : "Open stress reset",
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Pernafasan & pembumian" : language === "中文" ? "呼吸与身心着陆" : "Breathing & grounding",
+      description: language === "Bahasa Melayu" ? "Hembus nafas perlahan-lahan dan perhatikan lima benda yang anda boleh lihat di sekeliling." : language === "中文" ? "深吸后缓缓呼气，并环顾四周留意能看到的五件事物。" : "Try a slow exhale and notice five things you can see around you.",
+      action: language === "Bahasa Melayu" ? "Mula panduan 60 saat" : language === "中文" ? "开启 60 秒指引" : "Start 60-second guide",
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Refleksi & penulisan jurnal" : language === "中文" ? "反思与心情记录" : "Reflection & journaling",
+      description: language === "Bahasa Melayu" ? "Tulis apa yang berlaku, perasaan anda, dan sokongan yang mungkin diperlukan." : language === "中文" ? "写下发生了什么、内心的感受，以及哪种支持能够帮到你。" : "Write what happened, what you felt, and what support might help.",
+      action: language === "Bahasa Melayu" ? "Buka panduan refleksi" : language === "中文" ? "开启反思提示" : "Open reflection prompt",
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Tidur & relaksasi" : language === "中文" ? "睡眠与深度放松" : "Sleep & relaxation",
+      description: language === "Bahasa Melayu" ? "Bina rutin santai sebelum tidur dan kurangkan rangsangan skrin sebelum rehat." : language === "中文" ? "建立温和的睡前放松流程，在就寝前减少感官刺激。" : "Build a gentle wind-down routine and reduce stimulation before rest.",
+      action: language === "Bahasa Melayu" ? "Lihat tabiat tidur" : language === "中文" ? "查看睡眠习惯" : "View sleep habits",
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Tekanan belajar atau kerja" : language === "中文" ? "学业与工作压力" : "Study or work pressure",
+      description: language === "Bahasa Melayu" ? "Kecilkan tugasan besar kepada tindakan nyata paling mudah yang boleh dimulakan sekarang." : language === "中文" ? "把繁重庞大的任务简化为当下即可着手的第一步清晰微行动。" : "Reduce a large task to the smallest visible action you can begin.",
+      action: language === "Bahasa Melayu" ? "Bina rancangan kecil" : language === "中文" ? "制定微行动计划" : "Make a small plan",
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Sokongan profesional" : language === "中文" ? "专业医疗支持" : "Professional support",
+      description: language === "Bahasa Melayu" ? "Fahami perbezaan antara sokongan rakan sebaya dan rawatan pakar bertauliah." : language === "中文" ? "了解同伴陪伴与具备资质的专业临床治疗之间的重要区别。" : "Understand the difference between peer support and qualified care.",
+      action: language === "Bahasa Melayu" ? "Cari sokongan" : language === "中文" ? "寻找专业求助" : "Find support",
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Krisis & kecemasan" : language === "中文" ? "紧急危机支援" : "Crisis & emergency",
+      description: language === "Bahasa Melayu" ? "Akses langkah keselamatan segera dan sahkan butiran hubungan krisis terkini." : language === "中文" ? "获取紧急安全自护步骤并核实官方最新危机救助热线。" : "Access urgent safety steps and confirm current crisis contact details.",
+      action: language === "Bahasa Melayu" ? "Lihat bantuan segera" : language === "中文" ? "查看紧急援助" : "View urgent help",
+    },
   ];
   const openResource = (title: string, action: string) => {
     if (open !== title) {
       setOpen(title);
       return;
     }
-    if (title === "Professional support") navigate("professional");
-    else if (title === "Crisis & emergency") navigate("help");
+    if (title === "Professional support" || title === "Sokongan profesional" || title === "专业医疗支持") navigate("professional");
+    else if (title === "Crisis & emergency" || title === "Krisis & kecemasan" || title === "紧急危机支援") navigate("help");
     else notify(`${action} opened`);
   };
   return (
     <>
-      <PageHeader title="Support Library" subtitle="Evidence-based coping resources" back={back} />
+      <PageHeader title={t.chat_resources || "Support Library"} subtitle={language === "Bahasa Melayu" ? "Sumber daya tindak berasaskan bukti" : language === "中文" ? "循证心理调适资源" : "Evidence-based coping resources"} back={back} />
       <section className="page-pad">
         <div className="help-hero">
           <Icon name="memory" />
           <div>
-            <h2>Practical support, in small steps.</h2>
-            <p>Clinically-grounded self-help techniques and verified emergency directories ready when you need them.</p>
+            <h2>{language === "Bahasa Melayu" ? "Sokongan praktikal, langkah demi langkah." : language === "中文" ? "实用支持，步步为营。" : "Practical support, in small steps."}</h2>
+            <p>{language === "Bahasa Melayu" ? "Teknik bantu diri berasaskan klinikal dan direktori kecemasan disahkan sedia apabila anda memerlukannya." : language === "中文" ? "基于临床的自助技巧与经过核实的马来西亚危机专线，随时为您守候。" : "Clinically-grounded self-help techniques and verified emergency directories ready when you need them."}</p>
           </div>
         </div>
         <div className="knowledge-status">
-          <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>Verified Library</span>
-          <p>Curated in alignment with mental health guidelines and verified Malaysian crisis helplines.</p>
+          <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{language === "Bahasa Melayu" ? "Perpustakaan Disahkan" : language === "中文" ? "权威核实资源库" : "Verified Library"}</span>
+          <p>{language === "Bahasa Melayu" ? "Disusun selaras dengan garis panduan kesihatan mental dan talian bantuan krisis Malaysia yang disahkan." : language === "中文" ? "依据心理健康准则与马来西亚官方核实危机热线精选编制。" : "Curated in alignment with mental health guidelines and verified Malaysian crisis helplines."}</p>
         </div>
         <div className="resource-library">
           {resources.map((resource) => (
@@ -6790,8 +7314,12 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
           ))}
         </div>
         <p className="disclaimer">
-          <Icon name="info" />
-          Evidence-informed educational content for everyday well-being. It does not replace medical consultation or clinical psychiatric treatment.
+          <Icon name="info" />{" "}
+          {language === "Bahasa Melayu"
+            ? "Kandungan pendidikan berpandukan bukti untuk kesejahteraan harian. Ia tidak menggantikan konsultasi perubatan atau rawatan psikiatri klinikal."
+            : language === "中文"
+            ? "提供用于日常身心健康的循证科普资源。本资源不可替代专业医疗诊断或临床精神科治疗。"
+            : "Evidence-informed educational content for everyday well-being. It does not replace medical consultation or clinical psychiatric treatment."}
         </p>
       </section>
     </>
@@ -6819,7 +7347,7 @@ function Privacy({
   onDeleteAccount?: () => void;
   navigate: (s: Screen) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [analytics, setAnalytics] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
@@ -6829,84 +7357,88 @@ function Privacy({
         <div className="help-hero">
           <Icon name="shield" />
           <div>
-            <h2>Your data, your control.</h2>
-            <p>Reflections, consented memories, and check-ins are secured with Cloud Firestore and can be reviewed or removed anytime.</p>
+            <h2>{t.privacy_hero_title}</h2>
+            <p>{t.privacy_hero_desc}</p>
           </div>
         </div>
         <div className="privacy-facts">
           <div>
-            <strong>What may be used</strong>
-            <p>Your selected persona, language, active consented memories, and bounded recent conversation context are sent securely with your message.</p>
+            <strong>{t.privacy_what_used_title}</strong>
+            <p>{t.privacy_what_used_desc}</p>
           </div>
           <div>
-            <strong>AI provider</strong>
-            <p>Conversational replies are processed via private, server-side Gemini API endpoints without exposing your credentials or personal identification.</p>
+            <strong>{t.privacy_ai_title}</strong>
+            <p>{t.privacy_ai_desc}</p>
           </div>
           <div>
-            <strong>Share less identifying data</strong>
-            <p>Avoid unnecessary names, addresses, IDs, financial details, or private information about other people.</p>
+            <strong>{t.privacy_less_id_title}</strong>
+            <p>{t.privacy_less_id_desc}</p>
           </div>
         </div>
         <div className="setting-toggle">
           <div>
-            <strong>Use active memories</strong>
-            <p>Allow {memoryCount} saved {memoryCount === 1 ? "memory" : "memories"} to personalise future replies.</p>
+            <strong>{t.personalise_memories_toggle}</strong>
+            <p>{language === "Bahasa Melayu" ? `Benarkan ${memoryCount} memori disimpan memperibadikan balasan.` : language === "中文" ? `允许 ${memoryCount} 条已保存记忆用于个性化回复。` : `Allow ${memoryCount} saved ${memoryCount === 1 ? "memory" : "memories"} to personalise future replies.`}</p>
           </div>
           <Toggle on={useActiveMemories} setOn={setUseActiveMemories} />
         </div>
         <div className="setting-toggle">
           <div>
-            <strong>Anonymous platform analytics</strong>
-            <p>Help improve ONY with aggregated, non-identifying reliability telemetry.</p>
+            <strong>{language === "Bahasa Melayu" ? "Analisis platform tanpa nama" : language === "中文" ? "匿名平台分析" : "Anonymous platform analytics"}</strong>
+            <p>{language === "Bahasa Melayu" ? "Bantu pertingkatkan ONY dengan telemetri kebolehpercayaan tanpa pengenalan identiti." : language === "中文" ? "通过非个人身份识别的聚合可靠性指标帮助改进 ONY。" : "Help improve ONY with aggregated, non-identifying reliability telemetry."}</p>
           </div>
           <Toggle on={analytics} setOn={setAnalytics} />
         </div>
         <Button variant="secondary" className="full" onClick={reviewMemories}>
-          Review saved memories
+          {t.privacy_review_memories}
         </Button>
         <Button
           variant="secondary"
           className="full"
           onClick={() => navigate("systemLogs")}
         >
-          <Icon name="fileText" /> View Database Activity & System Logs (.log)
+          <Icon name="fileText" /> {t.privacy_view_logs}
         </Button>
         <Button
           variant="secondary"
           className="full"
-          onClick={() => notify("Account data exported: check-ins, consented memories, and settings archive")}
+          onClick={() => notify(language === "Bahasa Melayu" ? "Data akaun dieksport: arkib daftar masuk, memori dipersetujui, dan tetapan" : language === "中文" ? "账户数据已导出：签到记录、记忆及设置归档" : "Account data exported: check-ins, consented memories, and settings archive")}
         >
-          Export my data archive
+          {t.privacy_export_archive}
         </Button>
         <Button
           variant="ghost"
           className="full"
           onClick={() => {
             clearMemories();
-            notify("Saved memories cleared");
+            notify(t.memory_cleared_toast);
           }}
         >
-          Clear saved memories
+          {t.privacy_clear_memories}
         </Button>
         {confirmDelete ? (
           <div className="card" style={{ borderColor: "var(--danger)" }}>
-            <h3>Permanently delete account?</h3>
-            <p>This will permanently purge your user profile, mood history, saved memories, and chat records from our secure servers.</p>
+            <h3>{t.privacy_confirm_delete_title}</h3>
+            <p>{t.privacy_confirm_delete_desc}</p>
             <Button variant="danger" className="full" onClick={onDeleteAccount}>
-              Confirm delete my account
+              {t.privacy_confirm_btn}
             </Button>
             <Button variant="ghost" className="full" onClick={() => setConfirmDelete(false)}>
-              Cancel
+              {t.common_cancel}
             </Button>
           </div>
         ) : (
           <Button variant="danger" className="full" onClick={() => setConfirmDelete(true)}>
-            Delete account and all data
+            {t.privacy_delete_account}
           </Button>
         )}
         <p className="disclaimer">
-          <Icon name="info" />
-          Deleting an account permanently removes all associated records across Cloud Firestore and Firebase Authentication.
+          <Icon name="info" />{" "}
+          {language === "Bahasa Melayu"
+            ? "Memadamkan akaun memadamkan secara kekal semua rekod berkaitan merentas Cloud Firestore dan Firebase Authentication."
+            : language === "中文"
+            ? "注销账户将永久清除 Cloud Firestore 和 Firebase Authentication 中的所有关联数据记录。"
+            : "Deleting an account permanently removes all associated records across Cloud Firestore and Firebase Authentication."}
         </p>
       </section>
     </>
@@ -6914,25 +7446,25 @@ function Privacy({
 }
 
 function About({ back }: { back: () => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   return (
     <>
       <PageHeader title={t.about_title} subtitle={t.about_subtitle} back={back} />
       <section className="page-pad about">
         <img src={logo} alt="Official ONY logo" />
-        <span className="eyebrow">Mental Wellness Companion</span>
-        <h1>A softer first step.</h1>
-        <p>ONY is a compassionate, low-pressure first layer for everyday emotional support, created with Malaysian young adults in mind.</p>
+        <span className="eyebrow">{language === "Bahasa Melayu" ? "Rakan Kesejahteraan Minda" : language === "中文" ? "心灵相伴伴侣" : "Mental Wellness Companion"}</span>
+        <h1>{t.about_hero_title}</h1>
+        <p>{t.about_hero_desc}</p>
         <div className="boundary-list">
-          <span>Not therapy</span>
-          <span>Not diagnosis</span>
-          <span>Not emergency care</span>
+          <span>{t.about_not_therapy}</span>
+          <span>{t.about_not_diagnosis}</span>
+          <span>{t.about_not_emergency}</span>
         </div>
         <div className="card">
-          <h3>Built with Care in Malaysia</h3>
-          <p>ONY is engineered to provide compassionate, culturally-aware companionship, privacy-first community connection, and swift escalation to professional care when you need it most.</p>
+          <h3>{t.about_built_care_title}</h3>
+          <p>{t.about_built_care_desc}</p>
         </div>
-        <small>ONY · Version 1.0.0 (Release Edition)</small>
+        <small>{language === "Bahasa Melayu" ? "ONY · Versi 1.0.0 (Edisi Keluaran)" : language === "中文" ? "ONY · 版本 1.0.0 (正式发布版)" : "ONY · Version 1.0.0 (Release Edition)"}</small>
       </section>
     </>
   );
@@ -6947,7 +7479,7 @@ function SystemLogsView({
   notify: (s: string) => void;
   currentUser: User | null;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [logs, setLogs] = useState<SystemLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("All");
@@ -7090,9 +7622,9 @@ function SystemLogsView({
         <div className="log-file-summary-card">
           <div className="log-file-summary-header">
             <div>
-              <strong style={{ fontSize: "13px" }}>📦 Live Database Log Stream</strong>
+              <strong style={{ fontSize: "13px" }}>{language === "Bahasa Melayu" ? "📦 Aliran Log Pangkalan Data Langsung" : language === "中文" ? "📦 实时数据库日志流" : "📦 Live Database Log Stream"}</strong>
               <small style={{ display: "block", color: "var(--muted)", fontSize: "11px" }}>
-                Collection: <code>systemLogs</code> · Zero-Trust Security
+                {language === "Bahasa Melayu" ? "Koleksi: systemLogs · Keselamatan Sifar Kepercayaan" : language === "中文" ? "集合: systemLogs · 零信任安全机制" : "Collection: systemLogs · Zero-Trust Security"}
               </small>
             </div>
             <Button
@@ -7102,7 +7634,7 @@ function SystemLogsView({
               disabled={loading}
               title="Refresh log stream"
             >
-              <Icon name="refresh" /> {loading ? "Syncing…" : "Refresh"}
+              <Icon name="refresh" /> {loading ? (language === "Bahasa Melayu" ? "Menyegerakkan…" : language === "中文" ? "正在同步…" : "Syncing…") : t.common_refresh}
             </Button>
           </div>
 
@@ -7112,15 +7644,15 @@ function SystemLogsView({
               <span>ai-studio-onypwa…</span>
             </div>
             <div className="log-file-meta-item">
-              <strong>Total Records</strong>
+              <strong>{language === "Bahasa Melayu" ? "Jumlah Rekod" : language === "中文" ? "日志总计" : "Total Records"}</strong>
               <span>{logs.length} {t.logs_total_events}</span>
             </div>
             <div className="log-file-meta-item">
-              <strong>Current User</strong>
-              <span>{currentUser?.email || "Anonymous"}</span>
+              <strong>{language === "Bahasa Melayu" ? "Pengguna Semasa" : language === "中文" ? "当前用户" : "Current User"}</strong>
+              <span>{currentUser?.email || (language === "Bahasa Melayu" ? "Tanpa Nama" : language === "中文" ? "匿名" : "Anonymous")}</span>
             </div>
             <div className="log-file-meta-item">
-              <strong>Log Standard</strong>
+              <strong>{language === "Bahasa Melayu" ? "Piawaian Log" : language === "中文" ? "日志格式" : "Log Standard"}</strong>
               <span>RFC-5424 Syslog / JSON</span>
             </div>
           </div>
@@ -7140,7 +7672,7 @@ function SystemLogsView({
               onClick={handleDiagnosticPing}
               disabled={isSubmittingPing}
             >
-              {isSubmittingPing ? "Writing to DB…" : t.logs_diagnostic_btn}
+              {isSubmittingPing ? (language === "Bahasa Melayu" ? "Menulis ke DB…" : language === "中文" ? "正在写入数据库…" : "Writing to DB…") : t.logs_diagnostic_btn}
             </Button>
           </div>
         </div>
@@ -7155,22 +7687,29 @@ function SystemLogsView({
         </div>
 
         <div className="logs-filter-scroll">
-          {(["All", "Security", "Audit", "Safety", "Auth", "System", "Errors"] as const).map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              className={`logs-filter-pill ${filter === cat ? "active" : ""}`}
-              onClick={() => setFilter(cat)}
-            >
-              {cat}
-            </button>
-          ))}
+          {(["All", "Security", "Audit", "Safety", "Auth", "System", "Errors"] as const).map((cat) => {
+            const label = language === "Bahasa Melayu"
+              ? (cat === "All" ? "Semua" : cat === "Security" ? "Keselamatan" : cat === "Audit" ? "Audit" : cat === "Safety" ? "Krisis/SOP" : cat === "Auth" ? "Pengesahan" : cat === "System" ? "Sistem" : "Ralat")
+              : language === "中文"
+              ? (cat === "All" ? "全部" : cat === "Security" ? "安全防御" : cat === "Audit" ? "审计追踪" : cat === "Safety" ? "危机/SOP" : cat === "Auth" ? "用户认证" : cat === "System" ? "系统运行" : "异常错误")
+              : cat;
+            return (
+              <button
+                key={cat}
+                type="button"
+                className={`logs-filter-pill ${filter === cat ? "active" : ""}`}
+                onClick={() => setFilter(cat)}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         {loading ? (
-          <div className="log-empty-state">Loading system log stream from Firestore…</div>
+          <div className="log-empty-state">{language === "Bahasa Melayu" ? "Memuatkan aliran log sistem daripada Firestore…" : language === "中文" ? "正在从 Firestore 载入系统日志…" : "Loading system log stream from Firestore…"}</div>
         ) : filteredLogs.length === 0 ? (
-          <div className="log-empty-state">No matching log records found in database.</div>
+          <div className="log-empty-state">{language === "Bahasa Melayu" ? "Tiada rekod log padanan ditemui dalam pangkalan data." : language === "中文" ? "数据库中未找到符合条件的日志记录。" : "No matching log records found in database."}</div>
         ) : (
           <div className="logs-list">
             {filteredLogs.map((log) => {
