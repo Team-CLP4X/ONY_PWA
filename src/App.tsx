@@ -671,6 +671,14 @@ function AppInner() {
         } catch (err) {
           console.warn("[ONY] Firestore initial fetch notice:", err);
         }
+      } else {
+        // When not logged in / logged out, the first page must default strictly to English
+        setLanguage("English");
+        try {
+          localStorage.setItem("ony_preferred_language", "English");
+        } catch {
+          // ignore
+        }
       }
     });
     return () => unsub();
@@ -1006,11 +1014,23 @@ function AppInner() {
       await logoutUser();
       setAuthenticated(false);
       setOnboarding(0);
+      setLanguage("English");
+      try {
+        localStorage.setItem("ony_preferred_language", "English");
+      } catch {
+        // ignore
+      }
       notify("Logged out successfully");
     } catch (e) {
       console.warn("[ONY] Logout notice:", e);
       setAuthenticated(false);
       setOnboarding(0);
+      setLanguage("English");
+      try {
+        localStorage.setItem("ony_preferred_language", "English");
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -1021,7 +1041,13 @@ function AppInner() {
       setOnboarding(0);
       setMoodEntries([]);
       setMemories([]);
-      notify("Your account and all Firestore data have been deleted.");
+      setLanguage("English");
+      try {
+        localStorage.setItem("ony_preferred_language", "English");
+      } catch {
+        // ignore
+      }
+      notify("Your account and all personal data have been deleted.");
     } catch (err) {
       console.warn("[ONY] Account deletion error:", err);
       notify("Could not delete account. Please sign in again and retry.");
@@ -1206,7 +1232,7 @@ function AppInner() {
         comments: newPost.comments || [],
       };
       setPosts((prev) => [created, ...prev]);
-      notify("Post published to Cloud Firestore");
+      notify(language === "Bahasa Melayu" ? "Siaran berjaya diterbitkan" : language === "中文" ? "帖子已发布" : "Post published");
     } catch (e) {
       console.warn("[ONY] Post save warning:", e);
       const fallbackCreated: Post = {
@@ -1452,7 +1478,8 @@ function AuthFlowContent({
   pendingInvite,
   onComplete,
 }: AuthFlowProps) {
-  const { t, language, setLanguage } = useLanguage();
+  // First page (login/register) does not follow user's previous preference language; strictly default to English
+  const t = getTranslation("English");
   const [stage, setStage] = useState<"welcome" | "login" | "register" | "forgot" | "name" | "consent">("welcome");
   const [legal, setLegal] = useState<LegalDocumentId | null>(null);
   const [email, setEmail] = useState("");
@@ -1468,51 +1495,27 @@ function AuthFlowContent({
   const translateFirebaseError = (err: unknown): string => {
     const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
     if (msg.includes("email-already-in-use")) {
-      return language === "Bahasa Melayu"
-        ? "Akaun dengan emel ini telah wujud. Sila cuba log masuk."
-        : language === "中文"
-          ? "该邮箱已注册，请直接登录。"
-          : "An account with this email already exists. Try logging in.";
+      return "An account with this email already exists. Try logging in.";
     }
     if (msg.includes("invalid-credential") || msg.includes("wrong-password") || msg.includes("user-not-found")) {
-      return language === "Bahasa Melayu"
-        ? "Emel atau kata laluan tidak betul. Sila semak dan cuba lagi."
-        : language === "中文"
-          ? "邮箱或密码错误，请核对后重试。"
-          : "Incorrect email or password. Please verify and try again.";
+      return "Incorrect email or password. Please verify and try again.";
     }
     if (msg.includes("weak-password")) {
-      return language === "Bahasa Melayu"
-        ? "Kata laluan mestilah sekurang-kurangnya 6 aksara."
-        : language === "中文"
-          ? "密码长度至少需要 6 个字符。"
-          : "Password should be at least 6 characters.";
+      return "Password should be at least 6 characters.";
     }
     if (msg.includes("invalid-email")) {
-      return language === "Bahasa Melayu"
-        ? "Sila masukkan alamat emel yang sah."
-        : language === "中文"
-          ? "请输入有效的电子邮箱地址。"
-          : "Please enter a valid email address.";
+      return "Please enter a valid email address.";
     }
     if (msg.includes("network-request-failed")) {
-      return language === "Bahasa Melayu"
-        ? "Ralat rangkaian. Sila semak sambungan internet anda."
-        : language === "中文"
-          ? "网络连接失败，请检查网络后重试。"
-          : "Network error. Please check your connection.";
+      return "Network error. Please check your connection.";
     }
-    return language === "Bahasa Melayu"
-      ? "Pengesahan gagal. Sila semak butiran anda dan cuba lagi."
-      : language === "中文"
-        ? "验证失败，请核实信息后重试。"
-        : "Authentication failed. Please verify your details and try again.";
+    return "Authentication failed. Please verify your details and try again.";
   };
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
-    if (!validEmail) return setError(language === "Bahasa Melayu" ? "Masukkan alamat emel yang sah." : language === "中文" ? "请输入有效的邮箱地址。" : "Enter a valid email address.");
-    if (password.length < 6) return setError(language === "Bahasa Melayu" ? "Kata laluan mestilah sekurang-kurangnya 6 aksara." : language === "中文" ? "密码长度至少需要 6 个字符。" : "Password must be at least 6 characters.");
+    if (!validEmail) return setError("Enter a valid email address.");
+    if (password.length < 6) return setError("Password must be at least 6 characters.");
     setLoading(true);
     setError("");
     try {
@@ -1527,21 +1530,21 @@ function AuthFlowContent({
 
   const handleRegisterStage1 = (event: FormEvent) => {
     event.preventDefault();
-    if (!validEmail) return setError(language === "Bahasa Melayu" ? "Masukkan alamat emel yang sah." : language === "中文" ? "请输入有效的邮箱地址。" : "Enter a valid email address.");
+    if (!validEmail) return setError("Enter a valid email address.");
     if (!userPhone.trim() || userPhone.trim().length < 6) {
-      return setError(language === "Bahasa Melayu" ? "Sila masukkan nombor telefon yang sah untuk kecemasan." : language === "中文" ? "请输入有效的紧急联系手机号码。" : "Please enter a valid phone number so it can be saved for emergency contact.");
+      return setError("Please enter a valid phone number so it can be saved for emergency contact.");
     }
-    if (password.length < 6) return setError(language === "Bahasa Melayu" ? "Kata laluan mestilah sekurang-kurangnya 6 aksara." : language === "中文" ? "密码长度至少需要 6 个字符。" : "Password must be at least 6 characters.");
-    if (password !== confirmPassword) return setError(language === "Bahasa Melayu" ? "Kata laluan tidak sepadan." : language === "中文" ? "两次输入的密码不一致。" : "Passwords do not match.");
+    if (password.length < 6) return setError("Password must be at least 6 characters.");
+    if (password !== confirmPassword) return setError("Passwords do not match.");
     setError("");
     setStage("name");
   };
 
   const handleNameStage = (event: FormEvent) => {
     event.preventDefault();
-    if (displayName.trim().length < 2) return setError(language === "Bahasa Melayu" ? "Masukkan nama panggilan sekurang-kurangnya 2 aksara." : language === "中文" ? "请输入至少2个字符的昵称。" : "Enter a display name with at least 2 characters.");
+    if (displayName.trim().length < 2) return setError("Enter a display name with at least 2 characters.");
     if (!userPhone.trim() || userPhone.trim().length < 6) {
-      return setError(language === "Bahasa Melayu" ? "Sila masukkan nombor telefon kecemasan yang sah." : language === "中文" ? "请输入有效的紧急联系手机号码。" : "Please enter a valid emergency phone number.");
+      return setError("Please enter a valid emergency phone number.");
     }
     setError("");
     setStage("consent");
@@ -1564,18 +1567,12 @@ function AuthFlowContent({
 
   const handleForgotPassword = async (event: FormEvent) => {
     event.preventDefault();
-    if (!validEmail) return setError(language === "Bahasa Melayu" ? "Masukkan emel akaun anda." : language === "中文" ? "请输入与您账号绑定的电子邮箱。" : "Enter the email associated with your account.");
+    if (!validEmail) return setError("Enter the email associated with your account.");
     setLoading(true);
     setError("");
     try {
       await sendPasswordReset(email);
-      setNotice(
-        language === "Bahasa Melayu"
-          ? `Pautan set semula kata laluan telah dihantar ke ${email}. Sila semak peti masuk anda.`
-          : language === "中文"
-            ? `重置密码链接已发送至 ${email}，请查收您的收件箱。`
-            : `A password reset link has been sent to ${email}. Please check your inbox.`,
-      );
+      setNotice(`A password reset link has been sent to ${email}. Please check your inbox.`);
     } catch (err) {
       setError(translateFirebaseError(err));
     } finally {
@@ -1583,34 +1580,11 @@ function AuthFlowContent({
     }
   };
 
-  if (legal) return <div className={`app-shell theme-${theme}`}><div className="phone auth-phone"><LegalDocument document={legal} back={() => setLegal(null)} /></div></div>;
+  if (legal) return <div className={`app-shell theme-${theme}`}><div className="phone auth-phone"><LegalDocument document={legal} back={() => setLegal(null)} forceLanguage="English" /></div></div>;
   return <div className={`app-shell theme-${theme}`}><div className="phone auth-phone"><div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
     <section className="auth-page">
       <div className="auth-brand">
         <img src={logo} alt="Official ONY logo" />
-        <span className="secure-badge"><Icon name="shield" />{t.auth_secure_badge}</span>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "center", gap: "8px", marginBottom: "12px" }}>
-        {(["English", "Bahasa Melayu", "中文"] as AppLanguage[]).map((l) => (
-          <button
-            key={l}
-            type="button"
-            className={`lang-pill-btn ${language === l ? "active" : ""}`}
-            style={{
-              padding: "4px 12px",
-              borderRadius: "9999px",
-              fontSize: "12px",
-              border: language === l ? "1.5px solid var(--accent, #e07a5f)" : "1px solid var(--line, #e2ded9)",
-              background: language === l ? "var(--surface-strong, #fff)" : "var(--surface, #faf7f4)",
-              fontWeight: language === l ? 700 : 500,
-              cursor: "pointer",
-            }}
-            onClick={() => setLanguage(l)}
-          >
-            {l}
-          </button>
-        ))}
       </div>
 
       {pendingInvite && (
@@ -1639,8 +1613,6 @@ function AuthFlowContent({
           <p>{t.auth_welcome_lead}</p>
           <Button className="full" onClick={() => setStage("register")}>{t.auth_create_account}</Button>
           <Button className="full" variant="secondary" onClick={() => setStage("login")}>{t.auth_login}</Button>
-          <Button className="full" variant="ghost" onClick={onComplete}>{t.auth_continue_guest}</Button>
-          <small>{t.auth_guest_hint}</small>
         </div>
       )}
       {stage === "login" && (
@@ -1730,15 +1702,18 @@ function AuthFlowContent({
           <Button className="full" disabled={!accepted || loading} onClick={handleCompleteRegistration}>
             {loading ? t.auth_creating_space : t.auth_create_space_btn}
           </Button>
-          <small>ONY is committed to user safety, ethical artificial intelligence, and data privacy.</small>
+          <small>
+            ONY is committed to user safety, ethical artificial intelligence, and data privacy.
+          </small>
         </div>
       )}
     </section>
   </div></div>;
 }
 
-function LegalDocument({ document, back }: { document: LegalDocumentId; back: () => void }) {
-  const { language } = useLanguage();
+function LegalDocument({ document, back, forceLanguage }: { document: LegalDocumentId; back: () => void; forceLanguage?: AppLanguage }) {
+  const { language: ctxLanguage } = useLanguage();
+  const language = forceLanguage || ctxLanguage;
   const contentEn: Record<LegalDocumentId, { title: string; subtitle: string; sections: { heading: string; text: string }[] }> = {
     disclaimer: {
       title: "Disclaimer & AI Limitations",
@@ -1754,7 +1729,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       subtitle: "Usage guidelines and member agreements",
       sections: [
         { heading: "Appropriate Use", text: "Use ONY for personal reflection, daily emotional check-ins, and mutual community encouragement. Do not rely on ONY for emergency medical intervention, crisis rescue, legal decisions, or self-harm." },
-        { heading: "Service Availability & Security", text: "ONY operates with secure cloud persistence and Firebase authentication. We strive for uninterrupted availability while continuously updating our safety safeguards." },
+        { heading: "Service Availability & Security", text: "ONY operates with secure cloud persistence and authentication. We strive for uninterrupted availability while continuously updating our safety safeguards." },
         { heading: "Community Standards", text: "Public posts and peer solidarity notes must respect privacy, empathy, and personal safety. Any harassment, hate speech, or sharing of non-consensual personal contact details is strictly prohibited." }
       ]
     },
@@ -1762,7 +1737,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       title: "Privacy Policy",
       subtitle: "How ONY safeguards your personal data",
       sections: [
-        { heading: "Information We Protect", text: "Your account profile, mood check-in records, consented memories, and chat reflections are stored securely in Google Cloud Firestore with strict access control rules." },
+        { heading: "Information We Protect", text: "Your account profile, mood check-in records, consented memories, and chat reflections are stored securely in encrypted cloud infrastructure with strict access control rules." },
         { heading: "Confidentiality & Non-Sale of Data", text: "Your personal emotional records and chat reflections are strictly confidential. ONY will never sell, broker, or rent your personal data to advertisers or third parties." },
         { heading: "User Control & Deletion", text: "You have the permanent right to review, export, or permanently delete your account and all associated mood and conversation data at any time from your Privacy settings." },
         { heading: "Location Privacy", text: "Broad area selection for nearby care or community discovery is completely optional. ONY never tracks real-time GPS coordinates without explicit granular consent." }
@@ -1794,7 +1769,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       subtitle: "Garis panduan penggunaan dan persetujuan ahli",
       sections: [
         { heading: "Penggunaan Wajar", text: "Gunakan ONY untuk refleksi peribadi, daftar masuk emosi harian, dan sokongan komuniti yang membina. Jangan bergantung pada ONY untuk campur tangan perubatan kecemasan, penyelamatan krisis, keputusan undang-undang, atau mencederakan diri." },
-        { heading: "Ketersediaan & Keselamatan Perkhidmatan", text: "ONY beroperasi dengan storan awan selamat dan pengesahan Firebase. Kami berusaha untuk ketersediaan berterusan sambil sentiasa mengemas kini perlindungan keselamatan kami." },
+        { heading: "Ketersediaan & Keselamatan Perkhidmatan", text: "ONY beroperasi dengan storan awan selamat dan pengesahan disulitkan. Kami berusaha untuk ketersediaan berterusan sambil sentiasa mengemas kini perlindungan keselamatan kami." },
         { heading: "Standard Komuniti", text: "Siaran awam dan nota sokongan rakan sebaya mesti menghormati privasi, empati, dan keselamatan peribadi. Sebarang gangguan, ucapan kebencian, atau perkongsian maklumat peribadi tanpa persetujuan dilarang sama sekali." }
       ]
     },
@@ -1802,7 +1777,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       title: "Dasar Privasi",
       subtitle: "Bagaimana ONY melindungi data peribadi anda",
       sections: [
-        { heading: "Maklumat Yang Kami Lindungi", text: "Profil akaun, rekod emosi, memori yang dipersetujui, dan refleksi perbualan disimpan dengan selamat dalam Google Cloud Firestore dengan kawalan akses ketat." },
+        { heading: "Maklumat Yang Kami Lindungi", text: "Profil akaun, rekod emosi, memori yang dipersetujui, dan refleksi perbualan disimpan dengan selamat dalam pelayan awan disulitkan dengan kawalan akses ketat." },
         { heading: "Kerahsiaan & Tiada Penjualan Data", text: "Rekod emosi peribadi dan sembang anda adalah sulit. ONY tidak akan sesekali menjual, memajak, atau menyewakan data peribadi anda kepada pengiklan atau pihak ketiga." },
         { heading: "Kawalan Pengguna & Pemadaman", text: "Anda berhak menyemak, mengeksport, atau memadam akaun anda dan semua data perbualan pada bila-bila masa daripada tetapan Privasi anda." },
         { heading: "Privasi Lokasi", text: "Pilihan kawasan serantau luas untuk sokongan berdekatan adalah pilihan sepenuhnya. ONY tidak pernah menjejaki koordinat GPS masa nyata tanpa persetujuan jelas anda." }
@@ -1834,7 +1809,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       subtitle: "使用守则与用户协议",
       sections: [
         { heading: "合规使用", text: "使用 ONY 进行个人反思、每日心情登记和社区互助陪伴。请勿将 ONY 用于紧急医疗救治、人身危机救援、法律争议裁决或自残自伤行为。" },
-        { heading: "服务可用性与数据安全", text: "ONY 采用高标准云端加密与 Firebase 身份体系运行。我们全力保障服务稳定，并持续迭代安全风控算法。" },
+        { heading: "服务可用性与数据安全", text: "ONY 采用高标准云端加密与安全身份体系运行。我们全力保障服务稳定，并持续迭代安全风控算法。" },
         { heading: "社区准则", text: "公开帖子与同伴鼓励留言必须尊重隐私、抱持同理心并确保人身安全。严禁任何形式的骚扰、仇恨言论或未经允许公开他人联系方式。" }
       ]
     },
@@ -1842,7 +1817,7 @@ function LegalDocument({ document, back }: { document: LegalDocumentId; back: ()
       title: "隐私政策",
       subtitle: "ONY 如何守护您的个人数据安全",
       sections: [
-        { heading: "我们守护的数据范围", text: "您的账户资料、每日心情轨迹、征得同意的宝库记忆及对话反思均通过细粒度安全规则加密存储于 Google Cloud Firestore。" },
+        { heading: "我们守护的数据范围", text: "您的账户资料、每日心情轨迹、征得同意的宝库记忆及对话反思均通过细粒度安全规则加密存储于安全云端数据库。" },
         { heading: "严格保密与绝不出售数据", text: "您的私人情绪轨迹与对话记录具有最高保密级别。ONY 绝不会向任何广告商或第三方机构出售、出借或商业出租您的个人数据。" },
         { heading: "用户自主控制与彻底删除", text: "您始终拥有永久权利在隐私设置中随时查阅、导出个人数据归档，或彻底注销账户并清除全部关联数据记录。" },
         { heading: "地理位置隐私", text: "用于寻找周边心理资源或星球同伴的宽泛区域选择纯属自愿。未经您明确确认，ONY 绝不采集实时高精度 GPS 门牌坐标。" }
@@ -1966,7 +1941,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
           {step === 4 && <>
             <SmallLogo /><div className="eyebrow">{t.onboarding_sound_eyebrow}</div><h1>{t.onboarding_sound_title}</h1>
             <p className="lead">{t.onboarding_sound_lead}</p>
-            <div className="ambient-onboarding"><span className={`sound-orb ${soundOn ? "playing" : ""}`}><i /><i /><i /></span><strong>{soundOn ? "Ambience playing" : "Ambience paused"}</strong><Button onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button></div>
+            <div className="ambient-onboarding"><span className={`sound-orb ${soundOn ? "playing" : ""}`}><i /><i /><i /></span><strong>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar dimainkan" : language === "中文" ? "背景音效播放中" : "Ambience playing") : (language === "Bahasa Melayu" ? "Bunyi latar dijeda" : language === "中文" ? "背景音效已暂停" : "Ambience paused")}</strong><Button onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div>
             <Button className="full" variant="ghost" onClick={() => setSoundOn(false)}>{t.onboarding_sound_continue_without}</Button>
           </>}
           {step === 5 && <>
@@ -1974,7 +1949,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
             <p className="lead">{t.onboarding_personalise_lead}</p>
             <PersonaPicker value={persona} setValue={setPersona} compact />
             <div className="segmented">{(["English", "Bahasa Melayu", "中文"] as AppLanguage[]).map((x) => <Button key={x} variant={language === x ? "primary" : "secondary"} onClick={() => setLanguage(x)}>{x}</Button>)}</div>
-            <div className="chips">{topics.map((x) => <Button key={x} variant={selectedTopics.includes(x) ? "primary" : "secondary"} onClick={() => setSelectedTopics(selectedTopics.includes(x) ? selectedTopics.filter((t) => t !== x) : [...selectedTopics, x])}>{x}</Button>)}</div>
+            <div className="chips">{topics.map((x) => <Button key={x} variant={selectedTopics.includes(x) ? "primary" : "secondary"} onClick={() => setSelectedTopics(selectedTopics.includes(x) ? selectedTopics.filter((t) => t !== x) : [...selectedTopics, x])}>{getCategoryLabel(x, language as AppLanguage)}</Button>)}</div>
           </>}
           {step === 6 && <>
             <img className="brand-art compact-art" src={logo} alt="Official ONY logo" />
@@ -1995,7 +1970,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
             <div className="companion-confirm"><CompanionAvatar companion={companion} large /><img src={logo} alt="Official ONY logo" /></div>
             <div className="eyebrow">{t.onboarding_complete_eyebrow}</div><h1>{t.onboarding_complete_title}</h1>
             <p className="lead">{t.onboarding_complete_lead}</p>
-            <div className="demo-profile"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{companion} companion · {themeOptions.find((item) => item.id === theme)?.name} theme</small></div><Icon name="check" /></div>
+            <div className="demo-profile"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{getCompanionLabel(companion, language as AppLanguage)} · {getThemeDetails(theme, themeOptions.find((item) => item.id === theme)?.name || "", "", language as AppLanguage).name}</small></div><Icon name="check" /></div>
           </>}
         </div>
         <div className="onboarding-actions">
@@ -2135,7 +2110,7 @@ function PageHeader({
 
 function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
-  language: string; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
+  language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
   conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
   selectedFolderId: number | null;
@@ -2373,15 +2348,16 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       console.warn("[Voice] Audio visualizer notice:", e);
       const isRestricted = e?.message?.includes("restricted") || e?.message?.includes("denied");
       if (isRestricted) {
-        setMicNotice("Microphone access is needed for live speech. You can also pick a prompt below:");
+        setMicNotice(language === "Bahasa Melayu" ? "Akses mikrofon diperlukan untuk pertuturan langsung. Anda juga boleh memilih saranan di bawah:" : language === "中文" ? "需要麦克风访问权限以启用语音输入。您也可以在下方选择常用短语：" : "Microphone access is needed for live speech. You can also pick a prompt below:");
       }
     }
 
     if (isSpeechRecognitionSupported()) {
+      const recognitionLang = language === "Bahasa Melayu" ? "ms-MY" : language === "中文" ? "zh-CN" : "en-US";
       if (!speechRecognizerRef.current) {
-        speechRecognizerRef.current = new ChatSpeechRecognizer(language === "ms" ? "ms-MY" : "en-US");
+        speechRecognizerRef.current = new ChatSpeechRecognizer(recognitionLang);
       } else {
-        speechRecognizerRef.current.setLanguage(language === "ms" ? "ms-MY" : "en-US");
+        speechRecognizerRef.current.setLanguage(recognitionLang);
       }
       const started = speechRecognizerRef.current.start({
         onUpdate: ({ transcript, interim }) => {
@@ -2397,10 +2373,10 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         },
       });
       if (!started) {
-        setMicNotice("Speech recognition could not be started. You can choose a quick prompt below:");
+        setMicNotice(language === "Bahasa Melayu" ? "Pengecaman pertuturan tidak dapat dimulakan. Anda boleh memilih saranan pantas di bawah:" : language === "中文" ? "无法启动语音识别。您可以点击下方的快捷短语：" : "Speech recognition could not be started. You can choose a quick prompt below:");
       }
     } else {
-      setMicNotice("Live speech transcription is unavailable on this browser. Try a quick prompt below:");
+      setMicNotice(language === "Bahasa Melayu" ? "Pengecaman pertuturan langsung tidak disokong pada pelayar ini. Cuba saranan pantas di bawah:" : language === "中文" ? "当前浏览器不支持实时语音识别。请尝试下方的快捷输入：" : "Live speech transcription is unavailable on this browser. Try a quick prompt below:");
     }
   };
 
@@ -2418,7 +2394,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     const speechToSend = (finalSpeech + " " + voiceInterim).trim();
     if (send && speechToSend) {
       setVoiceState("sent");
-      notify("Voice transcribed and sent");
+      notify(language === "Bahasa Melayu" ? "Suara ditranskripsi dan dihantar" : language === "中文" ? "语音已转录并发送" : "Voice transcribed and sent");
       reply(speechToSend);
       setTimeout(() => {
         setVoiceState("idle");
@@ -2449,7 +2425,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     setVoiceState("listening");
     setVoiceTranscript(phrase);
     setVoiceVolume(0.75);
-    notify("Transcribing voice…");
+    notify(language === "Bahasa Melayu" ? "Mentranskripsi suara…" : language === "中文" ? "正在转录语音…" : "Transcribing voice…");
     window.setTimeout(() => {
       stopVoiceListening(true);
     }, 1100);
@@ -2466,14 +2442,14 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const relationshipContext = ["relationship", "partner", "boyfriend", "girlfriend", "friendship"].some((phrase) => latestLower.includes(phrase));
   const saveContextMemory = () => {
     const id = Date.now();
-    setMemories([{ id, text: latestUserText, category: "Things That Help Me", active: true, kind: "text", reason: "You chose to remember this during an ONY conversation." }, ...memories]);
+    setMemories([{ id, text: latestUserText, category: "Things That Help Me", active: true, kind: "text", reason: language === "Bahasa Melayu" ? "Anda memilih untuk mengingati perkara ini semasa perbualan ONY." : language === "中文" ? "您选择在与 ONY 对话期间记住这一点。" : "You chose to remember this during an ONY conversation." }, ...memories]);
     setSavedMemoryId(id);
-    notify("Saved to your Memory Vault");
+    notify(t.memory_added_toast || (language === "Bahasa Melayu" ? "Disimpan ke Peti Memori anda" : language === "中文" ? "已保存至记忆宝库" : "Saved to your Memory Vault"));
   };
   const undoContextMemory = () => {
     if (savedMemoryId !== null) setMemories(memories.filter((memory) => memory.id !== savedMemoryId));
     setSavedMemoryId(null);
-    notify("Memory removed");
+    notify(t.memory_deleted_toast || (language === "Bahasa Melayu" ? "Memori dialih keluar" : language === "中文" ? "已移除该记忆" : "Memory removed"));
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -2514,7 +2490,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       }
     />
     <div className="chat-scroll" ref={chatScrollRef}>
-    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />{t.chat_chats_btn}</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title="Toggle auto voice response"><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button><Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button></div></div>
+    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />{t.chat_chats_btn}</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button><Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button></div></div>
     {!todayMoodEntry && messages.length === 0 && (
       <div className="memory-note" style={{ marginBottom: "8px" }}>
         <span>🌱</span>
@@ -2523,7 +2499,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       </div>
     )}
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{personaOptions.find((item) => item.id === persona)?.name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{personaOptions.find((item) => item.id === persona)?.preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? "Ambient sound playing" : "Calming ambience"}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
+    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", personaOptions.find((item) => item.id === persona)?.preview || "", language).preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar sedang dimainkan" : language === "中文" ? "背景音效播放中" : "Ambient sound playing") : (language === "Bahasa Melayu" ? "Suasana latar menenangkan" : language === "中文" ? "舒缓背景音" : "Calming ambience")}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
@@ -2692,7 +2668,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
 }
 
 function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () => void; navigate: (s: Screen) => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void; notify: (s: string) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [mood, setMood] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const todayKey = getLocalDateKey();
@@ -3506,7 +3482,7 @@ function CreatePost({
         setSubmitting(false);
       }
       setPosted(true);
-    }}>{submitting ? (language === "Bahasa Melayu" ? "Menerbitkan ke Firestore…" : language === "中文" ? "正在发布至 Firestore…" : "Publishing to Firestore…") : (language === "Bahasa Melayu" ? "Terbitkan siaran" : language === "中文" ? "发布帖子" : "Publish post")}</Button></section></>;
+    }}>{submitting ? (language === "Bahasa Melayu" ? "Menerbitkan…" : language === "中文" ? "正在发布…" : "Publishing…") : (language === "Bahasa Melayu" ? "Terbitkan siaran" : language === "中文" ? "发布帖子" : "Publish post")}</Button></section></>;
 }
 
 function VoiceNote({
@@ -3680,7 +3656,7 @@ function PostDetail({
       });
       if (onPostUpdated) onPostUpdated(updated);
       setComment("");
-      notify("Comment saved to Cloud Firestore");
+      notify(language === "Bahasa Melayu" ? "Komen telah dihantar" : language === "中文" ? "评论已发布" : "Comment posted");
     } catch (err: any) {
       setCommentError(err?.message || "Could not post comment.");
     } finally {
@@ -4150,35 +4126,64 @@ function PostDetail({
 const fallbackMerchants: Merchant[] = DEFAULT_MERCHANTS;
 
 function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, dbSyncing }: { navigate: (s: Screen) => void; openMerchant: (name: string) => void; merchants?: Merchant[]; dbSyncing?: boolean }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const cats = ["All", "Café", "Art / creative", "Yoga / meditation", "Music", "Relaxation", "Wellness products", "Professional support"];
+  const getCatLabel = (c: string) => {
+    if (language === "Bahasa Melayu") {
+      switch (c) {
+        case "All": return "Semua";
+        case "Café": return "Kafe";
+        case "Art / creative": return "Seni / Kreatif";
+        case "Yoga / meditation": return "Yoga / Meditasi";
+        case "Music": return "Muzik";
+        case "Relaxation": return "Relaksasi";
+        case "Wellness products": return "Produk Kesejahteraan";
+        case "Professional support": return "Sokongan Profesional";
+        default: return c;
+      }
+    }
+    if (language === "中文") {
+      switch (c) {
+        case "All": return "全部";
+        case "Café": return "静心咖啡";
+        case "Art / creative": return "艺术与手作";
+        case "Yoga / meditation": return "瑜伽与冥想";
+        case "Music": return "疗愈音乐";
+        case "Relaxation": return "深度放松";
+        case "Wellness products": return "身心好物";
+        case "Professional support": return "专业医疗支持";
+        default: return c;
+      }
+    }
+    return c;
+  };
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const shown = list.filter((m) => (category === "All" || m.category === category) && `${m.name} ${m.offer}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title={t.market_title} subtitle={t.market_subtitle} action={<span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{dbSyncing ? "Syncing…" : t.market_verified_partners}</span>} /><section className="page-pad topless">
+  return <><PageHeader title={t.market_title} subtitle={t.market_subtitle} action={<span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{dbSyncing ? (language === "Bahasa Melayu" ? "Menyegerak…" : language === "中文" ? "同步中…" : "Syncing…") : t.market_verified_partners}</span>} /><section className="page-pad topless">
     <div className="market-hero"><span className="eyebrow">{t.market_nearby_eyebrow}</span><h2>{t.market_hero_title}</h2><p>{t.market_hero_desc}</p></div>
     <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.market_search_placeholder} /></div>
-    <div className="scroll-chips">{cats.map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => x === "Professional support" ? navigate("professional") : setCategory(x)}>{x}</Button>)}</div>
+    <div className="scroll-chips">{cats.map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => x === "Professional support" ? navigate("professional") : setCategory(x)}>{getCatLabel(x)}</Button>)}</div>
     <div className="market-section-head"><h3>{t.market_wellness_vouchers}</h3><Button variant="ghost" onClick={() => setCategory("All")}>{t.market_view_all}</Button></div>
-    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{m.category}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{m.category} · Partner</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>{t.market_claim_voucher}</i></span></button>)}</div>
+    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{getCatLabel(m.category)}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{getCatLabel(m.category)} · {language === "Bahasa Melayu" ? "Rakan" : language === "中文" ? "合作商户" : "Partner"}</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>{t.market_claim_voucher}</i></span></button>)}</div>
     <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>{t.market_prof_banner_title}</strong><small>{t.market_prof_banner_desc}</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" /> All partner privileges and wellness offers are verified with our local merchant community.</p>
+    <p className="disclaimer"><Icon name="info" /> {language === "Bahasa Melayu" ? "Semua keistimewaan rakan kongsi dan tawaran kesejahteraan telah disahkan bersama komuniti peniaga tempatan kami." : language === "中文" ? "所有合作专属礼遇及身心健康优惠均经由我们本地合作商户社区实名核实。" : "All partner privileges and wellness offers are verified with our local merchant community."}</p>
   </section></>;
 }
 
 function MerchantDetail({ back, navigate, merchantName, notify, merchants = fallbackMerchants }: { back: () => void; navigate: (s: Screen) => void; merchantName: string; notify: (s: string) => void; merchants?: Merchant[] }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <><PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>Partner Offer</span></div><div className="physical-voucher-main"><small>{merchant.category} · Verified Partner</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · PASS · 2026</div></div><div className="voucher-terms"><h3>{t.voucher_terms_title}</h3><p>Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions.</p></div><Button className="full redeem-voucher" onClick={() => { notify("Voucher activated! Show barcode at counter"); navigate("voucher"); }}>{t.voucher_redeem_btn}</Button><p className="disclaimer"><Icon name="info" />Show this pass directly to the partner cashier to redeem.</p></section></>;
+  return <><PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>{language === "Bahasa Melayu" ? "Tawaran Rakan" : language === "中文" ? "合作伙伴特惠" : "Partner Offer"}</span></div><div className="physical-voucher-main"><small>{merchant.category} · {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · PASS · 2026</div></div><div className="voucher-terms"><h3>{t.voucher_terms_title}</h3><p>{language === "Bahasa Melayu" ? "Sah untuk kegunaan sekali bagi setiap ahli di cawangan yang mengambil bahagian. Tunjukkan kod bar baucar digital semasa membuat pesanan. Tidak boleh ditukar dengan wang tunai atau digabungkan dengan promosi lain." : language === "中文" ? "每位会员在参与合作门市仅限使用一次。点单或核销时请出示数字条形码。不可兑换现金，亦不可与其他优惠叠加使用。" : "Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions."}</p></div><Button className="full redeem-voucher" onClick={() => { notify(language === "Bahasa Melayu" ? "Baucar diaktifkan! Tunjukkan kod bar di kaunter" : language === "中文" ? "优惠券已激活！请在柜台出示条形码" : "Voucher activated! Show barcode at counter"); navigate("voucher"); }}>{t.voucher_redeem_btn}</Button><p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Tunjukkan pas ini terus kepada juruwang rakan niaga untuk menebus." : language === "中文" ? "结账时直接向合作门市收银员出示此通行证即可兑换。" : "Show this pass directly to the partner cashier to redeem."}</p></section></>;
 }
 
 function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: () => void; merchantName: string; merchants?: Merchant[] }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{merchant.value}</h1><p>{merchant.offer} at {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>Active Digital Member Pass</small></div><div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />Present this barcode to the staff upon placing your order or booking.</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
+  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{merchant.value}</h1><p>{merchant.offer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>{language === "Bahasa Melayu" ? "Pas Ahli Digital Aktif" : language === "中文" ? "有效数字会员凭证" : "Active Digital Member Pass"}</small></div><div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />{language === "Bahasa Melayu" ? "Tunjukkan kod bar ini kepada kakitangan semasa membuat pesanan atau tempahan." : language === "中文" ? "在点单或预约核销时向店员出示此条形码即可。" : "Present this barcode to the staff upon placing your order or booking."}</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
 }
 
 function Profile({
@@ -4211,25 +4216,26 @@ function Profile({
   onSelectLanguage: (lang: AppLanguage) => void;
 }) {
   const { t } = useLanguage();
+  const currentLang = (language as AppLanguage) || "English";
   const contactLabel =
     pendingIncomingCount > 0
-      ? `${pendingIncomingCount} incoming request${pendingIncomingCount > 1 ? "s" : ""} to review`
+      ? `${pendingIncomingCount} ${currentLang === "Bahasa Melayu" ? "permohonan menunggu untuk disemak" : currentLang === "中文" ? "条待处理申请待确认" : "incoming request(s) to review"}`
       : contactStatus === "accepted"
-        ? `${trustedName} · Accepted`
+        ? `${trustedName} · ${currentLang === "Bahasa Melayu" ? "Diterima" : currentLang === "中文" ? "已连接" : "Accepted"}`
         : contactStatus === "pending"
-          ? `${trustedName} · Pending approval`
+          ? `${trustedName} · ${currentLang === "Bahasa Melayu" ? "Menunggu kelulusan" : currentLang === "中文" ? "等待确认" : "Pending approval"}`
           : contactStatus === "rejected"
-            ? `${trustedName} · Request declined`
-            : "No trusted contact connected";
+            ? `${trustedName} · ${currentLang === "Bahasa Melayu" ? "Permohonan ditolak" : currentLang === "中文" ? "已谢绝" : "Request declined"}`
+            : currentLang === "Bahasa Melayu" ? "Tiada kenalan dipercayai disambungkan" : currentLang === "中文" ? "未绑定信任联系人" : "No trusted contact connected";
   const subscriptionLabel = subscriptionStatus === "trial"
-    ? "ONY Premium Trial · 2 days remaining"
+    ? (currentLang === "Bahasa Melayu" ? "Percubaan Premium ONY · Baki 2 hari" : currentLang === "中文" ? "ONY 进阶试用 · 剩余 2 天" : "ONY Premium Trial · 2 days remaining")
     : subscriptionStatus === "payg"
-      ? "ONY Premium · RM5 / 3 days"
+      ? (currentLang === "Bahasa Melayu" ? "ONY Premium · RM5 / 3 hari" : currentLang === "中文" ? "ONY 进阶通行证 · RM5 / 3 天" : "ONY Premium · RM5 / 3 days")
       : subscriptionStatus === "monthly"
-        ? "ONY Premium · RM19.90/month"
+        ? (currentLang === "Bahasa Melayu" ? "ONY Premium · RM19.90 / bulan" : currentLang === "中文" ? "ONY 进阶月度通行证 · RM19.90 / 月" : "ONY Premium · RM19.90/month")
         : subscriptionStatus === "trialEnded"
-          ? "Free · Trial ended"
-          : "Free · Free access";
+          ? (currentLang === "Bahasa Melayu" ? "Percuma · Percubaan tamat" : currentLang === "中文" ? "免费版 · 试用已结束" : "Free · Trial ended")
+          : (currentLang === "Bahasa Melayu" ? "Percuma · Akses percuma" : currentLang === "中文" ? "免费版 · 开放使用" : "Free · Free access");
   const languageDisplayLabel =
     language === "Bahasa Melayu"
       ? "Bahasa Melayu"
@@ -4253,7 +4259,7 @@ function Profile({
     ["legal", t.profile_menu_legal, t.profile_menu_legal_sub],
     ["subscription", t.profile_menu_subscription, subscriptionLabel],
     ["help", t.profile_menu_help, t.profile_menu_help_sub],
-    ["about", t.profile_menu_about, "Version 1.0.0 (Release)"],
+    ["about", t.profile_menu_about, currentLang === "Bahasa Melayu" ? "Versi 1.0.0 (Keluaran)" : currentLang === "中文" ? "版本 1.0.0 (正式发布版)" : "Version 1.0.0 (Release)"],
   ] as [Screen, string, string][];
   return (
     <>
@@ -4263,8 +4269,8 @@ function Profile({
           <CompanionAvatar companion={companion} />
           <div>
             <h2>{displayName} & ONY</h2>
-            <p>Preferred display name · {language}</p>
-            <span>{companion} · {personaOptions.find((item) => item.id === persona)?.name}</span>
+            <p>{currentLang === "Bahasa Melayu" ? "Nama paparan pilihan · " : currentLang === "中文" ? "首选显示昵称 · " : "Preferred display name · "}{language}</p>
+            <span>{getCompanionLabel(companion, currentLang)} · {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", currentLang).name}</span>
           </div>
           <SmallLogo />
         </div>
@@ -4290,7 +4296,11 @@ function Profile({
           {t.profile_menu_logout}
         </Button>
         <p className="prototype-foot">
-          ONY Secure Platform · Protected by Firebase Authentication & Cloud Firestore. End-to-end secure synchronization.
+          {currentLang === "Bahasa Melayu"
+            ? "Platform Selamat ONY · Privasi anda dilindungi dengan penyulitan selamat."
+            : currentLang === "中文"
+            ? "ONY 守护平台 · 严格守护您的隐私安全。"
+            : "ONY Platform · Your privacy is protected with secure encryption."}
         </p>
       </section>
     </>
@@ -4435,11 +4445,17 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
   persona: Persona; setPersona: (v: Persona) => void; onSave?: () => void;
 }) {
   const { t } = useLanguage();
+  const currentLang = (language as AppLanguage) || "English";
+  const activeThemeObj = themeOptions.find((item) => item.id === theme);
+  const themeDetails = activeThemeObj ? getThemeDetails(activeThemeObj.id, activeThemeObj.name, activeThemeObj.note, currentLang) : { name: theme, note: "" };
+  const activePersonaObj = personaOptions.find((item) => item.id === persona);
+  const personaDetails = activePersonaObj ? getPersonaDetails(activePersonaObj.id, activePersonaObj.name, activePersonaObj.note, activePersonaObj.preview, currentLang) : { name: persona, note: "", preview: "" };
+
   return <><PageHeader title={t.personalise_title} subtitle={t.personalise_subtitle} back={back} /><section className="page-pad">
-    <div className="setting-block"><h3>{t.personalise_companion}</h3><p>Choose who accompanies you.</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
-    <div className="setting-block"><h3>{t.personalise_theme}</h3><p>Choose a calming space for the whole app.</p><ThemePicker value={theme} setValue={setTheme} /></div>
-    <div className="ambient-settings"><div><strong>{themeOptions.find((item) => item.id === theme)?.name} ambience</strong><small>Soothing ambient soundscape</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? "Pause" : "Play"}</Button><label>Volume <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
-    <div className="setting-block"><h3>{t.personalise_persona}</h3><p>Tone changes, but ONY’s safety rules never do.</p><PersonaPicker value={persona} setValue={setPersona} /></div>
+    <div className="setting-block"><h3>{t.personalise_companion}</h3><p>{currentLang === "Bahasa Melayu" ? "Pilih siapa yang menemani anda." : currentLang === "中文" ? "选择谁来陪伴您的旅程。" : "Choose who accompanies you."}</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
+    <div className="setting-block"><h3>{t.personalise_theme}</h3><p>{currentLang === "Bahasa Melayu" ? "Pilih suasana menenangkan untuk keseluruhan aplikasi." : currentLang === "中文" ? "为整个应用选择舒适宁静的视觉空间。" : "Choose a calming space for the whole app."}</p><ThemePicker value={theme} setValue={setTheme} /></div>
+    <div className="ambient-settings"><div><strong>{themeDetails.name} {currentLang === "Bahasa Melayu" ? "suasana latar" : currentLang === "中文" ? "背景音效" : "ambience"}</strong><small>{currentLang === "Bahasa Melayu" ? "Lanskap bunyi latar yang menenangkan" : currentLang === "中文" ? "宁静舒缓的环境背景音效" : "Soothing ambient soundscape"}</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? (currentLang === "Bahasa Melayu" ? "Jeda" : currentLang === "中文" ? "暂停" : "Pause") : (currentLang === "Bahasa Melayu" ? "Main" : currentLang === "中文" ? "播放" : "Play")}</Button><label>{currentLang === "Bahasa Melayu" ? "Kelantangan" : currentLang === "中文" ? "音量" : "Volume"} <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
+    <div className="setting-block"><h3>{t.personalise_persona}</h3><p>{currentLang === "Bahasa Melayu" ? "Gaya nada berubah, tetapi peraturan keselamatan ONY kekal terjamin." : currentLang === "中文" ? "语气风格随心选，但 ONY 的安全原则始终如一。" : "Tone changes, but ONY’s safety rules never do."}</p><PersonaPicker value={persona} setValue={setPersona} /></div>
     <SettingChoices
       title={t.personalise_style}
       values={["Reflective", "Practical", "A mix"]}
@@ -4464,7 +4480,7 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
     />
     <SettingChoices title={t.personalise_language} values={["English", "Bahasa Melayu", "中文"]} value={language} setValue={setLanguage} />
     <div className="setting-toggle"><div><strong>{t.personalise_memories_toggle}</strong><p>{t.personalise_memories_desc}</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
-    <div className="preview-bubble"><CompanionAvatar companion={companion} /><div><span>Your preview</span><p>{personaOptions.find((item) => item.id === persona)?.preview}</p></div></div>
+    <div className="preview-bubble"><CompanionAvatar companion={companion} /><div><span>{currentLang === "Bahasa Melayu" ? "Pratonton anda" : currentLang === "中文" ? "您的实时预览" : "Your preview"}</span><p>{personaDetails.preview}</p></div></div>
     <Button className="full" onClick={() => { if (onSave) onSave(); notify(t.personalise_save_toast); }}>{t.common_save}</Button>
   </section></>;
 }
@@ -4509,6 +4525,7 @@ function ChatHistory({ back, navigate, conversations, setConversations, activeCh
   folders: ChatFolder[]; setFolders: (value: ChatFolder[] | ((items: ChatFolder[]) => ChatFolder[])) => void;
   selectedFolderId: number | null; setSelectedFolderId: (id: number | null) => void;
 }) {
+  const { t, language } = useLanguage();
   const [editing, setEditing] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [newFolder, setNewFolder] = useState("");
@@ -4528,27 +4545,28 @@ function ChatHistory({ back, navigate, conversations, setConversations, activeCh
     setSelectedFolderId(folder.id);
     setNewFolder("");
   };
-  return <><PageHeader title="Chats" subtitle="Separate conversations, organised your way" back={back} action={<Button onClick={() => { setActiveChatId(null); back(); }}>+ New Chat</Button>} /><section className="page-pad">
-    <Button className="monthly-entry" variant="ghost" onClick={() => navigate("monthlyReport")}><Icon name="memory" /><span><strong>Monthly Reflection</strong><small>Uses only conversations and memories you allow</small></span><Icon name="chevron" /></Button>
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search chat titles and messages" /></div>
-    <div className="folder-create"><TextInput value={newFolder} onChange={(event) => setNewFolder(event.target.value)} placeholder="New folder name" /><Button disabled={!newFolder.trim()} onClick={createFolder}>Create</Button></div>
-    <div className="folder-strip"><Button variant={selectedFolderId === null ? "primary" : "secondary"} onClick={() => setSelectedFolderId(null)}>All chats</Button>{folders.map((folder) => <Button key={folder.id} variant={selectedFolderId === folder.id ? "primary" : "secondary"} onClick={() => setSelectedFolderId(folder.id)}>{folder.name}</Button>)}</div>
-    {selectedFolderId !== null && <div className="folder-manage">{renamingFolder === selectedFolderId ? <><TextInput value={folders.find((folder) => folder.id === selectedFolderId)?.name || ""} onChange={(event) => setFolders((items) => items.map((folder) => folder.id === selectedFolderId ? { ...folder, name: event.target.value } : folder))} /><Button onClick={() => setRenamingFolder(null)}>Done</Button></> : <><span>{folders.find((folder) => folder.id === selectedFolderId)?.name}</span><Button variant="ghost" onClick={() => setRenamingFolder(selectedFolderId)}>Rename</Button><Button variant="ghost" onClick={() => { setFolders((items) => items.filter((folder) => folder.id !== selectedFolderId)); setConversations((items) => items.map((chat) => chat.folderId === selectedFolderId ? { ...chat, folderId: undefined } : chat)); setSelectedFolderId(null); }}>Delete folder</Button><Button onClick={() => { setActiveChatId(null); back(); }}>New chat here</Button></>}</div>}
-    <div className="archive-switch"><Button variant={!showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(false)}>Active</Button><Button variant={showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(true)}>Archived</Button></div>
-    {visible.length === 0 && <div className="empty"><Icon name="chat" /><h3>{query ? "No matching conversations" : showArchived ? "No archived conversations" : "This folder is empty"}</h3><p>{query ? "Try another search." : "Start a new conversation here whenever you’re ready."}</p><Button onClick={() => { setActiveChatId(null); back(); }}>Start a conversation</Button></div>}
+  return <><PageHeader title={language === "Bahasa Melayu" ? "Sembang" : language === "中文" ? "历史对话" : "Chats"} subtitle={language === "Bahasa Melayu" ? "Perbualan berasingan, disusun mengikut cara anda" : language === "中文" ? "独立对话记录，按您的喜好整理" : "Separate conversations, organised your way"} back={back} action={<Button onClick={() => { setActiveChatId(null); back(); }}>{language === "Bahasa Melayu" ? "+ Sembang Baharu" : language === "中文" ? "+ 新建对话" : "+ New Chat"}</Button>} /><section className="page-pad">
+    <Button className="monthly-entry" variant="ghost" onClick={() => navigate("monthlyReport")}><Icon name="memory" /><span><strong>{language === "Bahasa Melayu" ? "Refleksi Bulanan" : language === "中文" ? "月度心绪总结" : "Monthly Reflection"}</strong><small>{language === "Bahasa Melayu" ? "Hanya menggunakan perbualan dan memori yang anda benarkan" : language === "中文" ? "仅使用您授权的对话与记忆片段" : "Uses only conversations and memories you allow"}</small></span><Icon name="chevron" /></Button>
+    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === "Bahasa Melayu" ? "Cari tajuk dan mesej sembang" : language === "中文" ? "搜索对话标题和消息内容" : "Search chat titles and messages"} /></div>
+    <div className="folder-create"><TextInput value={newFolder} onChange={(event) => setNewFolder(event.target.value)} placeholder={language === "Bahasa Melayu" ? "Nama folder baharu" : language === "中文" ? "新文件夹名称" : "New folder name"} /><Button disabled={!newFolder.trim()} onClick={createFolder}>{language === "Bahasa Melayu" ? "Cipta" : language === "中文" ? "创建" : "Create"}</Button></div>
+    <div className="folder-strip"><Button variant={selectedFolderId === null ? "primary" : "secondary"} onClick={() => setSelectedFolderId(null)}>{language === "Bahasa Melayu" ? "Semua sembang" : language === "中文" ? "全部对话" : "All chats"}</Button>{folders.map((folder) => <Button key={folder.id} variant={selectedFolderId === folder.id ? "primary" : "secondary"} onClick={() => setSelectedFolderId(folder.id)}>{folder.name}</Button>)}</div>
+    {selectedFolderId !== null && <div className="folder-manage">{renamingFolder === selectedFolderId ? <><TextInput value={folders.find((folder) => folder.id === selectedFolderId)?.name || ""} onChange={(event) => setFolders((items) => items.map((folder) => folder.id === selectedFolderId ? { ...folder, name: event.target.value } : folder))} /><Button onClick={() => setRenamingFolder(null)}>{t.common_done}</Button></> : <><span>{folders.find((folder) => folder.id === selectedFolderId)?.name}</span><Button variant="ghost" onClick={() => setRenamingFolder(selectedFolderId)}>{language === "Bahasa Melayu" ? "Namakan semula" : language === "中文" ? "重命名" : "Rename"}</Button><Button variant="ghost" onClick={() => { setFolders((items) => items.filter((folder) => folder.id !== selectedFolderId)); setConversations((items) => items.map((chat) => chat.folderId === selectedFolderId ? { ...chat, folderId: undefined } : chat)); setSelectedFolderId(null); }}>{language === "Bahasa Melayu" ? "Padam folder" : language === "中文" ? "删除文件夹" : "Delete folder"}</Button><Button onClick={() => { setActiveChatId(null); back(); }}>{language === "Bahasa Melayu" ? "Sembang baharu di sini" : language === "中文" ? "在此新建对话" : "New chat here"}</Button></>}</div>}
+    <div className="archive-switch"><Button variant={!showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(false)}>{language === "Bahasa Melayu" ? "Aktif" : language === "中文" ? "活跃" : "Active"}</Button><Button variant={showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(true)}>{language === "Bahasa Melayu" ? "Diarkibkan" : language === "中文" ? "已归档" : "Archived"}</Button></div>
+    {visible.length === 0 && <div className="empty"><Icon name="chat" /><h3>{query ? (language === "Bahasa Melayu" ? "Tiada perbualan sepadan" : language === "中文" ? "未找到匹配对话" : "No matching conversations") : showArchived ? (language === "Bahasa Melayu" ? "Tiada perbualan diarkibkan" : language === "中文" ? "暂无归档对话" : "No archived conversations") : (language === "Bahasa Melayu" ? "Folder ini kosong" : language === "中文" ? "该文件夹为空" : "This folder is empty")}</h3><p>{query ? (language === "Bahasa Melayu" ? "Cuba carian lain." : language === "中文" ? "请尝试其他关键词。" : "Try another search.") : (language === "Bahasa Melayu" ? "Mulakan perbualan baharu di sini bila-bila masa anda bersedia." : language === "中文" ? "准备好时，随时在此开启新的对话。" : "Start a new conversation here whenever you’re ready.")}</p><Button onClick={() => { setActiveChatId(null); back(); }}>{language === "Bahasa Melayu" ? "Mulakan perbualan" : language === "中文" ? "开启对话" : "Start a conversation"}</Button></div>}
     {(["Today", "Yesterday"] as const).map((day) => {
       const dayChats = visible.filter((chat) => chat.day === day);
       if (!dayChats.length) return null;
-      return <div className="history-group" key={day}><h3>{day}</h3>{dayChats.map((chat) => <div className="chat-history-card" key={chat.id}>
-        {editing === chat.id ? <><TextInput value={chat.title} onChange={(event) => update(chat.id, { title: event.target.value })} /><label className="field-label">Move to folder</label><div className="chips history-categories"><Button variant={!chat.folderId ? "primary" : "secondary"} onClick={() => update(chat.id, { folderId: undefined })}>No folder</Button>{folders.map((folder) => <Button key={folder.id} variant={chat.folderId === folder.id ? "primary" : "secondary"} onClick={() => update(chat.id, { folderId: folder.id })}>{folder.name}</Button>)}</div><div className="setting-toggle"><div><strong>Use in monthly report</strong><p>Allow themes from this conversation to be summarized.</p></div><Toggle on={chat.reportAllowed !== false} setOn={(value) => update(chat.id, { reportAllowed: value })} /></div><Button className="full" onClick={() => setEditing(null)}>Done</Button></> :
-        <><Button variant="ghost" className="history-open" onClick={() => { setActiveChatId(chat.id); setSelectedFolderId(chat.folderId || null); back(); }}><span><strong>{chat.title}</strong><small>{folders.find((folder) => folder.id === chat.folderId)?.name || "No folder"} · {chat.reportAllowed === false ? "Excluded from report" : "Report allowed"}</small></span><Icon name="chevron" /></Button><div className="memory-actions"><Button variant="ghost" onClick={() => setEditing(chat.id)}><Icon name="edit" />Organize</Button><Button variant="ghost" onClick={() => update(chat.id, { archived: !chat.archived })}>{chat.archived ? "Restore" : "Archive"}</Button><Button variant="ghost" onClick={() => { setConversations((items) => items.filter((item) => item.id !== chat.id)); if (activeChatId === chat.id) setActiveChatId(null); }}><Icon name="trash" />Delete</Button></div></>}
+      const dayLabel = day === "Today" ? (language === "Bahasa Melayu" ? "Hari Ini" : language === "中文" ? "今天" : "Today") : (language === "Bahasa Melayu" ? "Semalam" : language === "中文" ? "昨天" : "Yesterday");
+      return <div className="history-group" key={day}><h3>{dayLabel}</h3>{dayChats.map((chat) => <div className="chat-history-card" key={chat.id}>
+        {editing === chat.id ? <><TextInput value={chat.title} onChange={(event) => update(chat.id, { title: event.target.value })} /><label className="field-label">{language === "Bahasa Melayu" ? "Pindahkan ke folder" : language === "中文" ? "移动到文件夹" : "Move to folder"}</label><div className="chips history-categories"><Button variant={!chat.folderId ? "primary" : "secondary"} onClick={() => update(chat.id, { folderId: undefined })}>{language === "Bahasa Melayu" ? "Tiada folder" : language === "中文" ? "无文件夹" : "No folder"}</Button>{folders.map((folder) => <Button key={folder.id} variant={chat.folderId === folder.id ? "primary" : "secondary"} onClick={() => update(chat.id, { folderId: folder.id })}>{folder.name}</Button>)}</div><div className="setting-toggle"><div><strong>{language === "Bahasa Melayu" ? "Gunakan dalam laporan bulanan" : language === "中文" ? "用于月度反思总结" : "Use in monthly report"}</strong><p>{language === "Bahasa Melayu" ? "Benarkan tema daripada perbualan ini diringkaskan." : language === "中文" ? "允许将此对话的主题纳入月度摘要。" : "Allow themes from this conversation to be summarized."}</p></div><Toggle on={chat.reportAllowed !== false} setOn={(value) => update(chat.id, { reportAllowed: value })} /></div><Button className="full" onClick={() => setEditing(null)}>{t.common_done}</Button></> :
+        <><Button variant="ghost" className="history-open" onClick={() => { setActiveChatId(chat.id); setSelectedFolderId(chat.folderId || null); back(); }}><span><strong>{chat.title}</strong><small>{folders.find((folder) => folder.id === chat.folderId)?.name || (language === "Bahasa Melayu" ? "Tiada folder" : language === "中文" ? "无文件夹" : "No folder")} · {chat.reportAllowed === false ? (language === "Bahasa Melayu" ? "Dikecualikan daripada laporan" : language === "中文" ? "不纳入总结" : "Excluded from report") : (language === "Bahasa Melayu" ? "Dibenarkan dalam laporan" : language === "中文" ? "允许纳入总结" : "Report allowed")}</small></span><Icon name="chevron" /></Button><div className="memory-actions"><Button variant="ghost" onClick={() => setEditing(chat.id)}><Icon name="edit" />{language === "Bahasa Melayu" ? "Susun" : language === "中文" ? "管理" : "Organize"}</Button><Button variant="ghost" onClick={() => update(chat.id, { archived: !chat.archived })}>{chat.archived ? (language === "Bahasa Melayu" ? "Pulihkan" : language === "中文" ? "还原" : "Restore") : (language === "Bahasa Melayu" ? "Arkib" : language === "中文" ? "归档" : "Archive")}</Button><Button variant="ghost" onClick={() => { setConversations((items) => items.filter((item) => item.id !== chat.id)); if (activeChatId === chat.id) setActiveChatId(null); }}><Icon name="trash" />{language === "Bahasa Melayu" ? "Padam" : language === "中文" ? "删除" : "Delete"}</Button></div></>}
       </div>)}</div>;
     })}
   </section></>;
 }
 
 function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setConversations, memories }: { back: () => void; moodEntries: MoodEntry[]; setMoodEntries: (entries: MoodEntry[]) => void; conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; memories: Memory[] }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [includedMemories, setIncludedMemories] = useState<number[]>(memories.filter((memory) => memory.active).map((memory) => memory.id));
   const [intention, setIntention] = useState("");
   const [generated, setGenerated] = useState(1);
@@ -4559,7 +4577,9 @@ function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setCo
   const copingMemories = allowedMemories.filter((memory) => memory.category === "Wellbeing" || memory.category === "Things That Help Me");
   const positiveMemories = allowedMemories.filter((memory) => memory.category === "Special Memories" || memory.category === "Goals");
   const now = new Date();
-  const dateRange = `${new Intl.DateTimeFormat("en-MY", { month: "long", year: "numeric" }).format(now)} · Active Member Insights`;
+  const monthName = new Intl.DateTimeFormat(language === "Bahasa Melayu" ? "ms-MY" : language === "中文" ? "zh-CN" : "en-MY", { month: "long", year: "numeric" }).format(now);
+  const memberSubtitle = language === "Bahasa Melayu" ? "Wawasan Ahli Aktif" : language === "中文" ? "活跃会员洞察" : "Active Member Insights";
+  const dateRange = `${monthName} · ${memberSubtitle}`;
   const deleteReportData = () => {
     setIncludedMemories([]);
     setConversations((items) => items.map((chat) => ({ ...chat, reportAllowed: false })));
@@ -4568,19 +4588,19 @@ function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setCo
     setGenerated((value) => value + 1);
   };
   return <><PageHeader title={t.report_title} subtitle={t.report_subtitle} back={back} /><section className="page-pad">
-    <div className="monthly-hero"><SmallLogo /><span className="eyebrow">Monthly with ONY</span><h1>Your reflection</h1><p>{dateRange}</p></div>
-    <div className="report-source"><Icon name="info" /><p>Generated locally from {allowedMoods.length} allowed mood entries, {allowedChats.length} conversations, and {allowedMemories.length} active selected memories. Version {generated}.</p></div>
-    <div className="report-grid"><div><span>Included mood entries</span><strong>{allowedMoods.length}</strong><small>{moodEntries.length - allowedMoods.length} excluded from this report</small></div><div><span>Included chats</span><strong>{allowedChats.length}</strong><small>{conversations.length - allowedChats.length} excluded or archived</small></div></div>
-    <div className="card"><h3>Mood patterns</h3>{allowedMoods.length >= 3 ? <><div className="bars mood-entry-bars">{[...allowedMoods].reverse().slice(-7).map((entry) => <div key={entry.id}><span style={{ height: `${entry.level * 20}%` }} /><small>{entry.emoji}</small></div>)}</div><p>Simple visualization of your included check-ins. ONY does not interpret this as a diagnosis or clinical trend.</p></> : <p>At least three included mood entries are needed before a trend is shown. ONY will not invent missing check-ins.</p>}<div className="report-memory-list mood-report-list">{moodEntries.map((entry) => <div key={entry.id}><Toggle on={entry.reportAllowed} setOn={(value) => setMoodEntries(moodEntries.map((item) => item.id === entry.id ? { ...item, reportAllowed: value } : item))} /><span><strong>{entry.emoji} {entry.label}</strong><small>{new Date(entry.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}{entry.note ? ` · ${entry.note}` : ""}</small></span></div>)}</div></div>
-    <div className="card"><h3>Conversation themes</h3>{themes.length ? <div className="theme-bars">{themes.map(([theme, count]) => <div key={theme}><span><strong>{theme}</strong><small>{count} {count === 1 ? "conversation" : "conversations"}</small></span><i><b style={{ width: `${Math.max(12, (count / allowedChats.length) * 100)}%` }} /></i></div>)}</div> : <p>No conversations are currently included. Allow a conversation from Chat folders to see themes here.</p>}</div>
-    <div className="card"><h3>Personal reflections & memories</h3>{memories.length ? <div className="report-memory-list">{memories.map((memory) => <div key={memory.id}><Toggle on={includedMemories.includes(memory.id)} setOn={(value) => setIncludedMemories(value ? [...includedMemories, memory.id] : includedMemories.filter((id) => id !== memory.id))} /><span><strong>{memory.text}</strong><small>{memory.active ? "Active memory" : "Paused in Memory Vault"}</small></span></div>)}</div> : <p>No saved memories are available. ONY will not invent personal reflections.</p>}</div>
-    <div className="card"><h3>Coping and self-care</h3>{copingMemories.length ? copingMemories.map((memory) => <p key={memory.id}>{memory.text}<small className="source-note">Source: user-approved memory</small></p>) : <p>No approved coping strategies have been saved yet.</p>}</div>
-    <div className="card"><h3>Positive moments</h3>{positiveMemories.length ? positiveMemories.map((memory) => <p key={memory.id}>{memory.text}</p>) : <p>No positive moments are currently saved. ONY will not create achievements you did not share.</p>}</div>
-    <div className="reflection"><SmallLogo /><div><strong>Reflection prompt</strong><p>{themes.length ? `When ${themes[0][0].toLowerCase()} came up, what kind of support felt most useful?` : "What is one moment from this month you would like to remember?"}</p></div></div>
-    <label className="field-label">Optional intention for next month</label><TextArea value={intention} onChange={(event) => setIntention(event.target.value)} rows={3} placeholder="A small intention you choose for yourself…" />
-    <Button className="full" onClick={() => setGenerated((value) => value + 1)}>Regenerate from selected data</Button>
-    <Button className="full" variant="danger" onClick={deleteReportData}>Delete report selections</Button>
-    <p className="disclaimer"><Icon name="info" />This local reflection explains its sources and avoids clinical conclusions. Real report generation requires secure persistence, consent records, and reviewed AI prompts.</p>
+    <div className="monthly-hero"><SmallLogo /><span className="eyebrow">{language === "Bahasa Melayu" ? "Bulanan bersama ONY" : language === "中文" ? "ONY 月度纪实" : "Monthly with ONY"}</span><h1>{language === "Bahasa Melayu" ? "Refleksi anda" : language === "中文" ? "您的心绪反思" : "Your reflection"}</h1><p>{dateRange}</p></div>
+    <div className="report-source"><Icon name="info" /><p>{language === "Bahasa Melayu" ? `Dihasilkan setempat daripada ${allowedMoods.length} rekod mood dibenarkan, ${allowedChats.length} perbualan, dan ${allowedMemories.length} memori terpilih aktif. Versi ${generated}.` : language === "中文" ? `基于本地 ${allowedMoods.length} 条已授权心情记录、${allowedChats.length} 个对话以及 ${allowedMemories.length} 条精选活跃记忆生成。版本 ${generated}。` : `Generated locally from ${allowedMoods.length} allowed mood entries, ${allowedChats.length} conversations, and ${allowedMemories.length} active selected memories. Version ${generated}.`}</p></div>
+    <div className="report-grid"><div><span>{language === "Bahasa Melayu" ? "Rekod mood disertakan" : language === "中文" ? "已纳入心情记录" : "Included mood entries"}</span><strong>{allowedMoods.length}</strong><small>{language === "Bahasa Melayu" ? `${moodEntries.length - allowedMoods.length} dikecualikan daripada laporan ini` : language === "中文" ? `${moodEntries.length - allowedMoods.length} 条未纳入此总结` : `${moodEntries.length - allowedMoods.length} excluded from this report`}</small></div><div><span>{language === "Bahasa Melayu" ? "Sembang disertakan" : language === "中文" ? "已纳入对话" : "Included chats"}</span><strong>{allowedChats.length}</strong><small>{language === "Bahasa Melayu" ? `${conversations.length - allowedChats.length} dikecualikan atau diarkibkan` : language === "中文" ? `${conversations.length - allowedChats.length} 个已排除或已归档` : `${conversations.length - allowedChats.length} excluded or archived`}</small></div></div>
+    <div className="card"><h3>{language === "Bahasa Melayu" ? "Corak mood" : language === "中文" ? "情绪走势" : "Mood patterns"}</h3>{allowedMoods.length >= 3 ? <><div className="bars mood-entry-bars">{[...allowedMoods].reverse().slice(-7).map((entry) => <div key={entry.id}><span style={{ height: `${entry.level * 20}%` }} /><small>{entry.emoji}</small></div>)}</div><p>{language === "Bahasa Melayu" ? "Visualisasi ringkas bagi daftar masuk anda. ONY tidak mentafsirkannya sebagai diagnosis klinikal." : language === "中文" ? "您心情记录的直观展示。ONY 绝不将其视作医学诊断或临床依据。" : "Simple visualization of your included check-ins. ONY does not interpret this as a diagnosis or clinical trend."}</p></> : <p>{language === "Bahasa Melayu" ? "Sekurang-kurangnya tiga daftar masuk mood diperlukan sebelum corak dapat dipaparkan. ONY tidak akan mencipta data yang tiada." : language === "中文" ? "至少需要纳入三条心情记录方可显示趋势。ONY 绝不捏造缺失记录。" : "At least three included mood entries are needed before a trend is shown. ONY will not invent missing check-ins."}</p>}<div className="report-memory-list mood-report-list">{moodEntries.map((entry) => <div key={entry.id}><Toggle on={entry.reportAllowed} setOn={(value) => setMoodEntries(moodEntries.map((item) => item.id === entry.id ? { ...item, reportAllowed: value } : item))} /><span><strong>{entry.emoji} {entry.label}</strong><small>{new Date(entry.createdAt).toLocaleDateString(language === "Bahasa Melayu" ? "ms-MY" : language === "中文" ? "zh-CN" : "en-MY", { day: "numeric", month: "short" })}{entry.note ? ` · ${entry.note}` : ""}</small></span></div>)}</div></div>
+    <div className="card"><h3>{language === "Bahasa Melayu" ? "Tema perbualan" : language === "中文" ? "对话主要主题" : "Conversation themes"}</h3>{themes.length ? <div className="theme-bars">{themes.map(([theme, count]) => <div key={theme}><span><strong>{getCategoryLabel(theme, language)}</strong><small>{count} {count === 1 ? (language === "Bahasa Melayu" ? "perbualan" : language === "中文" ? "次对话" : "conversation") : (language === "Bahasa Melayu" ? "perbualan" : language === "中文" ? "次对话" : "conversations")}</small></span><i><b style={{ width: `${Math.max(12, (count / allowedChats.length) * 100)}%` }} /></i></div>)}</div> : <p>{language === "Bahasa Melayu" ? "Tiada perbualan disertakan buat masa ini. Benarkan perbualan dari folder Sembang untuk melihat tema di sini." : language === "中文" ? "当前未纳入任何对话。可在对话文件夹中开启授权以在此查看主题。" : "No conversations are currently included. Allow a conversation from Chat folders to see themes here."}</p>}</div>
+    <div className="card"><h3>{language === "Bahasa Melayu" ? "Refleksi & memori peribadi" : language === "中文" ? "个人反思与记忆" : "Personal reflections & memories"}</h3>{memories.length ? <div className="report-memory-list">{memories.map((memory) => <div key={memory.id}><Toggle on={includedMemories.includes(memory.id)} setOn={(value) => setIncludedMemories(value ? [...includedMemories, memory.id] : includedMemories.filter((id) => id !== memory.id))} /><span><strong>{memory.text}</strong><small>{memory.active ? (language === "Bahasa Melayu" ? "Memori aktif" : language === "中文" ? "活跃记忆" : "Active memory") : (language === "Bahasa Melayu" ? "Dijeda dalam Peti Memori" : language === "中文" ? "已在记忆库中暂停" : "Paused in Memory Vault")}</small></span></div>)}</div> : <p>{language === "Bahasa Melayu" ? "Tiada memori disimpan buat masa ini. ONY tidak akan mencipta refleksi tiruan." : language === "中文" ? "暂无已保存的记忆。ONY 绝不捏造任何反思内容。" : "No saved memories are available. ONY will not invent personal reflections."}</p>}</div>
+    <div className="card"><h3>{language === "Bahasa Melayu" ? "Daya tindak & penjagaan diri" : language === "中文" ? "应对方法与自我关怀" : "Coping and self-care"}</h3>{copingMemories.length ? copingMemories.map((memory) => <p key={memory.id}>{memory.text}<small className="source-note">{language === "Bahasa Melayu" ? "Sumber: memori diluluskan pengguna" : language === "中文" ? "来源：用户确认的记忆" : "Source: user-approved memory"}</small></p>) : <p>{language === "Bahasa Melayu" ? "Tiada strategi daya tindak yang diluluskan telah disimpan." : language === "中文" ? "尚未保存任何经确认的应对策略。" : "No approved coping strategies have been saved yet."}</p>}</div>
+    <div className="card"><h3>{language === "Bahasa Melayu" ? "Detik-detik positif" : language === "中文" ? "积极与温暖时刻" : "Positive moments"}</h3>{positiveMemories.length ? positiveMemories.map((memory) => <p key={memory.id}>{memory.text}</p>) : <p>{language === "Bahasa Melayu" ? "Tiada detik positif disimpan buat masa ini. ONY tidak akan mencipta pencapaian yang tidak dikongsi." : language === "中文" ? "暂未保存任何温暖时刻。ONY 绝不捏造未曾发生的事情。" : "No positive moments are currently saved. ONY will not create achievements you did not share."}</p>}</div>
+    <div className="reflection"><SmallLogo /><div><strong>{language === "Bahasa Melayu" ? "Dorongan refleksi" : language === "中文" ? "反思启发" : "Reflection prompt"}</strong><p>{themes.length ? (language === "Bahasa Melayu" ? `Apabila ${getCategoryLabel(themes[0][0], language).toLowerCase()} timbul, apakah bentuk sokongan yang paling membantu?` : language === "中文" ? `当谈及“${getCategoryLabel(themes[0][0], language)}”时，怎样的支持对您最有帮助？` : `When ${themes[0][0].toLowerCase()} came up, what kind of support felt most useful?`) : (language === "Bahasa Melayu" ? "Apakah satu detik dari bulan ini yang ingin anda ingati?" : language === "中文" ? "这个月里有哪一个瞬间是您想要珍藏的？" : "What is one moment from this month you would like to remember?")}</p></div></div>
+    <label className="field-label">{language === "Bahasa Melayu" ? "Niat pilihan untuk bulan hadapan" : language === "中文" ? "下个月的美好期许（选填）" : "Optional intention for next month"}</label><TextArea value={intention} onChange={(event) => setIntention(event.target.value)} rows={3} placeholder={language === "Bahasa Melayu" ? "Satu niat kecil yang anda pilih untuk diri sendiri…" : language === "中文" ? "为自己设定一个微小而温柔的期许…" : "A small intention you choose for yourself…"} />
+    <Button className="full" onClick={() => setGenerated((value) => value + 1)}>{language === "Bahasa Melayu" ? "Jana semula dari data terpilih" : language === "中文" ? "基于选定数据重新生成" : "Regenerate from selected data"}</Button>
+    <Button className="full" variant="danger" onClick={deleteReportData}>{language === "Bahasa Melayu" ? "Padam pilihan laporan" : language === "中文" ? "清除报告数据勾选" : "Delete report selections"}</Button>
+    <p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Refleksi setempat ini menerangkan sumbernya dan mengelakkan kesimpulan klinikal. Penjanaan laporan sebenar memerlukan persetujuan dan storan yang selamat." : language === "中文" ? "此本地反思清晰阐述了数据来源，不作任何临床结论。完整报告生成需要经严格审核的隐私保护与授权记录。" : "This local reflection explains its sources and avoids clinical conclusions. Real report generation requires secure persistence, consent records, and reviewed AI prompts."}</p>
   </section></>;
 }
 
@@ -4635,7 +4655,7 @@ function Notifications({
   onOpenTrusted: () => void;
   notify: (s: string) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [filter, setFilter] = useState<"All" | "Emergency" | "Community" | "Messages">("All");
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -4709,6 +4729,19 @@ function Notifications({
     }
   };
 
+  const getTabLabel = (tabName: "All" | "Emergency" | "Community" | "Messages") => {
+    switch (tabName) {
+      case "All":
+        return language === "Bahasa Melayu" ? "Semua" : language === "中文" ? "全部" : "All";
+      case "Emergency":
+        return language === "Bahasa Melayu" ? "Kecemasan" : language === "中文" ? "紧急" : "Emergency";
+      case "Community":
+        return language === "Bahasa Melayu" ? "Komuniti" : language === "中文" ? "社区" : "Community";
+      case "Messages":
+        return language === "Bahasa Melayu" ? "Mesej" : language === "中文" ? "消息" : "Messages";
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -4721,8 +4754,8 @@ function Notifications({
             type="button"
             className="notifications-settings-icon-btn"
             onClick={() => navigate("notificationSettings")}
-            aria-label="Notification settings & quiet hours"
-            title="Notification settings & quiet hours"
+            aria-label={language === "Bahasa Melayu" ? "Tetapan pemberitahuan & waktu tenang" : language === "中文" ? "通知设置与静音时段" : "Notification settings & quiet hours"}
+            title={language === "Bahasa Melayu" ? "Tetapan pemberitahuan & waktu tenang" : language === "中文" ? "通知设置与静音时段" : "Notification settings & quiet hours"}
           >
             <Icon name="settings" />
           </button>
@@ -4744,7 +4777,7 @@ function Notifications({
               </span>
             )}
             <span className="notifications-total-count">
-              {notifications.length} {notifications.length === 1 ? "notification" : "notifications"}
+              {notifications.length} {notifications.length === 1 ? (language === "Bahasa Melayu" ? "pemberitahuan" : language === "中文" ? "条通知" : "notification") : (language === "Bahasa Melayu" ? "pemberitahuan" : language === "中文" ? "条通知" : "notifications")}
             </span>
           </div>
           <div className="notifications-top-actions">
@@ -4784,7 +4817,7 @@ function Notifications({
                 variant={filter === tabName ? "primary" : "secondary"}
                 onClick={() => setFilter(tabName)}
               >
-                {tabName} ({count})
+                {getTabLabel(tabName)} ({count})
               </Button>
             );
           })}
@@ -4793,9 +4826,9 @@ function Notifications({
         {filtered.length === 0 ? (
           <div className="notifications-empty-box">
             <Icon name="bell" />
-            <h3>No notifications in {filter}</h3>
+            <h3>{language === "Bahasa Melayu" ? `Tiada pemberitahuan dalam ${getTabLabel(filter)}` : language === "中文" ? `${getTabLabel(filter)}分类下暂无通知` : `No notifications in ${filter}`}</h3>
             <p>
-              Activity like someone putting you as emergency contact, post likes, comments, and supportive messages will appear here 🌱
+              {language === "Bahasa Melayu" ? "Aktiviti seperti seseorang menetapkan anda sebagai kenalan kecemasan, suka siaran, komen, dan mesej sokongan akan dipaparkan di sini 🌱" : language === "中文" ? "当有人将您设为紧急联系人、点赞或评论发帖、发送暖心留言时，均会显示在此处 🌱" : "Activity like someone putting you as emergency contact, post likes, comments, and supportive messages will appear here 🌱"}
             </p>
           </div>
         ) : (
@@ -4826,7 +4859,7 @@ function Notifications({
                   <div className="notification-body">
                     <div className="notification-header-row">
                       <strong>{item.title}</strong>
-                      <small>{formatFriendlyTime(item.createdAt)}</small>
+                      <small>{formatFriendlyTime(item.createdAt, language)}</small>
                     </div>
                     <p>{item.message}</p>
 
@@ -4859,7 +4892,7 @@ function Notifications({
                                 );
                               }}
                             >
-                              Accept
+                              {language === "Bahasa Melayu" ? "Terima" : language === "中文" ? "接受" : "Accept"}
                             </Button>
                             <Button
                               variant="secondary"
@@ -4873,7 +4906,7 @@ function Notifications({
                                 );
                               }}
                             >
-                              Reject
+                              {language === "Bahasa Melayu" ? "Tolak" : language === "中文" ? "拒绝" : "Reject"}
                             </Button>
                             <Button
                               variant="ghost"
@@ -4882,16 +4915,16 @@ function Notifications({
                                 onOpenTrusted();
                               }}
                             >
-                              View in Contacts
+                              {language === "Bahasa Melayu" ? "Lihat dalam Kenalan" : language === "中文" ? "在通讯录中查看" : "View in Contacts"}
                             </Button>
                           </>
                         ) : item.rawRequest.status === "accepted" ? (
                           <span className="notification-item-badge accepted">
-                            <Icon name="check" /> Accepted as Trusted Contact
+                            <Icon name="check" /> {language === "Bahasa Melayu" ? "Diterima sebagai Kenalan Dipercayai" : language === "中文" ? "已接受为信任联系人" : "Accepted as Trusted Contact"}
                           </span>
                         ) : (
                           <span className="notification-item-badge rejected">
-                            Request Declined
+                            {language === "Bahasa Melayu" ? "Permintaan Ditolak" : language === "中文" ? "已婉拒请求" : "Request Declined"}
                           </span>
                         )}
                       </div>
@@ -4910,14 +4943,14 @@ function Notifications({
                           }}
                         >
                           {item.type === "support_message"
-                            ? "View in My Node ›"
-                            : "Open post ›"}
+                            ? (language === "Bahasa Melayu" ? "Lihat di Nod Saya ›" : language === "中文" ? "在我的节点中查看 ›" : "View in My Node ›")
+                            : (language === "Bahasa Melayu" ? "Buka catatan ›" : language === "中文" ? "查看帖子 ›" : "Open post ›")}
                         </span>
                       </div>
                     )}
                   </div>
 
-                  {!item.read && <span className="notification-unread-dot-badge" title="Unread" />}
+                  {!item.read && <span className="notification-unread-dot-badge" title={language === "Bahasa Melayu" ? "Belum dibaca" : language === "中文" ? "未读" : "Unread"} />}
                 </div>
               );
             })}
@@ -5329,7 +5362,7 @@ function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit,
       <section className="page-pad">
         <div className="pricing-intro">
           <span className="eyebrow">{language === "Bahasa Melayu" ? "Ruang Tenang ONY Anda" : language === "中文" ? "您的 ONY 心灵庇护所" : "Your ONY Sanctuary"}</span>
-          <h1>{t.sub_choose_best || (language === "Bahasa Melayu" ? "Pilih yang paling sesuai untuk anda." : language === "中文" ? "选择最契合您当下需求的节奏。" : "Choose what fits you best.")}</h1>
+          <h1>{language === "Bahasa Melayu" ? "Pilih yang paling sesuai untuk anda." : language === "中文" ? "选择最契合您当下需求的节奏。" : "Choose what fits you best."}</h1>
           <p>{language === "Bahasa Melayu" ? "Peringkat Percuma sentiasa tersedia. Naik taraf pada bila-bila masa anda inginkan kesinambungan dan wawasan yang lebih mendalam." : language === "中文" ? "免费版永久向所有人开放。当您需要更深度的连贯记忆与洞察时，可随时升级。" : "The Free tier is always available. Upgrade whenever you want deeper continuity and insights."}</p>
         </div>
         {freeCard}
@@ -5425,61 +5458,226 @@ function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => v
 }
 
 function JobPreferences({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
+  const { language } = useLanguage();
   const [type, setType] = useState("Internship");
   const [field, setField] = useState("Marketing");
   const [location, setLocation] = useState("Kuala Lumpur");
   const [arrangement, setArrangement] = useState("Hybrid");
   const [experience, setExperience] = useState("Entry level");
-  return <><PageHeader title="Career & Opportunities" subtitle="Supportive, youth-friendly workplaces" back={back} /><section className="page-pad">
-    <div className="help-hero"><Icon name="market" /><div><h2>What kind of work fits your journey?</h2><p>ONY curates openings with Malaysian employers who prioritize healthy communication and well-being.</p></div></div>
-    <SettingChoices title="Job type" values={["Internship", "Part-time", "Full-time"]} value={type} setValue={setType} />
-    <SettingChoices title="Job field" values={["Marketing", "Tech", "Design", "Operations"]} value={field} setValue={setField} />
-    <label className="field-label">Preferred location</label><TextInput value={location} onChange={(e) => setLocation(e.target.value)} />
-    <SettingChoices title="Work arrangement" values={["On-site", "Hybrid", "Remote"]} value={arrangement} setValue={setArrangement} />
-    <SettingChoices title="Experience level" values={["No experience", "Entry level", "1–3 years"]} value={experience} setValue={setExperience} />
-    <Button className="full" onClick={() => navigate("jobs")}>Show Matching Opportunities</Button>
+
+  return <><PageHeader
+    title={language === "Bahasa Melayu" ? "Kerjaya & Peluang" : language === "中文" ? "职业与成长机遇" : "Career & Opportunities"}
+    subtitle={language === "Bahasa Melayu" ? "Tempat kerja yang menyokong dan mesra belia" : language === "中文" ? "关爱青年、氛围健康的优质雇主" : "Supportive, youth-friendly workplaces"}
+    back={back}
+  /><section className="page-pad">
+    <div className="help-hero"><Icon name="market" /><div><h2>{language === "Bahasa Melayu" ? "Apakah jenis pekerjaan yang sesuai dengan perjalanan anda?" : language === "中文" ? "怎样的职业节奏最契合您当下的人生步调？" : "What kind of work fits your journey?"}</h2><p>{language === "Bahasa Melayu" ? "ONY memilih peluang bersama majikan Malaysia yang mengutamakan komunikasi sihat dan kesejahteraan." : language === "中文" ? "ONY 严选注重健康沟通、关怀身心健康的马来西亚本地优质雇主。" : "ONY curates openings with Malaysian employers who prioritize healthy communication and well-being."}</p></div></div>
+    <SettingChoices
+      title={language === "Bahasa Melayu" ? "Jenis pekerjaan" : language === "中文" ? "工作类型" : "Job type"}
+      values={["Internship", "Part-time", "Full-time"]}
+      value={type}
+      setValue={setType}
+      labels={{
+        Internship: language === "Bahasa Melayu" ? "Latihan Industri" : language === "中文" ? "实习岗位" : "Internship",
+        "Part-time": language === "Bahasa Melayu" ? "Sambilan" : language === "中文" ? "兼职" : "Part-time",
+        "Full-time": language === "Bahasa Melayu" ? "Sepenuh Masa" : language === "中文" ? "全职" : "Full-time",
+      }}
+    />
+    <SettingChoices
+      title={language === "Bahasa Melayu" ? "Bidang pekerjaan" : language === "中文" ? "工作领域" : "Job field"}
+      values={["Marketing", "Tech", "Design", "Operations"]}
+      value={field}
+      setValue={setField}
+      labels={{
+        Marketing: language === "Bahasa Melayu" ? "Pemasaran" : language === "中文" ? "市场营销" : "Marketing",
+        Tech: language === "Bahasa Melayu" ? "Teknologi" : language === "中文" ? "技术与软件" : "Tech",
+        Design: language === "Bahasa Melayu" ? "Reka Bentuk" : language === "中文" ? "视觉设计" : "Design",
+        Operations: language === "Bahasa Melayu" ? "Operasi" : language === "中文" ? "运营管理" : "Operations",
+      }}
+    />
+    <label className="field-label">{language === "Bahasa Melayu" ? "Lokasi pilihan" : language === "中文" ? "意向工作地点" : "Preferred location"}</label><TextInput value={location} onChange={(e) => setLocation(e.target.value)} />
+    <SettingChoices
+      title={language === "Bahasa Melayu" ? "Susunan kerja" : language === "中文" ? "工作形式" : "Work arrangement"}
+      values={["On-site", "Hybrid", "Remote"]}
+      value={arrangement}
+      setValue={setArrangement}
+      labels={{
+        "On-site": language === "Bahasa Melayu" ? "Di Pejabat" : language === "中文" ? "现场办公" : "On-site",
+        Hybrid: language === "Bahasa Melayu" ? "Hibrid" : language === "中文" ? "混合办公" : "Hybrid",
+        Remote: language === "Bahasa Melayu" ? "Jauh / Dari Rumah" : language === "中文" ? "全远程办公" : "Remote",
+      }}
+    />
+    <SettingChoices
+      title={language === "Bahasa Melayu" ? "Tahap pengalaman" : language === "中文" ? "经验要求" : "Experience level"}
+      values={["No experience", "Entry level", "1–3 years"]}
+      value={experience}
+      setValue={setExperience}
+      labels={{
+        "No experience": language === "Bahasa Melayu" ? "Tiada pengalaman" : language === "中文" ? "无需经验" : "No experience",
+        "Entry level": language === "Bahasa Melayu" ? "Peringkat permulaan" : language === "中文" ? "入门级" : "Entry level",
+        "1–3 years": language === "Bahasa Melayu" ? "1–3 tahun" : language === "中文" ? "1–3 年经验" : "1–3 years",
+      }}
+    />
+    <Button className="full" onClick={() => navigate("jobs")}>{language === "Bahasa Melayu" ? "Tunjukkan Peluang Yang Sepadan" : language === "中文" ? "浏览匹配机遇" : "Show Matching Opportunities"}</Button>
   </section></>;
 }
 
 function JobOpportunities({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
+  const { language } = useLanguage();
   const jobs = [
-    { title: "Junior Content Coordinator", company: "Kita Creative Studio", location: "Kuala Lumpur", type: "Full-time · Hybrid", body: "Support social content, campaign planning, and community storytelling in a supportive team environment." },
-    { title: "Marketing & Growth Intern", company: "Bina Digital Media", location: "Petaling Jaya", type: "Internship · Hybrid", body: "Learn campaign operations with mentorship, healthy work-life balance, and clear learning goals." },
-    { title: "Community Wellbeing Assistant", company: "Ruang Muda Collective", location: "Remote, Malaysia", type: "Part-time · Remote", body: "Help coordinate online peer events, community inquiries, and member communications." },
+    {
+      title: language === "Bahasa Melayu" ? "Penyelaras Kandungan Junior" : language === "中文" ? "初级内容策划专员" : "Junior Content Coordinator",
+      company: "Kita Creative Studio",
+      location: "Kuala Lumpur",
+      type: language === "Bahasa Melayu" ? "Sepenuh Masa · Hibrid" : language === "中文" ? "全职 · 混合办公" : "Full-time · Hybrid",
+      body: language === "Bahasa Melayu" ? "Sokong kandungan sosial, perancangan kempen, dan penceritaan komuniti dalam persekitaran pasukan yang saling menyokong." : language === "中文" ? "在温暖互助的团队环境中协助社交内容创作、活动统筹及社区故事传播。" : "Support social content, campaign planning, and community storytelling in a supportive team environment."
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Pelatih Pemasaran & Pertumbuhan" : language === "中文" ? "市场与增长实习生" : "Marketing & Growth Intern",
+      company: "Bina Digital Media",
+      location: "Petaling Jaya",
+      type: language === "Bahasa Melayu" ? "Latihan Industri · Hibrid" : language === "中文" ? "实习 · 混合办公" : "Internship · Hybrid",
+      body: language === "Bahasa Melayu" ? "Ketahui operasi kempen dengan bimbingan mentor, keseimbangan kerja-kehidupan yang sihat, dan matlamat pembelajaran yang jelas." : language === "中文" ? "在导师一对一指引下熟悉推广运作，享受健康的工作与生活平衡和清晰的成长目标。" : "Learn campaign operations with mentorship, healthy work-life balance, and clear learning goals."
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Pembantu Kesejahteraan Komuniti" : language === "中文" ? "社区身心健康关怀助理" : "Community Wellbeing Assistant",
+      company: "Ruang Muda Collective",
+      location: language === "Bahasa Melayu" ? "Jauh, Malaysia" : language === "中文" ? "远程，马来西亚" : "Remote, Malaysia",
+      type: language === "Bahasa Melayu" ? "Sambilan · Jauh" : language === "中文" ? "兼职 · 远程" : "Part-time · Remote",
+      body: language === "Bahasa Melayu" ? "Bantu menyelaraskan acara rakan sebaya dalam talian, pertanyaan komuniti, dan komunikasi ahli." : language === "中文" ? "协助统筹线上同伴互助聚会、解答社区伙伴咨询并跟进成员温暖互动。" : "Help coordinate online peer events, community inquiries, and member communications."
+    },
   ];
-  return <><PageHeader title="Youth Opportunities" subtitle="Curated entry-level & internship openings" back={back} /><section className="page-pad">
-    <div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />Verified partner listings committed to young adult well-being and reasonable working hours.</div>
-    <div className="result-summary"><strong>3 verified matches</strong><span>Marketing & Community · Entry level · Malaysia</span></div>
-    {jobs.map((job) => <div className="job-card" key={job.title}><span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>Verified Partner</span><h3>{job.title}</h3><strong>{job.company}</strong><div className="job-meta"><span>{job.location}</span><span>{job.type}</span></div><p>{job.body}</p><div className="job-actions"><Button variant="secondary" onClick={() => navigate("jobDetail")}>View Opportunity</Button><Button onClick={() => navigate("jobDetail")}>Apply / Save</Button></div></div>)}
+  return <><PageHeader
+    title={language === "Bahasa Melayu" ? "Peluang Belia" : language === "中文" ? "青年工作机会" : "Youth Opportunities"}
+    subtitle={language === "Bahasa Melayu" ? "Peluang peringkat permulaan & latihan industri terpilih" : language === "中文" ? "精选入门级全职与实习岗位" : "Curated entry-level & internship openings"}
+    back={back}
+  /><section className="page-pad">
+    <div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}>
+      <Icon name="check" />{language === "Bahasa Melayu" ? "Senarai rakan kongsi disahkan yang komited kepada kesejahteraan belia dan waktu kerja munasabah." : language === "中文" ? "经认证的合作伙伴，致力于保障青年身心健康与合理工时。" : "Verified partner listings committed to young adult well-being and reasonable working hours."}
+    </div>
+    <div className="result-summary">
+      <strong>3 {language === "Bahasa Melayu" ? "padanan disahkan" : language === "中文" ? "个精选认证匹配" : "verified matches"}</strong>
+      <span>Marketing & Community · {language === "Bahasa Melayu" ? "Peringkat permulaan · Malaysia" : language === "中文" ? "入门级 · 马来西亚" : "Entry level · Malaysia"}</span>
+    </div>
+    {jobs.map((job) => (
+      <div className="job-card" key={job.title}>
+        <span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
+          {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}
+        </span>
+        <h3>{job.title}</h3>
+        <strong>{job.company}</strong>
+        <div className="job-meta">
+          <span>{job.location}</span>
+          <span>{job.type}</span>
+        </div>
+        <p>{job.body}</p>
+        <div className="job-actions">
+          <Button variant="secondary" onClick={() => navigate("jobDetail")}>
+            {language === "Bahasa Melayu" ? "Lihat Peluang" : language === "中文" ? "查看岗位" : "View Opportunity"}
+          </Button>
+          <Button onClick={() => navigate("jobDetail")}>
+            {language === "Bahasa Melayu" ? "Mohon / Simpan" : language === "中文" ? "申请 / 收藏" : "Apply / Save"}
+          </Button>
+        </div>
+      </div>
+    ))}
   </section></>;
 }
 
 function JobDetail({ back, notify }: { back: () => void; notify: (s: string) => void }) {
-  return <><PageHeader title="Opportunity Details" subtitle="Kita Creative Studio" back={back} /><section className="page-pad">
-    <div className="job-detail-head"><span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>Youth Friendly</span><h1>Junior Content Coordinator</h1><strong>Kita Creative Studio · Kuala Lumpur</strong><div className="job-meta"><span>Kuala Lumpur</span><span>Full-time</span><span>Hybrid (3 days on-site)</span></div></div>
-    <div className="card"><h3>About the role</h3><p>Support social media content, organize campaign calendars, and help turn community insights into useful stories. Our team values mental health, realistic deadlines, and open communication.</p><h3>What we look for</h3><p>Clear communication, curiosity, basic social-media familiarity, and willingness to learn. No prior full-time experience required; fresh graduates and school-leavers welcome.</p></div>
-    <Button className="full" onClick={() => notify("Opportunity saved to your profile")}>Save Opportunity</Button>
-    <Button variant="secondary" className="full" onClick={() => notify("Application submitted to Kita Creative Studio · They will contact your email")}>Submit Application</Button>
-    <p className="disclaimer"><Icon name="info" />ONY partners with youth-conscious Malaysian employers to promote humane work hours and mental well-being.</p>
+  const { language } = useLanguage();
+  return <><PageHeader
+    title={language === "Bahasa Melayu" ? "Butiran Peluang" : language === "中文" ? "职位详情" : "Opportunity Details"}
+    subtitle="Kita Creative Studio"
+    back={back}
+  /><section className="page-pad">
+    <div className="job-detail-head">
+      <span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
+        {language === "Bahasa Melayu" ? "Mesra Belia" : language === "中文" ? "青年友好" : "Youth Friendly"}
+      </span>
+      <h1>{language === "Bahasa Melayu" ? "Penyelaras Kandungan Junior" : language === "中文" ? "初级内容策划专员" : "Junior Content Coordinator"}</h1>
+      <strong>Kita Creative Studio · Kuala Lumpur</strong>
+      <div className="job-meta">
+        <span>Kuala Lumpur</span>
+        <span>{language === "Bahasa Melayu" ? "Sepenuh Masa" : language === "中文" ? "全职" : "Full-time"}</span>
+        <span>{language === "Bahasa Melayu" ? "Hibrid (3 hari di pejabat)" : language === "中文" ? "混合办公（每周3天在司）" : "Hybrid (3 days on-site)"}</span>
+      </div>
+    </div>
+    <div className="card">
+      <h3>{language === "Bahasa Melayu" ? "Mengenai peranan ini" : language === "中文" ? "岗位职责" : "About the role"}</h3>
+      <p>{language === "Bahasa Melayu" ? "Sokong kandungan media sosial, atur kalendar kempen, dan bantu jadikan wawasan komuniti sebagai kisah bermakna. Pasukan kami menghargai kesihatan mental, tarikh akhir yang realistik, dan komunikasi terbuka." : language === "中文" ? "协助社群媒体内容策划、管理宣传档期，将社区心声转化为有温度的故事。我们团队推崇心理健康、合理的截稿期与坦诚透明的沟通。" : "Support social media content, organize campaign calendars, and help turn community insights into useful stories. Our team values mental health, realistic deadlines, and open communication."}</p>
+      <h3>{language === "Bahasa Melayu" ? "Apa yang kami cari" : language === "中文" ? "任职要求" : "What we look for"}</h3>
+      <p>{language === "Bahasa Melayu" ? "Komunikasi jelas, sifat ingin tahu, kebiasaan asas media sosial, dan minat belajar. Tiada pengalaman sepenuh masa terdahulu diperlukan; graduan baharu dan lepasan sekolah dialu-alukan." : language === "中文" ? "沟通表达清晰，充满求知欲，熟悉主流社交平台，善于主动学习。无需过往全职工作经验，欢迎应届毕业生。" : "Clear communication, curiosity, basic social-media familiarity, and willingness to learn. No prior full-time experience required; fresh graduates and school-leavers welcome."}</p>
+    </div>
+    <Button className="full" onClick={() => notify(language === "Bahasa Melayu" ? "Peluang disimpan ke profil anda" : language === "中文" ? "职位已收藏至您的个人主页" : "Opportunity saved to your profile")}>
+      {language === "Bahasa Melayu" ? "Simpan Peluang" : language === "中文" ? "收藏职位" : "Save Opportunity"}
+    </Button>
+    <Button variant="secondary" className="full" onClick={() => notify(language === "Bahasa Melayu" ? "Permohonan dihantar kepada Kita Creative Studio · Mereka akan menghubungi e-mel anda" : language === "中文" ? "申请已提交给 Kita Creative Studio · 招聘专员将通过邮件与您联系" : "Application submitted to Kita Creative Studio · They will contact your email")}>
+      {language === "Bahasa Melayu" ? "Hantar Permohonan" : language === "中文" ? "提交申请" : "Submit Application"}
+    </Button>
+    <p className="disclaimer">
+      <Icon name="info" />{language === "Bahasa Melayu" ? "ONY bekerjasama dengan majikan Malaysia yang prihatin terhadap belia untuk menggalakkan waktu kerja berperikemanusiaan dan kesejahteraan mental." : language === "中文" ? "ONY 与关爱青年身心健康的马来西亚雇主深度合作，倡导人性化工时与心理健康。" : "ONY partners with youth-conscious Malaysian employers to promote humane work hours and mental well-being."}
+    </p>
   </section></>;
 }
 
 function Wellbeing({ back, navigate, notify }: { back: () => void; navigate: (s: Screen) => void; notify: (s: string) => void }) {
+  const { language } = useLanguage();
   const [mode, setMode] = useState("All");
   const options = [
-    { title: "Slow instrumental mix", type: "Music", detail: "Focus & calm · 24 min", tone: "ocean" },
-    { title: "One-minute breathing pause", type: "Relaxation", detail: "Guided reset · 1 min", tone: "forest" },
-    { title: "Ocean horizon", type: "Nature", detail: "Visual grounding · Waves", tone: "ocean" },
-    { title: "Soft sunset", type: "Nature", detail: "Visual grounding · Sunset", tone: "sunset" },
-    { title: "Mindful pottery & clay", type: "Wellness", detail: "Creative reset session", tone: "peach" },
+    {
+      title: language === "Bahasa Melayu" ? "Campuran instrumental perlahan" : language === "中文" ? "慢节奏轻柔器乐混音" : "Slow instrumental mix",
+      type: "Music",
+      detail: language === "Bahasa Melayu" ? "Fokus & tenang · 24 min" : language === "中文" ? "专注与宁神 · 24分钟" : "Focus & calm · 24 min",
+      tone: "ocean"
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Jeda pernafasan satu minit" : language === "中文" ? "一分钟正念深呼吸" : "One-minute breathing pause",
+      type: "Relaxation",
+      detail: language === "Bahasa Melayu" ? "Penetapan semula berpandu · 1 min" : language === "中文" ? "引导式重置 · 1分钟" : "Guided reset · 1 min",
+      tone: "forest"
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Kaki langit lautan" : language === "中文" ? "辽阔海平线" : "Ocean horizon",
+      type: "Nature",
+      detail: language === "Bahasa Melayu" ? "Ketenangan visual · Ombak" : language === "中文" ? "视觉静心 · 海浪" : "Visual grounding · Waves",
+      tone: "ocean"
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Matahari terbenam lembut" : language === "中文" ? "柔和日落晚霞" : "Soft sunset",
+      type: "Nature",
+      detail: language === "Bahasa Melayu" ? "Ketenangan visual · Matahari Terbenam" : language === "中文" ? "视觉静心 · 日落" : "Visual grounding · Sunset",
+      tone: "sunset"
+    },
+    {
+      title: language === "Bahasa Melayu" ? "Seramik & tanah liat minda" : language === "中文" ? "正念陶艺与手作泥工" : "Mindful pottery & clay",
+      type: "Wellness",
+      detail: language === "Bahasa Melayu" ? "Sesi penetapan semula kreatif" : language === "中文" ? "创意放松治愈体验" : "Creative reset session",
+      tone: "peach"
+    },
   ];
+
+  const getTabName = (raw: string) => {
+    switch (raw) {
+      case "All": return language === "Bahasa Melayu" ? "Semua" : language === "中文" ? "全部" : "All";
+      case "Music": return language === "Bahasa Melayu" ? "Muzik" : language === "中文" ? "音乐" : "Music";
+      case "Nature": return language === "Bahasa Melayu" ? "Alam Semula Jadi" : language === "中文" ? "自然" : "Nature";
+      case "Relaxation": return language === "Bahasa Melayu" ? "Kelonggaran" : language === "中文" ? "放松" : "Relaxation";
+      case "Wellness": return language === "Bahasa Melayu" ? "Kesejahteraan" : language === "中文" ? "疗愈" : "Wellness";
+      default: return raw;
+    }
+  };
+
   const shown = options.filter((item) => mode === "All" || item.type === mode);
-  return <><PageHeader title="Gentle Suggestions" subtitle="Everyday grounding & well-being" back={back} /><section className="page-pad">
-    <div className="reflection"><SmallLogo /><div><strong>Let’s make this moment a little lighter.</strong><p>Choose whatever feels manageable. You can pause or change activities at any time.</p></div></div>
-    <div className="scroll-chips wellbeing-tabs">{["All", "Music", "Nature", "Relaxation", "Wellness"].map((item) => <Button key={item} variant={mode === item ? "primary" : "secondary"} onClick={() => setMode(item)}>{item}</Button>)}</div>
-    <div className="wellbeing-grid">{shown.map((item) => <button key={item.title} className="wellbeing-card" onClick={() => item.type === "Wellness" ? navigate("merchant") : notify(`${item.title} started · Breathe gently 🌱`)}><span className={`wellbeing-visual visual-${item.tone}`}><i /></span><span className="eyebrow">{item.type}</span><strong>{item.title}</strong><small>{item.detail}</small><b>Open</b></button>)}</div>
-    <button className="professional-banner" onClick={() => navigate("merchant")}><Icon name="market" /><span><strong>Explore wellness partners</strong><small>Mindful cafés, pottery, yoga, and calming activities</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" />These lifestyle suggestions are for everyday relaxation and do not substitute for clinical mental healthcare.</p>
+  return <><PageHeader
+    title={language === "Bahasa Melayu" ? "Cadangan Lembut" : language === "中文" ? "舒心微习惯" : "Gentle Suggestions"}
+    subtitle={language === "Bahasa Melayu" ? "Ketenangan & kesejahteraan harian" : language === "中文" ? "日常身心安顿与舒缓" : "Everyday grounding & well-being"}
+    back={back}
+  /><section className="page-pad">
+    <div className="reflection"><SmallLogo /><div><strong>{language === "Bahasa Melayu" ? "Mari jadikan saat ini lebih tenang dan ringan." : language === "中文" ? "让此刻的心情更轻松一些。" : "Let’s make this moment a little lighter."}</strong><p>{language === "Bahasa Melayu" ? "Pilih apa sahaja yang terasa selesa. Anda boleh menjeda atau menukar aktiviti pada bila-bila masa." : language === "中文" ? "选择任何让您感到舒适的微小活动。您可以随时暂停或切换。" : "Choose whatever feels manageable. You can pause or change activities at any time."}</p></div></div>
+    <div className="scroll-chips wellbeing-tabs">{["All", "Music", "Nature", "Relaxation", "Wellness"].map((item) => <Button key={item} variant={mode === item ? "primary" : "secondary"} onClick={() => setMode(item)}>{getTabName(item)}</Button>)}</div>
+    <div className="wellbeing-grid">{shown.map((item) => <button key={item.title} className="wellbeing-card" onClick={() => item.type === "Wellness" ? navigate("merchant") : notify(`${item.title} ${language === "Bahasa Melayu" ? "dimulakan · Bernafas perlahan-lahan 🌱" : language === "中文" ? "已开启 · 缓慢平稳地深呼吸 🌱" : "started · Breathe gently 🌱"}`)}><span className={`wellbeing-visual visual-${item.tone}`}><i /></span><span className="eyebrow">{getTabName(item.type)}</span><strong>{item.title}</strong><small>{item.detail}</small><b>{language === "Bahasa Melayu" ? "Buka" : language === "中文" ? "开始" : "Open"}</b></button>)}</div>
+    <button className="professional-banner" onClick={() => navigate("merchant")}><Icon name="market" /><span><strong>{language === "Bahasa Melayu" ? "Terokai rakan kesihatan & kesejahteraan" : language === "中文" ? "探索身心疗愈伙伴" : "Explore wellness partners"}</strong><small>{language === "Bahasa Melayu" ? "Kafe tenang, seramik, yoga, dan aktiviti santai" : language === "中文" ? "静心咖啡馆、陶艺手作、轻瑜伽及放松体验" : "Mindful cafés, pottery, yoga, and calming activities"}</small></span><Icon name="chevron" /></button>
+    <p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Cadangan gaya hidup ini adalah untuk kelonggaran harian dan tidak menggantikan penjagaan kesihatan mental klinikal." : language === "中文" ? "此类生活方式建议仅用于日常放松减压，不可替代专业临床心理医疗。" : "These lifestyle suggestions are for everyday relaxation and do not substitute for clinical mental healthcare."}</p>
   </section></>;
 }
 
@@ -5487,68 +5685,194 @@ const providers = [
   {
     name: "MENTARI Kuala Lumpur (MOH Malaysia)",
     service: "Community Mental Health Centre · Ministry of Health",
+    serviceBm: "Pusat Kesihatan Mental Komuniti · Kementerian Kesihatan Malaysia",
+    serviceZh: "社区心理健康中心 · 马来西亚卫生部 (MOH)",
     area: "Sentul / Kuala Lumpur",
     contact: "03-4040 0418",
     phone: "0340400418",
     hours: "Mon - Fri, 8:00 AM - 5:00 PM",
+    hoursBm: "Isn - Jum, 8:00 PG - 5:00 PTG",
+    hoursZh: "周一至周五, 8:00 - 17:00",
     label: "MOH Certified",
+    labelBm: "Disahkan KKM",
+    labelZh: "卫生部官方认证",
     description: "Public outpatient psychiatric consultations, psychological assessment, counselling, and psychosocial rehabilitation.",
+    descriptionBm: "Konsultasi psikiatri pesakit luar awam, penilaian psikologi, kaunseling, dan pemulihan psikososial.",
+    descriptionZh: "公立精神科门诊咨询、心理评估、专业辅导咨询及心理社会康复服务。",
   },
   {
     name: "Befrienders Kuala Lumpur",
     service: "24/7 Suicide Prevention & Emotional Support Helpline",
+    serviceBm: "Talian Bantuan Pencegahan Bunuh Diri & Sokongan Emosi 24/7",
+    serviceZh: "24/7 全天候危机干预与情感倾听关怀热线",
     area: "Nationwide (Center in Petaling Jaya)",
     contact: "03-7627 2929",
     phone: "0376272929",
     hours: "24 Hours / 7 Days",
+    hoursBm: "24 Jam / 7 Hari",
+    hoursZh: "24小时 / 7天 全年无休",
     label: "24/7 Helpline",
+    labelBm: "Talian 24/7",
+    labelZh: "24/7 援助热线",
     description: "Free, confidential 24-hour emotional support hotline for anyone in Malaysia experiencing loneliness, anxiety, or despair.",
+    descriptionBm: "Talian sokongan emosi 24 jam percuma dan sulit untuk sesiapa sahaja di Malaysia yang mengalami kesunyian, kebimbangan, atau keputusasaan.",
+    descriptionZh: "为在马来西亚任何遭遇孤独、焦虑或绝望困境的朋友提供免费、严格保密的24小时全天候情感关怀与热线陪伴。",
   },
   {
     name: "Hospital Kuala Lumpur (HKL) - Psychiatric Clinic",
     service: "Public Hospital Psychiatric & Emergency Department",
+    serviceBm: "Jabatan Psikiatri & Kecemasan Hospital Awam",
+    serviceZh: "公立公办综合医院精神专科与急诊部",
     area: "Jalan Pahang, Kuala Lumpur",
     contact: "03-2615 5555",
     phone: "0326155555",
     hours: "24/7 Emergency Department Open",
+    hoursBm: "Jabatan Kecemasan 24/7 Dibuka",
+    hoursZh: "急诊中心 24/7 全天候开放",
     label: "Public Hospital",
+    labelBm: "Hospital Awam",
+    labelZh: "公立医院",
     description: "Emergency acute psychiatric intervention, inpatient care, and specialized psychiatric clinical services.",
+    descriptionBm: "Intervensi psikiatri akut kecemasan, penjagaan dalam wad, dan perkhidmatan klinikal psikiatri khusus.",
+    descriptionZh: "提供急性精神危象紧急干预、住院诊疗监护及针对性精神专科临床医疗服务。",
   },
   {
     name: "Malaysian Mental Health Association (MMHA)",
     service: "Community Counselling & Psychotherapy NGO",
+    serviceBm: "NGO Kaunseling Komuniti & Psikoterapi",
+    serviceZh: "社区心理辅导与心理治疗注册非政府组织 (NGO)",
     area: "Petaling Jaya, Selangor",
     contact: "03-2780 4390",
     phone: "0327804390",
     hours: "Mon - Sat, 9:00 AM - 5:00 PM",
+    hoursBm: "Isn - Sab, 9:00 PG - 5:00 PTG",
+    hoursZh: "周一至周六, 9:00 - 17:00",
     label: "Registered NGO",
+    labelBm: "NGO Berdaftar",
+    labelZh: "注册公益组织",
     description: "Subsidized psychological counselling, psychotherapy, caregiver support, and mental health education programs.",
+    descriptionBm: "Kaunseling psikologi bersubsidi, psikoterapi, sokongan penjaga, dan program pendidikan kesihatan mental.",
+    descriptionZh: "提供惠民补贴心理咨询、专业心理治疗、照护者身心支持及心理健康科普教育项目。",
   },
 ];
 
 function ProfessionalSupport({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
+  const { language } = useLanguage();
   const [filter, setFilter] = useState("All");
-  const [area, setArea] = useState("Kuala Lumpur & Selangor");
+  const [area, setArea] = useState(language === "Bahasa Melayu" ? "Kuala Lumpur & Selangor" : language === "中文" ? "吉隆坡与雪兰莪" : "Kuala Lumpur & Selangor");
   const shown = providers.filter((provider) => filter === "All" || provider.service.toLowerCase().includes(filter.toLowerCase()) || provider.label.toLowerCase().includes(filter.toLowerCase()));
-  return <><PageHeader title="Professional Help Nearby" subtitle="Verified Malaysian mental health resources" back={back} /><section className="page-pad">
-    <a className="resource emergency-resource emergency-strip" href="tel:999"><span><strong>In immediate life danger?</strong><small>Call 999 for ambulance or emergency medical care.</small></span><b>Call 999</b></a>
-    <div className="location-choice"><strong>Search Area</strong><p>Verified public clinics, hospital departments, and crisis helplines across Malaysia.</p><div className="folder-create"><TextInput value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. Kuala Lumpur, Selangor, Penang, Johor" /><Button onClick={() => {}}>Active Area</Button></div></div>
-    <div className="support-distinction"><div><strong>24/7 Helplines</strong><p>Immediate, non-clinical listening and emotional support.</p></div><div><strong>Clinical Care</strong><p>Hospital psychiatric units, MENTARI clinics, and licensed therapists.</p></div></div>
-    <div className="scroll-chips">{["All", "Helpline", "MOH", "Hospital", "NGO"].map((item) => <Button key={item} variant={filter === item ? "primary" : "secondary"} onClick={() => setFilter(item)}>{item}</Button>)}</div>
-    {shown.map((provider) => <div className="provider-card" key={provider.name}><div><span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{provider.label}</span><h3>{provider.name}</h3><strong>{provider.service}</strong><p>{provider.area} · {provider.contact}</p><small style={{ display: "block", color: "var(--muted)", marginTop: "4px" }}>{provider.hours}</small></div><div className="provider-actions"><a className="btn btn-secondary" href={`tel:${provider.phone}`}>Call Now</a><Button onClick={() => navigate("provider")}>Details</Button></div></div>)}
-    <Button className="full" variant="secondary" onClick={() => window.open("https://mentari.moh.gov.my", "_blank")}>Open official MENTARI Malaysia website</Button>
-    <p className="disclaimer"><Icon name="info" />All helplines and hospitals listed are certified public or registered non-profit resources in Malaysia.</p>
+
+  const getFilterLabel = (item: string) => {
+    switch (item) {
+      case "All": return language === "Bahasa Melayu" ? "Semua" : language === "中文" ? "全部" : "All";
+      case "Helpline": return language === "Bahasa Melayu" ? "Talian Bantuan" : language === "中文" ? "求助热线" : "Helpline";
+      case "MOH": return language === "Bahasa Melayu" ? "KKM (MOH)" : language === "中文" ? "卫生部 (MOH)" : "MOH";
+      case "Hospital": return language === "Bahasa Melayu" ? "Hospital" : language === "中文" ? "公立医院" : "Hospital";
+      case "NGO": return "NGO";
+      default: return item;
+    }
+  };
+
+  return <><PageHeader
+    title={language === "Bahasa Melayu" ? "Bantuan Profesional Berdekatan" : language === "中文" ? "附近的专业心理支援" : "Professional Help Nearby"}
+    subtitle={language === "Bahasa Melayu" ? "Sumber kesihatan mental Malaysia yang disahkan" : language === "中文" ? "经官方认证的马来西亚心理健康服务网络" : "Verified Malaysian mental health resources"}
+    back={back}
+  /><section className="page-pad">
+    <a className="resource emergency-resource emergency-strip" href="tel:999">
+      <span>
+        <strong>{language === "Bahasa Melayu" ? "Dalam bahaya nyawa serta-merta?" : language === "中文" ? "面临即刻生命安全险情？" : "In immediate life danger?"}</strong>
+        <small>{language === "Bahasa Melayu" ? "Hubungi 999 untuk ambulans atau rawatan perubatan kecemasan." : language === "中文" ? "立即拨打 999 呼叫急救或警务援助。" : "Call 999 for ambulance or emergency medical care."}</small>
+      </span>
+      <b>{language === "Bahasa Melayu" ? "Hubungi 999" : language === "中文" ? "呼叫 999" : "Call 999"}</b>
+    </a>
+    <div className="location-choice">
+      <strong>{language === "Bahasa Melayu" ? "Kawasan Carian" : language === "中文" ? "搜索区域" : "Search Area"}</strong>
+      <p>{language === "Bahasa Melayu" ? "Klinik awam yang disahkan, jabatan hospital, dan talian bantuan krisis di seluruh Malaysia." : language === "中文" ? "覆盖马来西亚各州的公立诊所、医院科室及 24 小时危机热线。" : "Verified public clinics, hospital departments, and crisis helplines across Malaysia."}</p>
+      <div className="folder-create">
+        <TextInput value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. Kuala Lumpur, Selangor, Penang, Johor" />
+        <Button onClick={() => {}}>{language === "Bahasa Melayu" ? "Kawasan Aktif" : language === "中文" ? "当前区域" : "Active Area"}</Button>
+      </div>
+    </div>
+    <div className="support-distinction">
+      <div>
+        <strong>{language === "Bahasa Melayu" ? "Talian Bantuan 24/7" : language === "中文" ? "24/7 援助热线" : "24/7 Helplines"}</strong>
+        <p>{language === "Bahasa Melayu" ? "Sokongan emosi segera dan pendengaran tanpa klinikal." : language === "中文" ? "全天候即时非临床倾听与情感疏导。" : "Immediate, non-clinical listening and emotional support."}</p>
+      </div>
+      <div>
+        <strong>{language === "Bahasa Melayu" ? "Penjagaan Klinikal" : language === "中文" ? "临床诊疗服务" : "Clinical Care"}</strong>
+        <p>{language === "Bahasa Melayu" ? "Unit psikiatri hospital, klinik MENTARI, dan terapis berlesen." : language === "中文" ? "公立医院精神科门诊、MENTARI 社区中心及执业心理咨询师。" : "Hospital psychiatric units, MENTARI clinics, and licensed therapists."}</p>
+      </div>
+    </div>
+    <div className="scroll-chips">
+      {["All", "Helpline", "MOH", "Hospital", "NGO"].map((item) => (
+        <Button key={item} variant={filter === item ? "primary" : "secondary"} onClick={() => setFilter(item)}>
+          {getFilterLabel(item)}
+        </Button>
+      ))}
+    </div>
+    {shown.map((provider) => {
+      const label = language === "Bahasa Melayu" ? provider.labelBm : language === "中文" ? provider.labelZh : provider.label;
+      const service = language === "Bahasa Melayu" ? provider.serviceBm : language === "中文" ? provider.serviceZh : provider.service;
+      const hours = language === "Bahasa Melayu" ? provider.hoursBm : language === "中文" ? provider.hoursZh : provider.hours;
+      return (
+        <div className="provider-card" key={provider.name}>
+          <div>
+            <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{label}</span>
+            <h3>{provider.name}</h3>
+            <strong>{service}</strong>
+            <p>{provider.area} · {provider.contact}</p>
+            <small style={{ display: "block", color: "var(--muted)", marginTop: "4px" }}>{hours}</small>
+          </div>
+          <div className="provider-actions">
+            <a className="btn btn-secondary" href={`tel:${provider.phone}`}>{language === "Bahasa Melayu" ? "Hubungi Sekarang" : language === "中文" ? "立即致电" : "Call Now"}</a>
+            <Button onClick={() => navigate("provider")}>{language === "Bahasa Melayu" ? "Butiran" : language === "中文" ? "详情" : "Details"}</Button>
+          </div>
+        </div>
+      );
+    })}
+    <Button className="full" variant="secondary" onClick={() => window.open("https://mentari.moh.gov.my", "_blank")}>
+      {language === "Bahasa Melayu" ? "Buka laman sesawang rasmi MENTARI Malaysia" : language === "中文" ? "访问马来西亚官方 MENTARI 网站" : "Open official MENTARI Malaysia website"}
+    </Button>
+    <p className="disclaimer">
+      <Icon name="info" />{language === "Bahasa Melayu" ? "Semua talian bantuan dan hospital yang disenaraikan adalah sumber awam bertauliah atau badan bukan untung berdaftar di Malaysia." : language === "中文" ? "所列所有热线与医院均为马来西亚官方注册的公立机构或公益组织。" : "All helplines and hospitals listed are certified public or registered non-profit resources in Malaysia."}
+    </p>
   </section></>;
 }
 
 function ProviderDetail({ back, notify }: { back: () => void; notify: (s: string) => void }) {
+  const { language } = useLanguage();
   const p = providers[0];
-  return <><PageHeader title="Provider Details" subtitle="Verified Malaysian care centre" back={back} /><section className="page-pad">
-    <div className="provider-hero"><span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{p.label}</span><div className="provider-avatar"><Icon name="shield" /></div><h1>{p.name}</h1><p>{p.service} · {p.area}</p></div>
-    <div className="card"><h3>About this facility</h3><p>{p.description}</p><h3>Hours & Contact</h3><p>Operating Hours: {p.hours}<br />Telephone: {p.contact}</p></div>
-    <a className="btn btn-primary full" href={`tel:${p.phone}`} style={{ textDecoration: "none" }}><Icon name="phone" /> Call {p.contact}</a>
-    <Button className="full" variant="ghost" onClick={() => notify("Provider contact saved to your emergency contacts")}>Save to Emergency Contacts</Button>
-    <p className="disclaimer"><Icon name="info" />If you require immediate medical intervention or feel unsafe, please proceed to the nearest emergency department or dial 999.</p>
+  const label = language === "Bahasa Melayu" ? p.labelBm : language === "中文" ? p.labelZh : p.label;
+  const service = language === "Bahasa Melayu" ? p.serviceBm : language === "中文" ? p.serviceZh : p.service;
+  const hours = language === "Bahasa Melayu" ? p.hoursBm : language === "中文" ? p.hoursZh : p.hours;
+  const description = language === "Bahasa Melayu" ? p.descriptionBm : language === "中文" ? p.descriptionZh : p.description;
+
+  return <><PageHeader
+    title={language === "Bahasa Melayu" ? "Butiran Pusat Rawatan" : language === "中文" ? "医疗机构详情" : "Provider Details"}
+    subtitle={language === "Bahasa Melayu" ? "Pusat jagaan kesihatan Malaysia disahkan" : language === "中文" ? "经认证的马来西亚心理医疗中心" : "Verified Malaysian care centre"}
+    back={back}
+  /><section className="page-pad">
+    <div className="provider-hero">
+      <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{label}</span>
+      <div className="provider-avatar"><Icon name="shield" /></div>
+      <h1>{p.name}</h1>
+      <p>{service} · {p.area}</p>
+    </div>
+    <div className="card">
+      <h3>{language === "Bahasa Melayu" ? "Mengenai kemudahan ini" : language === "中文" ? "关于该机构" : "About this facility"}</h3>
+      <p>{description}</p>
+      <h3>{language === "Bahasa Melayu" ? "Waktu Operasi & Hubungan" : language === "中文" ? "开放时间与联络方式" : "Hours & Contact"}</h3>
+      <p>{language === "Bahasa Melayu" ? "Waktu Operasi" : language === "中文" ? "服务时间" : "Operating Hours"}: {hours}<br />{language === "Bahasa Melayu" ? "Telefon" : language === "中文" ? "联络电话" : "Telephone"}: {p.contact}</p>
+    </div>
+    <a className="btn btn-primary full" href={`tel:${p.phone}`} style={{ textDecoration: "none" }}>
+      <Icon name="phone" /> {language === "Bahasa Melayu" ? "Hubungi" : language === "中文" ? "拨打电话" : "Call"} {p.contact}
+    </a>
+    <Button className="full" variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Kontak pusat rawatan disimpan ke kenalan kecemasan anda" : language === "中文" ? "机构联络方式已保存至紧急联系人列表" : "Provider contact saved to your emergency contacts")}>
+      {language === "Bahasa Melayu" ? "Simpan ke Kontak Kecemasan" : language === "中文" ? "保存到紧急联络人" : "Save to Emergency Contacts"}
+    </Button>
+    <p className="disclaimer">
+      <Icon name="info" />{language === "Bahasa Melayu" ? "Sekiranya anda memerlukan rawatan perubatan segera atau berasa tidak selamat, sila ke jabatan kecemasan terdekat atau dail 999." : language === "中文" ? "若您需要紧急医疗介入或感到自身安全受到威胁，请前往最近的医院急诊部或拨打 999。" : "If you require immediate medical intervention or feel unsafe, please proceed to the nearest emergency department or dial 999."}
+    </p>
   </section></>;
 }
 
@@ -6410,10 +6734,10 @@ function TrustedContact({
         <p className="disclaimer">
           <Icon name="info" />{" "}
           {language === "Bahasa Melayu"
-            ? "Permohonan kenalan dipercayai dan nombor telefon kecemasan disimpan dengan selamat dalam Cloud Firestore. Akaun pengguna berdaftar dirahsiakan dan tidak sekali-kali disenaraikan secara awam."
+            ? "Permohonan kenalan dipercayai dan nombor telefon kecemasan disimpan dengan selamat dan disulitkan. Akaun pengguna berdaftar dirahsiakan dan tidak sekali-kali disenaraikan secara awam."
             : language === "中文"
-            ? "信任联系人请求与紧急电话安全保存在 Cloud Firestore 中。注册用户账户严格保密，绝不会公开列出。"
-            : "Trusted contact requests and emergency phone numbers are stored in Cloud Firestore. Registered user accounts are kept private and are never listed publicly."}
+            ? "信任联系人请求与紧急电话均经加密安全保存。注册用户账户严格保密，绝不会公开列出。"
+            : "Trusted contact requests and emergency phone numbers are stored securely and encrypted. Registered user accounts are kept private and are never listed publicly."}
         </p>
       </section>
     </>
@@ -7435,10 +7759,10 @@ function Privacy({
         <p className="disclaimer">
           <Icon name="info" />{" "}
           {language === "Bahasa Melayu"
-            ? "Memadamkan akaun memadamkan secara kekal semua rekod berkaitan merentas Cloud Firestore dan Firebase Authentication."
+            ? "Memadamkan akaun memadamkan secara kekal semua rekod dan data peribadi anda dari pelayan kami."
             : language === "中文"
-            ? "注销账户将永久清除 Cloud Firestore 和 Firebase Authentication 中的所有关联数据记录。"
-            : "Deleting an account permanently removes all associated records across Cloud Firestore and Firebase Authentication."}
+            ? "注销账户将从我们的安全云端服务器永久清除您的所有关联记录与个人数据。"
+            : "Deleting an account permanently removes all your associated records and personal data from our secure servers."}
         </p>
       </section>
     </>
@@ -7492,7 +7816,7 @@ function SystemLogsView({
       const items = await listSystemLogs(100);
       setLogs(items);
     } catch {
-      notify("Failed to fetch logs from Firestore");
+      notify("Failed to fetch logs");
     } finally {
       setLoading(false);
     }
@@ -7550,7 +7874,7 @@ function SystemLogsView({
         level: "info",
         category: "system",
         action: "DIAGNOSTIC_PING_OK",
-        message: "Manual diagnostic ping generated by user. Cloud Firestore round-trip verified.",
+        message: "Manual diagnostic ping generated by user. Cloud round-trip verified.",
         userId: currentUser?.uid,
         userEmail: currentUser?.email,
         metadata: {
@@ -7559,7 +7883,7 @@ function SystemLogsView({
           database: "ai-studio-onypwa-289f0eda-a42f-43da-8c66-8ac63f5d46a8",
         },
       });
-      notify("Diagnostic log entry saved to Firestore");
+      notify("Diagnostic log entry recorded");
       await fetchLogs();
     } catch {
       notify("Could not write diagnostic log entry");
@@ -7707,7 +8031,7 @@ function SystemLogsView({
         </div>
 
         {loading ? (
-          <div className="log-empty-state">{language === "Bahasa Melayu" ? "Memuatkan aliran log sistem daripada Firestore…" : language === "中文" ? "正在从 Firestore 载入系统日志…" : "Loading system log stream from Firestore…"}</div>
+          <div className="log-empty-state">{language === "Bahasa Melayu" ? "Memuatkan aliran log sistem…" : language === "中文" ? "正在载入系统日志…" : "Loading system log stream…"}</div>
         ) : filteredLogs.length === 0 ? (
           <div className="log-empty-state">{language === "Bahasa Melayu" ? "Tiada rekod log padanan ditemui dalam pangkalan data." : language === "中文" ? "数据库中未找到符合条件的日志记录。" : "No matching log records found in database."}</div>
         ) : (
