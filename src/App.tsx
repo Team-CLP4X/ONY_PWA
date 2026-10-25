@@ -92,6 +92,18 @@ import {
   getThemeDetails,
   getPersonaDetails,
 } from "./i18n/translations";
+import {
+  requestDeviceLocation,
+  loadCachedLocation,
+  clearCachedLocation,
+  haversineDistanceKm,
+  formatDistanceString,
+  type UserCoordinates,
+} from "./utils/geo";
+import {
+  VERIFIED_MALAYSIAN_PROVIDERS,
+  type HealthcareProvider,
+} from "./data/providers";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -256,6 +268,15 @@ const Icon = ({ name }: { name: string }) => {
         <line x1="12" y1="15" x2="12" y2="3" />
       </>
     ),
+    calendarCheck: (
+      <>
+        <rect x="3" y="4" width="18" height="18" rx="3" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <path d="m9 16 2 2 4-4" />
+      </>
+    ),
     smile: (
       <>
         <circle cx="12" cy="12" r="10" />
@@ -278,7 +299,50 @@ const Icon = ({ name }: { name: string }) => {
       <>
         <circle cx="12" cy="12" r="10" />
         <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-        <line x1="12" y1="17" x2="12.01" y2="17" />
+        <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
+      </>
+    ),
+    keyboard: (
+      <>
+        <rect x="2" y="4" width="20" height="16" rx="3" />
+        <line x1="6" y1="8" x2="6.01" y2="8" />
+        <line x1="10" y1="8" x2="10.01" y2="8" />
+        <line x1="14" y1="8" x2="14.01" y2="8" />
+        <line x1="18" y1="8" x2="18.01" y2="8" />
+        <line x1="6" y1="12" x2="6.01" y2="12" />
+        <line x1="10" y1="12" x2="10.01" y2="12" />
+        <line x1="14" y1="12" x2="14.01" y2="12" />
+        <line x1="18" y1="12" x2="18.01" y2="12" />
+        <line x1="7" y1="16" x2="17" y2="16" />
+      </>
+    ),
+    location: (
+      <>
+        <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z" />
+        <circle cx="12" cy="10" r="3" />
+      </>
+    ),
+    mapPin: (
+      <>
+        <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z" />
+        <circle cx="12" cy="10" r="3" />
+      </>
+    ),
+    phone: (
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+    ),
+    externalLink: (
+      <>
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        <polyline points="15 3 21 3 21 9" />
+        <line x1="10" y1="14" x2="21" y2="3" />
+      </>
+    ),
+    compass: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" opacity="0.3" />
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
       </>
     ),
   };
@@ -460,6 +524,8 @@ function AppInner() {
   const [incomingTrustedRequests, setIncomingTrustedRequests] = useState<FirestoreTrustedContactRequest[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [selectedMerchantName, setSelectedMerchantName] = useState("Ruang Rasa");
+  const [selectedProvider, setSelectedProvider] = useState<HealthcareProvider>(() => VERIFIED_MALAYSIAN_PROVIDERS[0]);
+  const [userCoords, setUserCoords] = useState<UserCoordinates | null>(() => loadCachedLocation());
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
   const [freeUsage, setFreeUsage] = useState(0);
   const freeLimit = 3;
@@ -1339,7 +1405,7 @@ function AppInner() {
                   if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
                 }} notify={notify} />}
                 {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
-                {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} />}
+                {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
                 {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
                 {tab === "profile" && (
                   <Profile
@@ -1431,8 +1497,8 @@ function AppInner() {
             {screen === "jobs" && <JobOpportunities back={back} navigate={navigate} />}
             {screen === "jobDetail" && <JobDetail back={back} notify={notify} />}
             {screen === "wellbeing" && <Wellbeing back={back} navigate={navigate} notify={notify} />}
-            {screen === "professional" && <ProfessionalSupport back={back} navigate={navigate} />}
-            {screen === "provider" && <ProviderDetail back={back} notify={notify} />}
+            {screen === "professional" && <ProfessionalSupport back={back} navigate={navigate} onSelectProvider={setSelectedProvider} userCoords={userCoords} setUserCoords={setUserCoords} />}
+            {screen === "provider" && <ProviderDetail back={back} notify={notify} provider={selectedProvider} userCoords={userCoords} />}
             {screen === "trusted" && (
               <TrustedContact
                 back={back}
@@ -2141,6 +2207,89 @@ function PageHeader({
   );
 }
 
+export function getOnyTimeGreeting(
+  language: AppLanguage,
+  displayName?: string,
+): { title: string; subtitle: string } {
+  const hour = new Date().getHours();
+  const name = displayName?.trim();
+  const hasName = Boolean(name && name.toLowerCase() !== "guest" && name.toLowerCase() !== "user");
+
+  if (language === "Bahasa Melayu") {
+    if (hour >= 5 && hour < 12) {
+      return {
+        title: hasName ? `Selamat pagi, ${name} 🌿 Bagaimana perasaan anda?` : "Selamat pagi 🌿 Bagaimana perasaan anda?",
+        subtitle: "Ambil masa anda—saya sentiasa ada di sini sedia mendengar.",
+      };
+    }
+    if (hour >= 12 && hour < 17) {
+      return {
+        title: hasName ? `Selamat tengah hari, ${name} ☀️ Bagaimana hari anda setakat ini?` : "Selamat tengah hari ☀️ Bagaimana hari anda setakat ini?",
+        subtitle: "Berehatlah sejenak. Ada apa-apa yang terbuku di fikiran anda?",
+      };
+    }
+    if (hour >= 17 && hour < 21) {
+      return {
+        title: hasName ? `Selamat petang, ${name} 🌇 Bagaimana keadaan anda petang ini?` : "Selamat petang 🌇 Bagaimana keadaan anda petang ini?",
+        subtitle: "Tiada paksaan. Kita boleh bualkan apa sahaja dengan tenang.",
+      };
+    }
+    return {
+      title: hasName ? `Malam yang tenang, ${name} 🌙 Bagaimana keadaan anda?` : "Malam yang tenang 🌙 Bagaimana keadaan anda?",
+      subtitle: "Jika anda sukar tidur atau perlukan teman senyap, saya ada di sini menemani.",
+    };
+  }
+
+  if (language === "中文") {
+    if (hour >= 5 && hour < 12) {
+      return {
+        title: hasName ? `早上好，${name} 🌿 今天感觉怎么样？` : "早上好 🌿 今天感觉怎么样？",
+        subtitle: "慢慢来就好，随时可以在这里卸下心里的包袱。",
+      };
+    }
+    if (hour >= 12 && hour < 17) {
+      return {
+        title: hasName ? `下午好，${name} ☀️ 今天过得还顺利吗？` : "下午好 ☀️ 今天过得还顺利吗？",
+        subtitle: "停下来深呼吸一下。心里有什么想聊聊的吗？",
+      };
+    }
+    if (hour >= 17 && hour < 21) {
+      return {
+        title: hasName ? `晚上好，${name} 🌇 此刻心情还好吗？` : "晚上好 🌇 此刻心情还好吗？",
+        subtitle: "今晚不赶时间，随时和我倾诉今天的点点滴滴。",
+      };
+    }
+    return {
+      title: hasName ? `夜深了，${name} 🌙 感觉还好吗？` : "夜深了 🌙 感觉还好吗？",
+      subtitle: "要是睡不着或者心事多，别担心，我一直在这里守候着你。",
+    };
+  }
+
+  // English default
+  if (hour >= 5 && hour < 12) {
+    return {
+      title: hasName ? `Good morning, ${name} 🌿 How are you feeling?` : "Good morning 🌿 How are you feeling?",
+      subtitle: "Take your time—I'm here whenever you'd like to share.",
+    };
+  }
+  if (hour >= 12 && hour < 17) {
+    return {
+      title: hasName ? `Good afternoon, ${name} ☀️ How is your day going?` : "Good afternoon ☀️ How is your day going?",
+      subtitle: "Even a quick pause can help. What's on your mind?",
+    };
+  }
+  if (hour >= 17 && hour < 21) {
+    return {
+      title: hasName ? `Good evening, ${name} 🌇 How are you unwinding today?` : "Good evening 🌇 How are you unwinding today?",
+      subtitle: "No rush at all. We can gently unpack whatever you're carrying.",
+    };
+  }
+  return {
+    title: hasName ? `Quiet night, ${name} 🌙 How are you holding up?` : "Quiet night 🌙 How are you holding up?",
+    subtitle: "I'm right here if your thoughts are keeping you awake.",
+  };
+}
+
 function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
@@ -2152,6 +2301,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
   registerFreeUse: () => void; notify: (s: string) => void;
 }) {
+  const onyxGreeting = useMemo(() => getOnyTimeGreeting(language, displayName), [language, displayName]);
   const activeIdRef = useRef<number | null>(activeChatId);
   activeIdRef.current = activeChatId;
   const messages = conversations.find((chat) => chat.id === activeChatId)?.messages || [];
@@ -2521,7 +2671,10 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
             {todayMoodEntry ? (
               <span className="header-mood-emoji">{todayMoodEntry.emoji}</span>
             ) : (
-              <Icon name="smile" />
+              <>
+                <Icon name="calendarCheck" />
+                <span className="checkin-pending-dot" aria-hidden="true" />
+              </>
             )}
           </button>
           <button
@@ -2531,7 +2684,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
             title={t.profile_menu_help}
             aria-label={t.profile_menu_help}
           >
-            <Icon name="lifebuoy" />
+            <Icon name="helpCircle" />
           </button>
         </div>
       }
@@ -2539,7 +2692,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     <div className="chat-scroll" ref={chatScrollRef}>
     <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />{t.chat_chats_btn}</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button><Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button></div></div>
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", personaOptions.find((item) => item.id === persona)?.preview || "", language).preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar sedang dimainkan" : language === "中文" ? "背景音效播放中" : "Ambient sound playing") : (language === "Bahasa Melayu" ? "Suasana latar menenangkan" : language === "中文" ? "舒缓背景音" : "Calming ambience")}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
+    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span><h1>{onyxGreeting.title}</h1><p>{onyxGreeting.subtitle}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar sedang dimainkan" : language === "中文" ? "背景音效播放中" : "Ambient sound playing") : (language === "Bahasa Melayu" ? "Suasana latar menenangkan" : language === "中文" ? "舒缓背景音" : "Calming ambience")}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
@@ -2590,103 +2743,130 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         </div>
       ) : (
         <>
-          <div className="mode-switch"><button className={inputMode === "voice" ? "active" : ""} onClick={() => setInputMode("voice")}><Icon name="mic" />{t.chat_mode_voice}</button><button className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}><Icon name="chat" />{t.chat_mode_text}</button></div>
-          {inputMode === "voice" ? (
-            <div className={`voice-composer state-${voiceState}`}>
-              <div className="voice-composer-row">
+          {micNotice && (
+            <div className="voice-mic-notice-card">
+              <div className="voice-mic-notice-header">
+                <Icon name="info" />
+                <span>{micNotice}</span>
                 <button
                   type="button"
-                  className="primary-mic"
-                  disabled={typing}
-                  onClick={handleVoice}
-                  aria-label={voiceState === "listening" ? "Stop and send speech" : voiceState === "sent" ? "Message sent" : "Tap to speak into mic"}
+                  className="notice-dismiss-btn"
+                  onClick={() => setMicNotice(null)}
+                  aria-label="Dismiss notice"
                 >
-                  <Icon name={voiceState === "recording" || voiceState === "listening" ? "send" : voiceState === "sent" ? "check" : "mic"} />
+                  <Icon name="close" />
                 </button>
-                <div className="voice-composer-info">
-                  <strong>
-                    {voiceState === "idle"
-                      ? t.chat_voice_tap_mic
-                      : voiceState === "listening"
-                      ? (voiceTranscript || voiceInterim ? t.chat_voice_ready_send : t.chat_voice_listening_speak)
-                      : voiceState === "sent"
-                      ? t.chat_voice_sent
-                      : t.chat_voice_processing}
-                  </strong>
-                  <small>
-                    {voiceState === "idle"
-                      ? t.chat_voice_sub_idle
-                      : voiceState === "listening"
-                      ? t.chat_voice_sub_listening
-                      : voiceState === "sent"
-                      ? t.chat_voice_tap_mic
-                      : t.chat_voice_session_privacy}
-                  </small>
-                  {voiceState === "listening" && (
-                    <div className="voice-live-waves">
-                      <span style={{ height: `${Math.max(4, voiceVolume * 22)}px` }} />
-                      <span style={{ height: `${Math.max(6, voiceVolume * 30)}px` }} />
-                      <span style={{ height: `${Math.max(5, voiceVolume * 25)}px` }} />
-                      <span style={{ height: `${Math.max(8, voiceVolume * 35)}px` }} />
-                      <span style={{ height: `${Math.max(4, voiceVolume * 20)}px` }} />
-                      <span style={{ height: `${Math.max(6, voiceVolume * 28)}px` }} />
-                    </div>
+              </div>
+              <div className="voice-prompt-chips">
+                {[
+                  t.chat_voice_prompt_overwhelmed,
+                  t.chat_voice_prompt_breathing,
+                  t.chat_voice_prompt_talk,
+                ].map((phrase) => (
+                  <button key={phrase} type="button" onClick={() => handleSimulateVoice(phrase)}>
+                    💬 "{phrase}"
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {inputMode === "voice" || voiceState === "listening" || voiceState === "recording" ? (
+            <div className={`chat-input-bar voice-mode state-${voiceState}`}>
+              <button
+                type="button"
+                className="composer-icon-btn keyboard-toggle-btn"
+                onClick={() => {
+                  stopVoiceListening(false);
+                  setInputMode("text");
+                }}
+                title={t.chat_mode_text}
+                aria-label="Switch to typing keyboard"
+              >
+                <Icon name="keyboard" />
+              </button>
+
+              <div
+                className="voice-recording-track"
+                onClick={() => {
+                  if (voiceState === "idle" || voiceState === "sent") {
+                    void startVoiceListening();
+                  } else {
+                    handleVoice();
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  className={`voice-mic-pill ${voiceState === "listening" || voiceState === "recording" ? "recording" : ""}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleVoice();
+                  }}
+                  aria-label={voiceState === "listening" ? "Stop and send speech" : "Tap to speak"}
+                  title={voiceState === "listening" ? t.chat_voice_stop : t.chat_voice_start}
+                >
+                  <Icon name={voiceState === "listening" || voiceState === "recording" ? "mic" : voiceState === "sent" ? "check" : "mic"} />
+                </button>
+
+                {voiceState === "listening" && (
+                  <div className="voice-live-waves mini" aria-hidden="true">
+                    <span style={{ height: `${Math.max(4, voiceVolume * 18)}px` }} />
+                    <span style={{ height: `${Math.max(6, voiceVolume * 26)}px` }} />
+                    <span style={{ height: `${Math.max(5, voiceVolume * 22)}px` }} />
+                    <span style={{ height: `${Math.max(8, voiceVolume * 30)}px` }} />
+                    <span style={{ height: `${Math.max(4, voiceVolume * 16)}px` }} />
+                  </div>
+                )}
+
+                <div className="voice-text-stream">
+                  {voiceTranscript || voiceInterim ? (
+                    <span className="transcript-live">
+                      {voiceTranscript}
+                      {voiceInterim && <span className="transcript-interim"> {voiceInterim}</span>}
+                    </span>
+                  ) : (
+                    <span className="voice-status-hint">
+                      {voiceState === "listening"
+                        ? t.chat_voice_listening
+                        : voiceState === "sent"
+                        ? t.chat_voice_sent
+                        : t.chat_voice_tap_mic}
+                    </span>
                   )}
                 </div>
               </div>
-              {voiceState === "listening" && (
-                <>
-                  <div className="voice-live-transcript">
-                    {voiceTranscript || voiceInterim ? (
-                      <>
-                        <span>{voiceTranscript}</span>
-                        {voiceInterim && <span className="interim"> {voiceInterim}</span>}
-                      </>
-                    ) : (
-                      <span className="placeholder">{t.chat_input_placeholder}</span>
-                    )}
-                  </div>
-                  <div className="voice-composer-actions">
-                    <Button variant="ghost" onClick={() => stopVoiceListening(false)}>{t.common_cancel}</Button>
-                    <Button
-                      variant="primary"
-                      disabled={!voiceTranscript.trim() && !voiceInterim.trim()}
-                      onClick={() => stopVoiceListening(true)}
-                    >
-                      {t.chat_voice_send_btn}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {micNotice && (
-                <div className="voice-mic-notice">
-                  <div className="voice-mic-notice-text">
-                    <Icon name="info" />
-                    <span>{micNotice}</span>
-                  </div>
-                  <div className="voice-mic-notice-prompts">
-                    <small>{t.chat_voice_quick_prompts}</small>
-                    <div className="voice-prompt-chips">
-                      {[
-                        t.chat_voice_prompt_overwhelmed,
-                        t.chat_voice_prompt_breathing,
-                        t.chat_voice_prompt_talk,
-                      ].map((phrase) => (
-                        <button key={phrase} type="button" onClick={() => handleSimulateVoice(phrase)}>
-                          💬 "{phrase}"
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                    <Button variant="secondary" onClick={() => { setMicNotice(null); void startVoiceListening(); }}>{t.chat_voice_try_mic_again}</Button>
-                    <Button variant="ghost" onClick={() => setMicNotice(null)}>{t.common_dismiss}</Button>
-                  </div>
-                </div>
-              )}
+
+              <div className="composer-actions">
+                <button
+                  type="button"
+                  className="composer-icon-btn cancel-btn"
+                  onClick={() => {
+                    stopVoiceListening(false);
+                    setInputMode("text");
+                  }}
+                  title={t.common_cancel}
+                  aria-label={t.common_cancel}
+                >
+                  <Icon name="close" />
+                </button>
+                <button
+                  type="button"
+                  className={`composer-icon-btn send-btn ${(voiceTranscript.trim() || voiceInterim.trim()) ? "ready" : ""}`}
+                  disabled={typing || (!voiceTranscript.trim() && !voiceInterim.trim())}
+                  onClick={() => {
+                    stopVoiceListening(true);
+                    setInputMode("text");
+                  }}
+                  title={t.chat_voice_send_btn}
+                  aria-label={t.chat_voice_send_btn}
+                >
+                  <Icon name="send" />
+                </button>
+              </div>
             </div>
           ) : (
-            <form className="chat-input" onSubmit={submit}>
+            <form className="chat-input-bar text-mode" onSubmit={submit}>
               <textarea
                 ref={textareaRef}
                 className="chat-textarea"
@@ -2698,7 +2878,30 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                 aria-label="Message ONY"
                 maxLength={2000}
               />
-              <Button className="send-btn" type="submit" disabled={typing || !input.trim()} title={t.chat_send_button}><Icon name="send" /></Button>
+              <div className="composer-actions">
+                <button
+                  type="button"
+                  className="composer-icon-btn mic-btn"
+                  onClick={() => {
+                    setInputMode("voice");
+                    void startVoiceListening();
+                  }}
+                  title={t.chat_voice_start}
+                  aria-label={t.chat_voice_start}
+                  disabled={typing}
+                >
+                  <Icon name="mic" />
+                </button>
+                <button
+                  type="submit"
+                  className={`composer-icon-btn send-btn ${input.trim() ? "ready" : ""}`}
+                  disabled={typing || !input.trim()}
+                  title={t.chat_send_button}
+                  aria-label={t.chat_send_button}
+                >
+                  <Icon name="send" />
+                </button>
+              </div>
             </form>
           )}
         </>

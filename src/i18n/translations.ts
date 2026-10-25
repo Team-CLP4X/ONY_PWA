@@ -584,6 +584,27 @@ export interface TranslationDictionary {
   trusted_send_msg_btn: string;
   trusted_remove_btn: string;
   trusted_invite_another: string;
+
+  // Geolocation & Professional Help Nearby
+  geo_detect_btn: string;
+  geo_detecting: string;
+  geo_located_success: string;
+  geo_permission_denied: string;
+  geo_retry: string;
+  geo_clear: string;
+  geo_approx_badge: string;
+  geo_accuracy_notice: string;
+  professional_nearest_tab: string;
+  professional_directions_btn: string;
+  professional_call_btn: string;
+  professional_details_btn: string;
+  professional_nationwide_badge: string;
+  professional_emergency_tag: string;
+  professional_walkin_tag: string;
+  professional_filter_state: string;
+  professional_all_states: string;
+  professional_search_prompt: string;
+  professional_closest_first: string;
 }
 
 export const translations: Record<AppLanguage, TranslationDictionary> = {
@@ -656,7 +677,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Memory Vault
     memory_title: "Memory Vault",
     memory_subtitle: "Consented insights & safe reflections",
-    memory_add_btn: "+ Add Memory",
+    memory_add_btn: "Add Memory",
     memory_empty_title: "Your vault is peaceful",
     memory_empty_desc: "Save personal boundaries, grounding anchors, or memorable moments you want ONY to remember.",
     memory_card_active: "Active memory",
@@ -1171,6 +1192,27 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     trusted_send_msg_btn: "Send Message",
     trusted_remove_btn: "Remove trusted contact",
     trusted_invite_another: "Invite Another Contact",
+
+    // Geolocation & Professional Help Nearby
+    geo_detect_btn: "Detect My Location",
+    geo_detecting: "Detecting location...",
+    geo_located_success: "Location detected successfully",
+    geo_permission_denied: "Location access was denied or unavailable. Please enable browser permissions.",
+    geo_retry: "Retry Detection",
+    geo_clear: "Clear Location",
+    geo_approx_badge: "Broad Region",
+    geo_accuracy_notice: "Broad regional area used for privacy. Exact address is never shared.",
+    professional_nearest_tab: "Nearest to Me",
+    professional_directions_btn: "Get Directions",
+    professional_call_btn: "Call Now",
+    professional_details_btn: "Full Details",
+    professional_nationwide_badge: "Nationwide (24/7)",
+    professional_emergency_tag: "24/7 Emergency",
+    professional_walkin_tag: "Walk-in Welcome",
+    professional_filter_state: "Filter by State / Region",
+    professional_all_states: "All Malaysia",
+    professional_search_prompt: "Search clinic name, hospital, area, or service...",
+    professional_closest_first: "Sorted by real GPS proximity to your current location",
   },
 
   "Bahasa Melayu": {
@@ -1242,7 +1284,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Memory Vault
     memory_title: "Kubah Memori",
     memory_subtitle: "Wawasan berkeizinan & refleksi selamat",
-    memory_add_btn: "+ Tambah Memori",
+    memory_add_btn: "Tambah Memori",
     memory_empty_title: "Kubah anda tenang",
     memory_empty_desc: "Simpan sempadan peribadi, sauh ketenangan, atau detik bermakna yang anda mahu ONY ingat.",
     memory_card_active: "Memori aktif",
@@ -1757,6 +1799,27 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     trusted_send_msg_btn: "Hantar Mesej",
     trusted_remove_btn: "Keluarkan kenalan dipercayai",
     trusted_invite_another: "Jemput Kenalan Lain",
+
+    // Geolocation & Professional Help Nearby
+    geo_detect_btn: "Kesan Lokasi Saya",
+    geo_detecting: "Mengesan lokasi...",
+    geo_located_success: "Lokasi berjaya dikesan",
+    geo_permission_denied: "Akses lokasi ditolak atau tidak tersedia. Sila benarkan dalam tetapan pelayar.",
+    geo_retry: "Cuba Semula Pengesanan",
+    geo_clear: "Padamkan Lokasi",
+    geo_approx_badge: "Wilayah Luas",
+    geo_accuracy_notice: "Kawasan wilayah luas digunakan demi privasi. Alamat tepat tidak pernah dikongsi.",
+    professional_nearest_tab: "Terdekat dengan Saya",
+    professional_directions_btn: "Panduan Arah (Peta)",
+    professional_call_btn: "Hubungi Sekarang",
+    professional_details_btn: "Butiran Penuh",
+    professional_nationwide_badge: "Seluruh Negara (24/7)",
+    professional_emergency_tag: "Kecemasan 24/7",
+    professional_walkin_tag: "Kemasukan Terus",
+    professional_filter_state: "Tapis mengikut Negeri / Wilayah",
+    professional_all_states: "Seluruh Malaysia",
+    professional_search_prompt: "Cari nama klinik, hospital, kawasan, atau perkhidmatan...",
+    professional_closest_first: "Disusun mengikut jarak GPS sebenar ke lokasi semasa anda",
   },
 
   "中文": {
@@ -1828,7 +1891,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Memory Vault
     memory_title: "记忆宝库",
     memory_subtitle: "经授权保留的心灵记忆与锚点",
-    memory_add_btn: "+ 添加记忆",
+    memory_add_btn: "添加记忆",
     memory_empty_title: "宝库正静候您的心声",
     memory_empty_desc: "保存个人边界、放松锚点或难忘时刻，让 ONY 在对话中更加懂你。",
     memory_card_active: "已启用",
@@ -2343,6 +2406,27 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     trusted_send_msg_btn: "发送短信/信息",
     trusted_remove_btn: "解除紧急联系人关联",
     trusted_invite_another: "邀请其他紧急联系人",
+
+    // Geolocation & Professional Help Nearby
+    geo_detect_btn: "检测我的位置",
+    geo_detecting: "正在定位中...",
+    geo_located_success: "已成功定位您的区域",
+    geo_permission_denied: "位置权限被拒绝或不可用。请在浏览器或设备设置中开启定位权限。",
+    geo_retry: "重新检测",
+    geo_clear: "清除位置",
+    geo_approx_badge: "宽泛大区",
+    geo_accuracy_notice: "仅使用宽泛大区以保护隐私，绝不收集或公开精确门牌地址。",
+    professional_nearest_tab: "离我最近",
+    professional_directions_btn: "路线导航",
+    professional_call_btn: "立即拨打",
+    professional_details_btn: "查看详情",
+    professional_nationwide_badge: "全国覆盖 (24/7)",
+    professional_emergency_tag: "24/7 急诊",
+    professional_walkin_tag: "支持现场初诊",
+    professional_filter_state: "按州属 / 区域筛选",
+    professional_all_states: "全马来西亚",
+    professional_search_prompt: "搜索诊所名称、医院、所在地区或服务项目...",
+    professional_closest_first: "已根据您的当前 GPS 位置按距离由近到远排序",
   },
 };
 
