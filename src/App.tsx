@@ -256,6 +256,31 @@ const Icon = ({ name }: { name: string }) => {
         <line x1="12" y1="15" x2="12" y2="3" />
       </>
     ),
+    smile: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+        <line x1="9" y1="9" x2="9.01" y2="9" />
+        <line x1="15" y1="9" x2="15.01" y2="9" />
+      </>
+    ),
+    lifebuoy: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <circle cx="12" cy="12" r="4" />
+        <line x1="4.93" y1="4.93" x2="9.17" y2="9.17" />
+        <line x1="14.83" y1="14.83" x2="19.07" y2="19.07" />
+        <line x1="14.83" y1="9.17" x2="19.07" y2="4.93" />
+        <line x1="4.93" y1="19.07" x2="9.17" y2="14.83" />
+      </>
+    ),
+    helpCircle: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </>
+    ),
   };
   return <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
 };
@@ -2486,26 +2511,33 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       subtitle={t.chat_subtitle}
       action={
         <div className="chat-header-actions">
-          <Button
-            variant="secondary"
+          <button
+            type="button"
+            className="top-header-icon-btn"
             onClick={() => navigate(todayMoodEntry ? "trend" : "mood")}
-            title={todayMoodEntry ? `${t.mood_complete_banner} (${todayMoodEntry.emoji} ${todayMoodEntry.label})` : t.chat_mood_prompt}
+            title={todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
+            aria-label={todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
           >
-            {todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
-          </Button>
-          <Button variant="secondary" onClick={() => navigate("help")}>{t.profile_menu_help}</Button>
+            {todayMoodEntry ? (
+              <span className="header-mood-emoji">{todayMoodEntry.emoji}</span>
+            ) : (
+              <Icon name="smile" />
+            )}
+          </button>
+          <button
+            type="button"
+            className="top-header-icon-btn"
+            onClick={() => navigate("help")}
+            title={t.profile_menu_help}
+            aria-label={t.profile_menu_help}
+          >
+            <Icon name="lifebuoy" />
+          </button>
         </div>
       }
     />
     <div className="chat-scroll" ref={chatScrollRef}>
     <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />{t.chat_chats_btn}</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button><Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button></div></div>
-    {!todayMoodEntry && messages.length === 0 && (
-      <div className="memory-note" style={{ marginBottom: "8px" }}>
-        <span>🌱</span>
-        <span>{t.chat_mood_reminder}</span>
-        <Button variant="secondary" onClick={() => navigate("mood")}>{t.chat_mood_checkin_btn}</Button>
-      </div>
-    )}
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
     {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span><h1>{t.chat_greeting_prefix} {displayName}, {t.chat_greeting_question}</h1><p>{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", personaOptions.find((item) => item.id === persona)?.preview || "", language).preview}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar sedang dimainkan" : language === "中文" ? "背景音效播放中" : "Ambient sound playing") : (language === "Bahasa Melayu" ? "Suasana latar menenangkan" : language === "中文" ? "舒缓背景音" : "Calming ambience")}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
     {messages.length > 0 && <div className="messages">
