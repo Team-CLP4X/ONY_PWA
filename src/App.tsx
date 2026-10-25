@@ -411,7 +411,7 @@ function AppInner() {
   const { language, setLanguage } = useLanguage();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
-  const [displayName, setDisplayName] = useState("Aina");
+  const [displayName, setDisplayName] = useState("");
   const [userPhone, setUserPhone] = useState("");
   const [pendingInvite, setPendingInvite] = useState<TrustedInvitePayload | null>(() =>
     loadStoredPendingInvite(),
@@ -674,6 +674,8 @@ function AppInner() {
       } else {
         // When not logged in / logged out, the first page must default strictly to English
         setLanguage("English");
+        setDisplayName("");
+        setUserPhone("");
         try {
           localStorage.setItem("ony_preferred_language", "English");
         } catch {
@@ -1014,6 +1016,8 @@ function AppInner() {
       await logoutUser();
       setAuthenticated(false);
       setOnboarding(0);
+      setDisplayName("");
+      setUserPhone("");
       setLanguage("English");
       try {
         localStorage.setItem("ony_preferred_language", "English");
@@ -1025,6 +1029,8 @@ function AppInner() {
       console.warn("[ONY] Logout notice:", e);
       setAuthenticated(false);
       setOnboarding(0);
+      setDisplayName("");
+      setUserPhone("");
       setLanguage("English");
       try {
         localStorage.setItem("ony_preferred_language", "English");
@@ -1039,6 +1045,8 @@ function AppInner() {
       await deleteUserAccount();
       setAuthenticated(false);
       setOnboarding(0);
+      setDisplayName("");
+      setUserPhone("");
       setMoodEntries([]);
       setMemories([]);
       setLanguage("English");
@@ -1676,7 +1684,7 @@ function AuthFlowContent({
           <h1>{t.auth_name_stage_title}</h1>
           <p className="muted">{t.auth_name_stage_lead}</p>
           <label className="field-label">{t.auth_name_label}</label>
-          <TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} />
+          <TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} placeholder="Write your name or nickname..." />
           <label className="field-label">{t.auth_phone_label}</label>
           <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />
           {error && <div className="form-error"><Icon name="info" />{error}</div>}
