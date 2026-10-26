@@ -97,10 +97,17 @@ class OnyBackendChatService implements AIService {
       }
 
       const data = payload as AIConversationResponse | null;
+      const defaultWarmReply =
+        request.language === "Bahasa Melayu"
+          ? "Saya ada di sini mendengar luahan awak. Ambillah masa awak, bila dah rasa sedia boleh teruskan."
+          : request.language === "中文"
+            ? "我就在这静静陪着你，不用着急，等准备好了再慢慢跟我说。"
+            : "I'm listening quietly. Take all the time you need, and share whenever you feel ready.";
+
       const messageText =
         data && typeof data.message === "string" && data.message.trim().length > 0
           ? data.message.trim()
-          : "I’m right here with you. Take a slow, gentle breath—I’m listening whenever you feel ready to share.";
+          : defaultWarmReply;
 
       return {
         message: messageText,

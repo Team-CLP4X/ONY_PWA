@@ -1,9 +1,9 @@
 import { GoogleGenAI, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 export const BACKUP_GEMINI_MODEL = "gemini-3.1-flash-lite";
-const GEMINI_TIMEOUT_MS = 10_000;
+const GEMINI_TIMEOUT_MS = 12_000;
 
 export interface ProviderTurn {
   role: "user" | "assistant";
@@ -88,12 +88,11 @@ class GeminiChatProvider implements ServerChatProvider {
       configuredModel.toLowerCase().includes("gemini") ||
       configuredModel.toLowerCase().startsWith("models/");
 
-    // Check if configured model is known to be deprecated or overloaded
+    // Check if configured model is known to be deprecated per Gemini API specification
     const isDeprecated =
-      configuredModel.includes("2.5") ||
       configuredModel.includes("2.0") ||
       configuredModel.includes("1.5") ||
-      configuredModel.includes("3.8");
+      configuredModel === "gemini-pro";
 
     if (isApiKeyPattern || !isValidModelPattern || isDeprecated) {
       return DEFAULT_GEMINI_MODEL;
@@ -114,25 +113,44 @@ class GeminiChatProvider implements ServerChatProvider {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    const contents: Content[] = [
-      ...input.history.map((turn) => ({
-        role: turn.role === "assistant" ? "model" : "user",
-        parts: [{ text: turn.content }],
-      })),
-      {
+    const rawTurns: Content[] = input.history.map((turn) => ({
+      role: turn.role === "assistant" ? "model" : "user",
+      parts: [{ text: turn.content }],
+    }));
+
+    // Ensure contents start with user and strictly alternate
+    const contents: Content[] = [];
+    for (const turn of rawTurns) {
+      const turnParts = turn.parts || [];
+      if (contents.length === 0) {
+        if (turn.role === "user") {
+          contents.push({ role: "user", parts: [...turnParts] });
+        }
+      } else {
+        const lastIndex = contents.length - 1;
+        const last = contents[lastIndex];
+        if (last && last.role === turn.role) {
+          last.parts = [...(last.parts || []), ...turnParts];
+        } else {
+          contents.push({ role: turn.role, parts: [...turnParts] });
+        }
+      }
+    }
+
+    const lastItem = contents.length > 0 ? contents[contents.length - 1] : undefined;
+    if (lastItem && lastItem.role === "user") {
+      lastItem.parts = [...(lastItem.parts || []), { text: input.message }];
+    } else {
+      contents.push({
         role: "user",
         parts: [{ text: input.message }],
-      },
-    ];
+      });
+    }
 
     const primaryModel = this.getModel();
     const candidateModels = Array.from(
-      new Set([primaryModel, DEFAULT_GEMINI_MODEL, BACKUP_GEMINI_MODEL]),
-    ).filter((m) => m === "gemini-3.5-flash-lite" || m === "gemini-3.1-flash-lite");
-
-    if (!candidateModels.includes(DEFAULT_GEMINI_MODEL)) {
-      candidateModels.unshift(DEFAULT_GEMINI_MODEL);
-    }
+      new Set([primaryModel, DEFAULT_GEMINI_MODEL, BACKUP_GEMINI_MODEL, "gemini-flash-latest"]),
+    );
 
     let lastError: unknown = null;
 
@@ -144,7 +162,7 @@ class GeminiChatProvider implements ServerChatProvider {
             new ProviderGenerationError(
               500,
               "TIMEOUT",
-              "ONY took too long to respond. Please try again in a moment.",
+              "ONY took a moment too long to respond. Please try again.",
             ),
           );
         }, GEMINI_TIMEOUT_MS);
@@ -157,7 +175,7 @@ class GeminiChatProvider implements ServerChatProvider {
             contents,
             config: {
               systemInstruction: input.systemInstruction,
-              temperature: 0.7,
+              temperature: 0.8,
             },
           }),
           timeoutPromise,
@@ -183,7 +201,7 @@ class GeminiChatProvider implements ServerChatProvider {
       }
     }
 
-    // If all models failed (e.g. temporary capacity or network disruption),
+    // If all models failed (e.g. temporary network disruption or rate limit),
     // provide an empathetic companion fallback reply so ONY never fails with an empty or broken reply.
     console.error(
       "[ONY /api/chat] All Gemini candidate models failed. Returning compassionate fallback.",
@@ -191,7 +209,7 @@ class GeminiChatProvider implements ServerChatProvider {
     );
     return {
       reply:
-        "I’m right here with you. Take a slow, gentle breath—I’m listening. How are you holding up right now?",
+        "I'm listening, though my connection just flickered for a second. Take all the time you need, and feel free to continue when you're ready.",
       model: "ony-resilient-fallback",
     };
   }
