@@ -594,6 +594,15 @@ export interface TranslationDictionary {
   geo_clear: string;
   geo_approx_badge: string;
   geo_accuracy_notice: string;
+  geo_denied_heading: string;
+  geo_denied_help_desc: string;
+  geo_search_area_placeholder: string;
+  geo_popular_areas: string;
+  geo_how_to_enable: string;
+  geo_how_to_enable_steps: string;
+  geo_manual_active_badge: string;
+  geo_change_area: string;
+  geo_no_areas_found: string;
   professional_nearest_tab: string;
   professional_directions_btn: string;
   professional_call_btn: string;
@@ -690,7 +699,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Community
     community_title: "Community",
     community_subtitle: "Connected gently, across the world",
-    community_create_post: "+ Create Post",
+    community_create_post: "Create Post",
     community_my_node: "Your Anonymous Node",
     community_anonymous_member: "Anonymous Member",
     community_filter_all: "All",
@@ -1193,7 +1202,6 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     trusted_remove_btn: "Remove trusted contact",
     trusted_invite_another: "Invite Another Contact",
 
-    // Geolocation & Professional Help Nearby
     geo_detect_btn: "Detect My Location",
     geo_detecting: "Detecting location...",
     geo_located_success: "Location detected successfully",
@@ -1202,6 +1210,15 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     geo_clear: "Clear Location",
     geo_approx_badge: "Broad Region",
     geo_accuracy_notice: "Broad regional area used for privacy. Exact address is never shared.",
+    geo_denied_heading: "Location Access Denied or Disabled",
+    geo_denied_help_desc: "You can easily search or select your city, town, or area in Malaysia to view accurate distances and nearby mental health facilities.",
+    geo_search_area_placeholder: "Search city, town, or area (e.g. Petaling Jaya, Penang, Johor Bahru...)",
+    geo_popular_areas: "Popular areas in Malaysia:",
+    geo_how_to_enable: "How to enable location in your browser",
+    geo_how_to_enable_steps: "Tap the lock 🔒 or settings icon in your browser address bar > Set Location to 'Allow' > Tap 'Retry Detection'.",
+    geo_manual_active_badge: "Manual Area Selected",
+    geo_change_area: "Change Area",
+    geo_no_areas_found: "No matching area found. Try searching for a major city or state.",
     professional_nearest_tab: "Nearest to Me",
     professional_directions_btn: "Get Directions",
     professional_call_btn: "Call Now",
@@ -1297,7 +1314,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Community
     community_title: "Komuniti",
     community_subtitle: "Terhubung secara harmoni dari seluruh dunia",
-    community_create_post: "+ Cipta Siaran",
+    community_create_post: "Cipta Siaran",
     community_my_node: "Nod Tanpa Nama Anda",
     community_anonymous_member: "Ahli Tanpa Nama",
     community_filter_all: "Semua",
@@ -1800,7 +1817,6 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     trusted_remove_btn: "Keluarkan kenalan dipercayai",
     trusted_invite_another: "Jemput Kenalan Lain",
 
-    // Geolocation & Professional Help Nearby
     geo_detect_btn: "Kesan Lokasi Saya",
     geo_detecting: "Mengesan lokasi...",
     geo_located_success: "Lokasi berjaya dikesan",
@@ -1809,6 +1825,15 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     geo_clear: "Padamkan Lokasi",
     geo_approx_badge: "Wilayah Luas",
     geo_accuracy_notice: "Kawasan wilayah luas digunakan demi privasi. Alamat tepat tidak pernah dikongsi.",
+    geo_denied_heading: "Akses Lokasi Ditolak atau Dinyahaktifkan",
+    geo_denied_help_desc: "Anda boleh mencari atau memilih bandar atau kawasan anda di Malaysia dengan mudah untuk melihat jarak tepat dan pusat rawatan berdekatan.",
+    geo_search_area_placeholder: "Cari bandar atau daerah (cth. Petaling Jaya, Pulau Pinang, Johor Bahru...)",
+    geo_popular_areas: "Kawasan popular di Malaysia:",
+    geo_how_to_enable: "Cara membenarkan lokasi dalam pelayar anda",
+    geo_how_to_enable_steps: "Ketik ikon kunci 🔒 pada bar alamat pelayar > Tetapkan Lokasi ke 'Benarkan' > Ketik 'Cuba Semula Pengesanan'.",
+    geo_manual_active_badge: "Kawasan Dipilih Secara Manual",
+    geo_change_area: "Tukar Kawasan",
+    geo_no_areas_found: "Tiada kawasan padanan ditemui. Cuba cari bandar utama atau negeri.",
     professional_nearest_tab: "Terdekat dengan Saya",
     professional_directions_btn: "Panduan Arah (Peta)",
     professional_call_btn: "Hubungi Sekarang",
@@ -1904,7 +1929,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Community
     community_title: "互助社区",
     community_subtitle: "温柔相连，共度人间悲欢",
-    community_create_post: "+ 发布心声",
+    community_create_post: "发布心声",
     community_my_node: "您的匿名光点",
     community_anonymous_member: "匿名成员",
     community_filter_all: "全部",
@@ -2407,7 +2432,6 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     trusted_remove_btn: "解除紧急联系人关联",
     trusted_invite_another: "邀请其他紧急联系人",
 
-    // Geolocation & Professional Help Nearby
     geo_detect_btn: "检测我的位置",
     geo_detecting: "正在定位中...",
     geo_located_success: "已成功定位您的区域",
@@ -2416,6 +2440,15 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     geo_clear: "清除位置",
     geo_approx_badge: "宽泛大区",
     geo_accuracy_notice: "仅使用宽泛大区以保护隐私，绝不收集或公开精确门牌地址。",
+    geo_denied_heading: "定位权限被拒绝或未开启",
+    geo_denied_help_desc: "您可以直接搜索或选择您所在的马来西亚城市或区域，系统将自动基于所选位置为您精确计算距离和推荐附近机构。",
+    geo_search_area_placeholder: "搜索城市、城镇或区域（例如：八打灵再也、槟城、新山、怡保...）",
+    geo_popular_areas: "马来西亚常用热门区域：",
+    geo_how_to_enable: "如何在浏览器中开启定位权限",
+    geo_how_to_enable_steps: "点击浏览器地址栏的锁头 🔒 或设置图标 > 将“位置信息”权限设为“允许” > 点击下方的“重新检测”。",
+    geo_manual_active_badge: "已手动选择区域",
+    geo_change_area: "更改区域",
+    geo_no_areas_found: "未找到符合的区域。请尝试输入主要城市或州属名称。",
     professional_nearest_tab: "离我最近",
     professional_directions_btn: "路线导航",
     professional_call_btn: "立即拨打",

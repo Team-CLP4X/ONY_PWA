@@ -10,6 +10,7 @@ import {
   useCallback,
   createContext,
   useContext,
+  type CSSProperties,
 } from "react";
 import logo from "./assets/ony-logo.png";
 import { chatService, ChatServiceError } from "./services/chatService";
@@ -99,6 +100,11 @@ import {
   haversineDistanceKm,
   formatDistanceString,
   type UserCoordinates,
+  type MalaysianAreaItem,
+  MALAYSIAN_AREAS,
+  POPULAR_MALAYSIAN_AREAS,
+  searchMalaysianAreas,
+  createManualLocation,
 } from "./utils/geo";
 import {
   VERIFIED_MALAYSIAN_PROVIDERS,
@@ -357,6 +363,7 @@ function Button({
   type = "button",
   disabled = false,
   title,
+  style,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -365,8 +372,9 @@ function Button({
   type?: "button" | "submit";
   disabled?: boolean;
   title?: string;
+  style?: CSSProperties;
 }) {
-  return <button type={type} disabled={disabled} onClick={onClick} className={`btn btn-${variant} ${className}`} title={title}>{children}</button>;
+  return <button type={type} disabled={disabled} onClick={onClick} className={`btn btn-${variant} ${className}`} title={title} style={style}>{children}</button>;
 }
 
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -379,6 +387,284 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 
 function Toggle({ on, setOn }: { on: boolean; setOn: (v: boolean) => void }) {
   return <button className={`toggle ${on ? "on" : ""}`} onClick={() => setOn(!on)} aria-label={on ? "Turn off" : "Turn on"}><span /></button>;
+}
+
+function AreaSearchPicker({
+  userCoords,
+  onSelectArea,
+  onDetectLocation,
+  onClearLocation,
+  detectingLocation = false,
+  isDenied = false,
+  errorMessage = null,
+  compact = false,
+  title,
+  subtitle,
+}: {
+  userCoords: UserCoordinates | null;
+  onSelectArea: (area: MalaysianAreaItem) => void;
+  onDetectLocation?: () => Promise<void>;
+  onClearLocation?: () => void;
+  detectingLocation?: boolean;
+  isDenied?: boolean;
+  errorMessage?: string | null;
+  compact?: boolean;
+  title?: string;
+  subtitle?: string;
+}) {
+  const { t, language } = useLanguage();
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const searchResults = useMemo(() => {
+    if (!query.trim()) return [];
+    return searchMalaysianAreas(query);
+  }, [query]);
+
+  const PAGE_SIZE = 5;
+  const totalResults = searchResults.length;
+  const totalPages = Math.ceil(totalResults / PAGE_SIZE);
+  const pageResults = searchResults.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    setPage(0);
+  };
+
+  const handleSelect = (area: MalaysianAreaItem) => {
+    onSelectArea(area);
+    setQuery("");
+    setPage(0);
+  };
+
+  const getAreaLabel = (area: MalaysianAreaItem) => {
+    if (language === "Bahasa Melayu") return area.nameBm;
+    if (language === "中文") return area.nameZh;
+    return area.nameEn;
+  };
+
+  const isCurrentArea = (area: MalaysianAreaItem) => {
+    if (!userCoords) return false;
+    if (userCoords.areaName && userCoords.areaName === area.nameEn) return true;
+    if (userCoords.regionName && userCoords.regionName.includes(area.nameEn)) return true;
+    return false;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && pageResults.length > 0) {
+      e.preventDefault();
+      handleSelect(pageResults[0]);
+    } else if (e.key === "Escape") {
+      setQuery("");
+      setPage(0);
+    }
+  };
+
+  return (
+    <div className={`geo-denied-panel ${compact ? "compact" : ""}`}>
+      <div className="geo-denied-header">
+        <div className="geo-denied-icon">
+          <Icon name={isDenied || errorMessage ? "compass" : "location"} />
+        </div>
+        <div className="geo-denied-title">
+          <h4>
+            {title || (isDenied || errorMessage ? t.geo_denied_heading : (language === "Bahasa Melayu" ? "Pilih Kawasan / Bandar Anda" : language === "中文" ? "选择或搜索您的所在区域" : "Select or Search Your Area"))}
+          </h4>
+          <p>
+            {subtitle || (isDenied || errorMessage ? t.geo_denied_help_desc : (language === "Bahasa Melayu" ? "Cari bandar anda di Malaysia untuk mengira jarak tepat ke pusat rawatan." : language === "中文" ? "搜索或点击马来西亚常用城镇，即刻获取精准距离与就诊指引。" : "Search or pick any town in Malaysia to calculate exact distances and nearby support."))}
+          </p>
+        </div>
+      </div>
+
+      {userCoords && (
+        <div className="geo-manual-active-indicator">
+          <span className="geo-manual-active-text">
+            <Icon name="check" />
+            <span>
+              {userCoords.isManual ? t.geo_manual_active_badge : t.geo_approx_badge}: <strong>{userCoords.regionName}</strong>
+            </span>
+          </span>
+          <div style={{ display: "flex", gap: "6px" }}>
+            {onClearLocation && (
+              <Button variant="ghost" onClick={onClearLocation} style={{ fontSize: "11px", padding: "3px 8px" }}>
+                {t.geo_clear}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Search Input Bar - Left-aligned focus and instant click-to-type */}
+      <div className="area-search-container">
+        <div
+          className="area-search-input-wrap"
+          onClick={() => inputRef.current?.focus()}
+        >
+          <Icon name="search" />
+          <input
+            ref={inputRef}
+            className="area-search-input"
+            value={query}
+            onChange={(e) => handleQueryChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t.geo_search_area_placeholder}
+            aria-label={t.geo_search_area_placeholder}
+          />
+          {query && (
+            <button
+              type="button"
+              className="area-search-clear-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setQuery("");
+                setPage(0);
+                inputRef.current?.focus();
+              }}
+              aria-label="Clear area search"
+            >
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
+
+        {/* 5 Results at a time - smoothly displayed without jumping */}
+        {query.trim().length > 0 && (
+          <div className="area-results-box">
+            <div className="area-results-header">
+              <span>
+                {language === "Bahasa Melayu" ? "Keputusan Carian" : language === "中文" ? "搜索结果" : "Search Results"} ({totalResults})
+              </span>
+              {totalResults > 5 && (
+                <span>
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalResults)} {language === "Bahasa Melayu" ? "daripada" : language === "中文" ? "共" : "of"} {totalResults}
+                </span>
+              )}
+            </div>
+
+            {totalResults === 0 ? (
+              <div style={{ padding: "14px 12px", fontSize: "12px", color: "var(--muted)", textAlign: "center" }}>
+                {t.geo_no_areas_found}
+              </div>
+            ) : (
+              <>
+                <div className="area-results-list">
+                  {pageResults.map((area) => (
+                    <button
+                      key={area.id}
+                      type="button"
+                      className="area-result-item"
+                      onClick={() => handleSelect(area)}
+                    >
+                      <div className="area-result-left">
+                        <Icon name="mapPin" />
+                        <div>
+                          <span className="area-result-name">{getAreaLabel(area)}</span>
+                          <span className="area-result-sub">{area.nameEn} · {area.state}</span>
+                        </div>
+                      </div>
+                      <span className="area-result-action">
+                        {language === "Bahasa Melayu" ? "Pilih" : language === "中文" ? "选择" : "Select"}
+                        <Icon name="chevron" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="area-pagination-bar">
+                    <button
+                      type="button"
+                      className="area-page-btn"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    >
+                      ‹ {language === "Bahasa Melayu" ? "5 Sebelum" : language === "中文" ? "上 5 条" : "Prev 5"}
+                    </button>
+                    <span className="area-page-info">
+                      {page + 1} / {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="area-page-btn"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    >
+                      {language === "Bahasa Melayu" ? "5 Seterusnya" : language === "中文" ? "下 5 条" : "Next 5"} ›
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Popular Area Chips */}
+      <div className="popular-areas-section">
+        <div className="popular-areas-label">
+          <Icon name="mapPin" />
+          <span>{t.geo_popular_areas}</span>
+        </div>
+        <div className="popular-chips-wrap">
+          {POPULAR_MALAYSIAN_AREAS.slice(0, 10).map((area) => {
+            const active = isCurrentArea(area);
+            return (
+              <button
+                key={area.id}
+                type="button"
+                className={`popular-area-chip ${active ? "active" : ""}`}
+                onClick={() => handleSelect(area)}
+              >
+                {active ? "✓ " : ""}{getAreaLabel(area)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Retry GPS & Browser Help */}
+      <div className="geo-browser-help-toggle">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+          {onDetectLocation && (
+            <Button
+              variant="secondary"
+              onClick={onDetectLocation}
+              disabled={detectingLocation}
+              style={{ fontSize: "12px", padding: "6px 12px" }}
+            >
+              {detectingLocation ? (
+                <>
+                  <span className="spinner mini" /> {t.geo_detecting}
+                </>
+              ) : (
+                <>
+                  <Icon name="location" /> {t.geo_retry}
+                </>
+              )}
+            </Button>
+          )}
+
+          <button
+            type="button"
+            className="geo-help-btn"
+            onClick={() => setShowHelp(!showHelp)}
+          >
+            <Icon name="info" />
+            <span>{t.geo_how_to_enable}</span>
+            <Icon name="chevron" />
+          </button>
+        </div>
+
+        {showHelp && (
+          <div className="geo-help-content">
+            {t.geo_how_to_enable_steps}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const topics = ["Stress", "Loneliness", "Study", "Work", "Relationships", "Self-confidence", "General emotional support"];
@@ -1497,7 +1783,7 @@ function AppInner() {
             {screen === "jobs" && <JobOpportunities back={back} navigate={navigate} />}
             {screen === "jobDetail" && <JobDetail back={back} notify={notify} />}
             {screen === "wellbeing" && <Wellbeing back={back} navigate={navigate} notify={notify} />}
-            {screen === "professional" && <ProfessionalSupport back={back} navigate={navigate} onSelectProvider={setSelectedProvider} userCoords={userCoords} setUserCoords={setUserCoords} />}
+            {screen === "professional" && <ProfessionalSupport back={back} navigate={navigate} onSelectProvider={setSelectedProvider} userCoords={userCoords} setUserCoords={setUserCoords} notify={notify} />}
             {screen === "provider" && <ProviderDetail back={back} notify={notify} provider={selectedProvider} userCoords={userCoords} />}
             {screen === "trusted" && (
               <TrustedContact
@@ -3070,6 +3356,8 @@ function Community({
   latestMood,
   mySupportMessages: propMySupportMessages,
   setMySupportMessages: propSetMySupportMessages,
+  userCoords,
+  setUserCoords,
 }: {
   navigate: (s: Screen) => void;
   openPost: (post: Post) => void;
@@ -3085,6 +3373,8 @@ function Community({
   latestMood?: MoodEntry;
   mySupportMessages?: FirestoreCommunityMessage[];
   setMySupportMessages?: React.Dispatch<React.SetStateAction<FirestoreCommunityMessage[]>>;
+  userCoords?: UserCoordinates | null;
+  setUserCoords?: (c: UserCoordinates | null) => void;
 }) {
   const { t, language } = useLanguage();
   const [filter, setFilter] = useState("All");
@@ -3105,10 +3395,67 @@ function Community({
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
   const [rotation, setRotation] = useState(0);
   const [regionLevel, setRegionLevel] = useState(0);
-  const [locationChoice, setLocationChoice] = useState<"none" | "declined" | "allowed">("none");
-  const [manualArea, setManualArea] = useState("");
+  const [locationChoice, setLocationChoice] = useState<"none" | "declined" | "allowed">(() => userCoords ? "allowed" : "none");
+  const [manualArea, setManualArea] = useState(userCoords?.regionName || "");
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [discoverable, setDiscoverable] = useState(true);
   const [acceptMessages, setAcceptMessages] = useState(true);
+
+  const handleEnableLocation = async () => {
+    setDetectingLocation(true);
+    setLocationError(null);
+    try {
+      const coords = await requestDeviceLocation();
+      if (setUserCoords) setUserCoords(coords);
+      setLocationChoice("allowed");
+      setRegionLevel(1);
+      setRotation(-102);
+      notify(
+        language === "Bahasa Melayu"
+          ? `Lokasi dikesan: ${coords.regionName || "Malaysia"}`
+          : language === "中文"
+            ? `已成功定位：${coords.regionName || "马来西亚"}`
+            : `Location detected: ${coords.regionName || "Malaysia"}`
+      );
+    } catch (err: any) {
+      setLocationChoice("declined");
+      setLocationError(err.message || t.geo_permission_denied);
+      notify(err.message || t.geo_permission_denied);
+    } finally {
+      setDetectingLocation(false);
+    }
+  };
+
+  const handleSelectManualArea = (area: MalaysianAreaItem) => {
+    const coords = createManualLocation(area);
+    if (setUserCoords) setUserCoords(coords);
+    setLocationChoice("allowed");
+    setLocationError(null);
+    setRegionLevel(1);
+    setRotation(-102);
+    notify(
+      language === "Bahasa Melayu"
+        ? `Kawasan serantau: ${area.nameBm}, ${area.state}`
+        : language === "中文"
+          ? `已将大区设为：${area.nameZh}（${area.state}）`
+          : `Regional area set to: ${area.nameEn}, ${area.state}`
+    );
+  };
+
+  const handleClearLocation = () => {
+    clearCachedLocation();
+    if (setUserCoords) setUserCoords(null);
+    setLocationChoice("none");
+    setManualArea("");
+    notify(
+      language === "Bahasa Melayu"
+        ? "Lokasi peranti dipadamkan"
+        : language === "中文"
+          ? "已清除设备定位"
+          : "Device location cleared"
+    );
+  };
 
   // Support messages sent specifically from others to MY node ("0" / "me" / currentUser.uid)
   const [internalSupportMessages, setInternalSupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
@@ -3255,6 +3602,8 @@ function Community({
             moodLabel: myMoodLabel,
             discoverable,
             acceptsMessages: acceptMessages,
+            lat: userCoords ? userCoords.lat : u.lat,
+            lon: userCoords ? userCoords.lng : u.lon,
           }
         : u,
     );
@@ -3349,7 +3698,86 @@ function Community({
       </div>
       <div className="globe-privacy-settings"><div><strong>{t.community_appear_globe}</strong><p>{t.community_appear_globe_desc}</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
       <div className="globe-privacy-settings"><div><strong>{t.community_receive_support}</strong><p>{t.community_receive_support_desc}</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
-      <div className="location-choice"><strong>{t.community_regional_discovery}</strong><p>{t.community_regional_desc}</p>{locationChoice === "none" && <div><Button onClick={() => setLocationChoice("allowed")}>{t.community_enable_area}</Button><Button variant="secondary" onClick={() => setLocationChoice("declined")}>{t.community_manual_area}</Button></div>}{locationChoice === "allowed" && <div className="form-success"><Icon name="check" />{language === "Bahasa Melayu" ? "Kawasan serantau ditetapkan ke Malaysia (Lembah Klang / Pusat)." : language === "中文" ? "区域已设为马来西亚（中部 / 巴生谷）。" : "Regional area set to Malaysia (Central / Klang Valley)."}</div>}{locationChoice === "declined" && <div className="folder-create"><TextInput value={manualArea} onChange={(event) => setManualArea(event.target.value)} placeholder={t.community_area_placeholder} /><Button disabled={!manualArea.trim()} onClick={() => notify(`${language === "Bahasa Melayu" ? "Kawasan serantau ditetapkan ke" : language === "中文" ? "已将大区设为" : "Regional area set to"} ${manualArea}`)}>{t.community_set_area}</Button></div>}</div>
+      <div className="location-choice">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+          <div>
+            <strong>{t.community_regional_discovery}</strong>
+            <p>{t.community_regional_desc}</p>
+          </div>
+          {userCoords && (
+            <span className="distance-pill" style={{ whiteSpace: "nowrap" }}>
+              <Icon name="mapPin" /> {t.geo_approx_badge}
+            </span>
+          )}
+        </div>
+
+        {detectingLocation && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 0" }}>
+            <span className="spinner mini" />
+            <span style={{ fontSize: "12px", color: "var(--muted)" }}>{t.geo_detecting}</span>
+          </div>
+        )}
+
+        {locationChoice === "none" && !detectingLocation && (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+            <Button onClick={handleEnableLocation}>
+              <Icon name="location" /> {t.community_enable_area}
+            </Button>
+            <Button variant="secondary" onClick={() => setLocationChoice("declined")}>
+              {t.community_manual_area}
+            </Button>
+          </div>
+        )}
+
+        {locationChoice === "allowed" && !detectingLocation && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+            <div className="form-success" style={{ margin: 0 }}>
+              <Icon name="check" />
+              <div>
+                <strong>
+                  {language === "Bahasa Melayu"
+                    ? `Kawasan serantau: ${userCoords?.regionName || "Malaysia (Lembah Klang / Pusat)"}`
+                    : language === "中文"
+                      ? `区域已设为：${userCoords?.regionName || "马来西亚（中部 / 巴生谷）"}`
+                      : `Regional area: ${userCoords?.regionName || "Malaysia (Central / Klang Valley)"}`}
+                </strong>
+                <small style={{ display: "block", color: "var(--muted)", marginTop: "2px", fontSize: "10px" }}>
+                  {userCoords?.accuracy ? `~${userCoords.accuracy}m GPS accuracy · ` : ""}
+                  {t.geo_accuracy_notice}
+                </small>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <Button variant="secondary" onClick={handleEnableLocation}>
+                <Icon name="refresh" /> {t.geo_retry}
+              </Button>
+              <Button variant="ghost" onClick={handleClearLocation}>
+                {t.geo_clear}
+              </Button>
+              <Button variant="ghost" onClick={() => setLocationChoice("declined")}>
+                <Icon name="search" /> {t.geo_change_area}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {locationChoice === "declined" && !detectingLocation && (
+          <div style={{ marginTop: "8px" }}>
+            <AreaSearchPicker
+              userCoords={userCoords || null}
+              onSelectArea={handleSelectManualArea}
+              onDetectLocation={handleEnableLocation}
+              onClearLocation={handleClearLocation}
+              detectingLocation={detectingLocation}
+              isDenied={Boolean(locationError)}
+              errorMessage={locationError}
+              compact
+              title={locationError ? t.geo_denied_heading : undefined}
+              subtitle={locationError ? t.geo_denied_help_desc : undefined}
+            />
+          </div>
+        )}
+      </div>
       <div className="community-note"><Icon name="shield" />{t.community_safety_note}</div>
     </>}
     {view === "posts" && <>
@@ -5924,199 +6352,654 @@ function Wellbeing({ back, navigate, notify }: { back: () => void; navigate: (s:
   </section></>;
 }
 
-const providers = [
-  {
-    name: "MENTARI Kuala Lumpur (MOH Malaysia)",
-    service: "Community Mental Health Centre · Ministry of Health",
-    serviceBm: "Pusat Kesihatan Mental Komuniti · Kementerian Kesihatan Malaysia",
-    serviceZh: "社区心理健康中心 · 马来西亚卫生部 (MOH)",
-    area: "Sentul / Kuala Lumpur",
-    contact: "03-4040 0418",
-    phone: "0340400418",
-    hours: "Mon - Fri, 8:00 AM - 5:00 PM",
-    hoursBm: "Isn - Jum, 8:00 PG - 5:00 PTG",
-    hoursZh: "周一至周五, 8:00 - 17:00",
-    label: "MOH Certified",
-    labelBm: "Disahkan KKM",
-    labelZh: "卫生部官方认证",
-    description: "Public outpatient psychiatric consultations, psychological assessment, counselling, and psychosocial rehabilitation.",
-    descriptionBm: "Konsultasi psikiatri pesakit luar awam, penilaian psikologi, kaunseling, dan pemulihan psikososial.",
-    descriptionZh: "公立精神科门诊咨询、心理评估、专业辅导咨询及心理社会康复服务。",
-  },
-  {
-    name: "Befrienders Kuala Lumpur",
-    service: "24/7 Suicide Prevention & Emotional Support Helpline",
-    serviceBm: "Talian Bantuan Pencegahan Bunuh Diri & Sokongan Emosi 24/7",
-    serviceZh: "24/7 全天候危机干预与情感倾听关怀热线",
-    area: "Nationwide (Center in Petaling Jaya)",
-    contact: "03-7627 2929",
-    phone: "0376272929",
-    hours: "24 Hours / 7 Days",
-    hoursBm: "24 Jam / 7 Hari",
-    hoursZh: "24小时 / 7天 全年无休",
-    label: "24/7 Helpline",
-    labelBm: "Talian 24/7",
-    labelZh: "24/7 援助热线",
-    description: "Free, confidential 24-hour emotional support hotline for anyone in Malaysia experiencing loneliness, anxiety, or despair.",
-    descriptionBm: "Talian sokongan emosi 24 jam percuma dan sulit untuk sesiapa sahaja di Malaysia yang mengalami kesunyian, kebimbangan, atau keputusasaan.",
-    descriptionZh: "为在马来西亚任何遭遇孤独、焦虑或绝望困境的朋友提供免费、严格保密的24小时全天候情感关怀与热线陪伴。",
-  },
-  {
-    name: "Hospital Kuala Lumpur (HKL) - Psychiatric Clinic",
-    service: "Public Hospital Psychiatric & Emergency Department",
-    serviceBm: "Jabatan Psikiatri & Kecemasan Hospital Awam",
-    serviceZh: "公立公办综合医院精神专科与急诊部",
-    area: "Jalan Pahang, Kuala Lumpur",
-    contact: "03-2615 5555",
-    phone: "0326155555",
-    hours: "24/7 Emergency Department Open",
-    hoursBm: "Jabatan Kecemasan 24/7 Dibuka",
-    hoursZh: "急诊中心 24/7 全天候开放",
-    label: "Public Hospital",
-    labelBm: "Hospital Awam",
-    labelZh: "公立医院",
-    description: "Emergency acute psychiatric intervention, inpatient care, and specialized psychiatric clinical services.",
-    descriptionBm: "Intervensi psikiatri akut kecemasan, penjagaan dalam wad, dan perkhidmatan klinikal psikiatri khusus.",
-    descriptionZh: "提供急性精神危象紧急干预、住院诊疗监护及针对性精神专科临床医疗服务。",
-  },
-  {
-    name: "Malaysian Mental Health Association (MMHA)",
-    service: "Community Counselling & Psychotherapy NGO",
-    serviceBm: "NGO Kaunseling Komuniti & Psikoterapi",
-    serviceZh: "社区心理辅导与心理治疗注册非政府组织 (NGO)",
-    area: "Petaling Jaya, Selangor",
-    contact: "03-2780 4390",
-    phone: "0327804390",
-    hours: "Mon - Sat, 9:00 AM - 5:00 PM",
-    hoursBm: "Isn - Sab, 9:00 PG - 5:00 PTG",
-    hoursZh: "周一至周六, 9:00 - 17:00",
-    label: "Registered NGO",
-    labelBm: "NGO Berdaftar",
-    labelZh: "注册公益组织",
-    description: "Subsidized psychological counselling, psychotherapy, caregiver support, and mental health education programs.",
-    descriptionBm: "Kaunseling psikologi bersubsidi, psikoterapi, sokongan penjaga, dan program pendidikan kesihatan mental.",
-    descriptionZh: "提供惠民补贴心理咨询、专业心理治疗、照护者身心支持及心理健康科普教育项目。",
-  },
-];
-
-function ProfessionalSupport({ back, navigate }: { back: () => void; navigate: (s: Screen) => void }) {
-  const { language } = useLanguage();
+function ProfessionalSupport({
+  back,
+  navigate,
+  onSelectProvider,
+  userCoords,
+  setUserCoords,
+  notify,
+}: {
+  back: () => void;
+  navigate: (s: Screen) => void;
+  onSelectProvider: (p: HealthcareProvider) => void;
+  userCoords: UserCoordinates | null;
+  setUserCoords: (c: UserCoordinates | null) => void;
+  notify?: (s: string) => void;
+}) {
+  const { t, language } = useLanguage();
   const [filter, setFilter] = useState("All");
-  const [area, setArea] = useState(language === "Bahasa Melayu" ? "Kuala Lumpur & Selangor" : language === "中文" ? "吉隆坡与雪兰莪" : "Kuala Lumpur & Selangor");
-  const shown = providers.filter((provider) => filter === "All" || provider.service.toLowerCase().includes(filter.toLowerCase()) || provider.label.toLowerCase().includes(filter.toLowerCase()));
+  const [selectedState, setSelectedState] = useState("All");
+  const [search, setSearch] = useState("");
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
-  const getFilterLabel = (item: string) => {
-    switch (item) {
-      case "All": return language === "Bahasa Melayu" ? "Semua" : language === "中文" ? "全部" : "All";
-      case "Helpline": return language === "Bahasa Melayu" ? "Talian Bantuan" : language === "中文" ? "求助热线" : "Helpline";
-      case "MOH": return language === "Bahasa Melayu" ? "KKM (MOH)" : language === "中文" ? "卫生部 (MOH)" : "MOH";
-      case "Hospital": return language === "Bahasa Melayu" ? "Hospital" : language === "中文" ? "公立医院" : "Hospital";
-      case "NGO": return "NGO";
-      default: return item;
+  const [showAreaPicker, setShowAreaPicker] = useState(false);
+
+  const handleDetectLocation = async () => {
+    setDetectingLocation(true);
+    setGeoError(null);
+    try {
+      const coords = await requestDeviceLocation();
+      setUserCoords(coords);
+      setFilter("Nearest");
+      setShowAreaPicker(false);
+    } catch (err: any) {
+      setGeoError(err.message || t.geo_permission_denied);
+      setShowAreaPicker(true);
+    } finally {
+      setDetectingLocation(false);
     }
   };
 
-  return <><PageHeader
-    title={language === "Bahasa Melayu" ? "Bantuan Profesional Berdekatan" : language === "中文" ? "附近的专业心理支援" : "Professional Help Nearby"}
-    subtitle={language === "Bahasa Melayu" ? "Sumber kesihatan mental Malaysia yang disahkan" : language === "中文" ? "经官方认证的马来西亚心理健康服务网络" : "Verified Malaysian mental health resources"}
-    back={back}
-  /><section className="page-pad">
-    <a className="resource emergency-resource emergency-strip" href="tel:999">
-      <span>
-        <strong>{language === "Bahasa Melayu" ? "Dalam bahaya nyawa serta-merta?" : language === "中文" ? "面临即刻生命安全险情？" : "In immediate life danger?"}</strong>
-        <small>{language === "Bahasa Melayu" ? "Hubungi 999 untuk ambulans atau rawatan perubatan kecemasan." : language === "中文" ? "立即拨打 999 呼叫急救或警务援助。" : "Call 999 for ambulance or emergency medical care."}</small>
-      </span>
-      <b>{language === "Bahasa Melayu" ? "Hubungi 999" : language === "中文" ? "呼叫 999" : "Call 999"}</b>
-    </a>
-    <div className="location-choice">
-      <strong>{language === "Bahasa Melayu" ? "Kawasan Carian" : language === "中文" ? "搜索区域" : "Search Area"}</strong>
-      <p>{language === "Bahasa Melayu" ? "Klinik awam yang disahkan, jabatan hospital, dan talian bantuan krisis di seluruh Malaysia." : language === "中文" ? "覆盖马来西亚各州的公立诊所、医院科室及 24 小时危机热线。" : "Verified public clinics, hospital departments, and crisis helplines across Malaysia."}</p>
-      <div className="folder-create">
-        <TextInput value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. Kuala Lumpur, Selangor, Penang, Johor" />
-        <Button onClick={() => {}}>{language === "Bahasa Melayu" ? "Kawasan Aktif" : language === "中文" ? "当前区域" : "Active Area"}</Button>
-      </div>
-    </div>
-    <div className="support-distinction">
-      <div>
-        <strong>{language === "Bahasa Melayu" ? "Talian Bantuan 24/7" : language === "中文" ? "24/7 援助热线" : "24/7 Helplines"}</strong>
-        <p>{language === "Bahasa Melayu" ? "Sokongan emosi segera dan pendengaran tanpa klinikal." : language === "中文" ? "全天候即时非临床倾听与情感疏导。" : "Immediate, non-clinical listening and emotional support."}</p>
-      </div>
-      <div>
-        <strong>{language === "Bahasa Melayu" ? "Penjagaan Klinikal" : language === "中文" ? "临床诊疗服务" : "Clinical Care"}</strong>
-        <p>{language === "Bahasa Melayu" ? "Unit psikiatri hospital, klinik MENTARI, dan terapis berlesen." : language === "中文" ? "公立医院精神科门诊、MENTARI 社区中心及执业心理咨询师。" : "Hospital psychiatric units, MENTARI clinics, and licensed therapists."}</p>
-      </div>
-    </div>
-    <div className="scroll-chips">
-      {["All", "Helpline", "MOH", "Hospital", "NGO"].map((item) => (
-        <Button key={item} variant={filter === item ? "primary" : "secondary"} onClick={() => setFilter(item)}>
-          {getFilterLabel(item)}
-        </Button>
-      ))}
-    </div>
-    {shown.map((provider) => {
-      const label = language === "Bahasa Melayu" ? provider.labelBm : language === "中文" ? provider.labelZh : provider.label;
-      const service = language === "Bahasa Melayu" ? provider.serviceBm : language === "中文" ? provider.serviceZh : provider.service;
-      const hours = language === "Bahasa Melayu" ? provider.hoursBm : language === "中文" ? provider.hoursZh : provider.hours;
-      return (
-        <div className="provider-card" key={provider.name}>
-          <div>
-            <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{label}</span>
-            <h3>{provider.name}</h3>
-            <strong>{service}</strong>
-            <p>{provider.area} · {provider.contact}</p>
-            <small style={{ display: "block", color: "var(--muted)", marginTop: "4px" }}>{hours}</small>
+  const handleSelectManualArea = (area: MalaysianAreaItem) => {
+    const coords = createManualLocation(area);
+    setUserCoords(coords);
+    setGeoError(null);
+    setShowAreaPicker(false);
+    setFilter("Nearest");
+    if (notify) {
+      notify(
+        language === "Bahasa Melayu"
+          ? `Kawasan ditetapkan ke ${area.nameBm}, ${area.state}`
+          : language === "中文"
+            ? `已将区域设为：${area.nameZh}（${area.state}）`
+            : `Area set to: ${area.nameEn}, ${area.state}`
+      );
+    }
+  };
+
+  const handleClearLocation = () => {
+    clearCachedLocation();
+    setUserCoords(null);
+    setShowAreaPicker(false);
+    setGeoError(null);
+    if (filter === "Nearest") setFilter("All");
+  };
+
+  const states = [
+    { id: "All", label: t.professional_all_states },
+    { id: "Kuala Lumpur", label: "Kuala Lumpur" },
+    { id: "Selangor", label: "Selangor" },
+    { id: "Pulau Pinang", label: "Penang (Pulau Pinang)" },
+    { id: "Johor", label: "Johor" },
+    { id: "Perak", label: "Perak" },
+    { id: "Sarawak", label: "Sarawak" },
+    { id: "Sabah", label: "Sabah" },
+  ];
+
+  const getFilterLabel = (item: string) => {
+    switch (item) {
+      case "All":
+        return language === "Bahasa Melayu" ? "Semua Sumber" : language === "中文" ? "全部机构" : "All Resources";
+      case "Nearest":
+        return t.professional_nearest_tab;
+      case "Helpline":
+        return language === "Bahasa Melayu" ? "Talian 24/7" : language === "中文" ? "24/7 热线" : "24/7 Helplines";
+      case "MOH":
+        return language === "Bahasa Melayu" ? "MENTARI (KKM)" : language === "中文" ? "MENTARI (卫生部)" : "MOH MENTARI";
+      case "Hospital":
+        return language === "Bahasa Melayu" ? "Hospital Awam" : language === "中文" ? "公立总医院" : "Public Hospitals";
+      case "NGO":
+        return language === "Bahasa Melayu" ? "NGO Berdaftar" : language === "中文" ? "注册公益 NGO" : "Certified NGOs";
+      default:
+        return item;
+    }
+  };
+
+  // Calculate distance for all providers
+  const providersWithDistance = VERIFIED_MALAYSIAN_PROVIDERS.map((provider) => {
+    const distanceKm = userCoords
+      ? haversineDistanceKm(userCoords.lat, userCoords.lng, provider.lat, provider.lng)
+      : null;
+    return { ...provider, distanceKm };
+  });
+
+  // Filter
+  const filtered = providersWithDistance.filter((p) => {
+    // State filter
+    if (selectedState !== "All") {
+      if (p.state !== selectedState && !p.isNationwide) return false;
+    }
+
+    // Type filter
+    if (filter === "Helpline" && p.type !== "helpline") return false;
+    if (filter === "MOH" && p.type !== "mentari") return false;
+    if (filter === "Hospital" && p.type !== "hospital") return false;
+    if (filter === "NGO" && p.type !== "ngo") return false;
+
+    // Search query
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchName = p.name.toLowerCase().includes(q) || (p.nameBm && p.nameBm.toLowerCase().includes(q)) || (p.nameZh && p.nameZh.toLowerCase().includes(q));
+      const matchAddress = p.address.toLowerCase().includes(q);
+      const matchState = p.state.toLowerCase().includes(q);
+      const matchService = p.service.toLowerCase().includes(q) || p.serviceBm.toLowerCase().includes(q) || p.serviceZh.toLowerCase().includes(q);
+      const matchDesc = p.description.toLowerCase().includes(q) || p.descriptionBm.toLowerCase().includes(q) || p.descriptionZh.toLowerCase().includes(q);
+      return matchName || matchAddress || matchState || matchService || matchDesc;
+    }
+
+    return true;
+  });
+
+  // Sorting: If user coordinates exist, sort by distance; keep 24/7 nationwide emergency helplines accessible
+  const shown = [...filtered].sort((a, b) => {
+    if (userCoords) {
+      if (a.isNationwide && !b.isNationwide) return -1;
+      if (!a.isNationwide && b.isNationwide) return 1;
+      if (a.distanceKm !== null && b.distanceKm !== null) {
+        return a.distanceKm - b.distanceKm;
+      }
+    }
+    return 0;
+  });
+
+  return (
+    <>
+      <PageHeader
+        title={language === "Bahasa Melayu" ? "Bantuan Profesional Berdekatan" : language === "中文" ? "附近的专业心理支援" : "Professional Help Nearby"}
+        subtitle={language === "Bahasa Melayu" ? "Rangkaian kesihatan mental Malaysia yang disahkan & hospital KKM" : language === "中文" ? "马来西亚官方卫生部认证精神专科医院与心理中心" : "Verified Malaysian mental health resources & MOH hospitals"}
+        back={back}
+      />
+      <section className="page-pad">
+        {/* Emergency Life Danger Strip */}
+        <a className="resource emergency-resource emergency-strip" href="tel:999">
+          <span>
+            <strong>{language === "Bahasa Melayu" ? "Dalam bahaya nyawa serta-merta?" : language === "中文" ? "面临即刻生命安全险情？" : "In immediate life danger?"}</strong>
+            <small>{language === "Bahasa Melayu" ? "Hubungi 999 untuk ambulans kecemasan atau polis serta-merta." : language === "中文" ? "立即拨打 999 呼叫救护车或紧急警务救助。" : "Call 999 for ambulance or emergency medical care immediately."}</small>
+          </span>
+          <b>{language === "Bahasa Melayu" ? "Hubungi 999" : language === "中文" ? "呼叫 999" : "Call 999"}</b>
+        </a>
+
+        {/* Real Geolocation Location Control Card */}
+        <div className={`geo-location-card ${userCoords ? "active" : ""}`}>
+          <div className="geo-header-row">
+            <div className="geo-title-wrap">
+              <div className={`geo-pin-icon ${detectingLocation ? "pulse" : ""}`}>
+                <Icon name={detectingLocation ? "refresh" : userCoords?.isManual ? "compass" : "location"} />
+              </div>
+              <div>
+                <strong>
+                  {userCoords
+                    ? `${language === "Bahasa Melayu" ? "Lokasi Aktif:" : language === "中文" ? "当前已定位：" : "Active Location:"} ${userCoords.regionName || "Malaysia"} ${userCoords.isManual ? `(${t.geo_manual_active_badge})` : ""}`
+                    : (language === "Bahasa Melayu" ? "Kesan Fasiliti Terdekat Anda" : language === "中文" ? "查找您身边的专业机构" : "Find Facilities Closest to You")}
+                </strong>
+                <p>
+                  {userCoords
+                    ? userCoords.isManual
+                      ? (language === "Bahasa Melayu" ? `Disusun mengikut jarak dari ${userCoords.areaName || userCoords.regionName}.` : language === "中文" ? `已按距离 ${userCoords.areaName || userCoords.regionName} 由近及远精准排序。` : `Sorted by proximity from ${userCoords.areaName || userCoords.regionName}.`)
+                      : `${t.professional_closest_first} (~${userCoords.accuracy || 20}m GPS).`
+                    : (language === "Bahasa Melayu" ? "Dayakan GPS peranti atau cari kawasan anda di Malaysia untuk mengira jarak sebenar ke klinik MENTARI dan hospital." : language === "中文" ? "开启设备定位或搜索您的区域，即刻计算距离您最近的 MENTARI 心理中心与公立医院。" : "Enable device GPS or search your area in Malaysia to calculate real driving/walking distances to the nearest MOH MENTARI clinics and hospitals.")}
+                </p>
+              </div>
+            </div>
+            {userCoords && (
+              <span className="distance-pill" style={{ flexShrink: 0 }}>
+                <Icon name="check" /> {userCoords.isManual ? t.geo_approx_badge : t.common_active}
+              </span>
+            )}
           </div>
-          <div className="provider-actions">
-            <a className="btn btn-secondary" href={`tel:${provider.phone}`}>{language === "Bahasa Melayu" ? "Hubungi Sekarang" : language === "中文" ? "立即致电" : "Call Now"}</a>
-            <Button onClick={() => navigate("provider")}>{language === "Bahasa Melayu" ? "Butiran" : language === "中文" ? "详情" : "Details"}</Button>
+
+          <div className="geo-actions-row">
+            <Button
+              variant={userCoords && !userCoords.isManual ? "secondary" : "primary"}
+              onClick={handleDetectLocation}
+              disabled={detectingLocation}
+            >
+              {detectingLocation ? (
+                <>
+                  <span className="spinner mini" /> {t.geo_detecting}
+                </>
+              ) : (
+                <>
+                  <Icon name="location" /> {userCoords ? t.geo_retry : t.geo_detect_btn}
+                </>
+              )}
+            </Button>
+            <Button
+              variant={showAreaPicker || (userCoords && userCoords.isManual) ? "primary" : "secondary"}
+              onClick={() => setShowAreaPicker(!showAreaPicker)}
+            >
+              <Icon name="search" /> {showAreaPicker ? (language === "Bahasa Melayu" ? "Tutup Carian" : language === "中文" ? "收起搜索" : "Hide Search") : (language === "Bahasa Melayu" ? "Cari Kawasan / Bandar" : language === "中文" ? "搜索区域 / 城市" : "Search Area / City")}
+            </Button>
+            {userCoords && (
+              <Button variant="ghost" onClick={handleClearLocation}>
+                {t.geo_clear}
+              </Button>
+            )}
           </div>
         </div>
-      );
-    })}
-    <Button className="full" variant="secondary" onClick={() => window.open("https://mentari.moh.gov.my", "_blank")}>
-      {language === "Bahasa Melayu" ? "Buka laman sesawang rasmi MENTARI Malaysia" : language === "中文" ? "访问马来西亚官方 MENTARI 网站" : "Open official MENTARI Malaysia website"}
-    </Button>
-    <p className="disclaimer">
-      <Icon name="info" />{language === "Bahasa Melayu" ? "Semua talian bantuan dan hospital yang disenaraikan adalah sumber awam bertauliah atau badan bukan untung berdaftar di Malaysia." : language === "中文" ? "所列所有热线与医院均为马来西亚官方注册的公立机构或公益组织。" : "All helplines and hospitals listed are certified public or registered non-profit resources in Malaysia."}
-    </p>
-  </section></>;
+
+        {/* Enhanced Area Search Picker Panel when location is denied or user searches area */}
+        {(showAreaPicker || geoError) && (
+          <AreaSearchPicker
+            userCoords={userCoords}
+            onSelectArea={handleSelectManualArea}
+            onDetectLocation={handleDetectLocation}
+            onClearLocation={handleClearLocation}
+            detectingLocation={detectingLocation}
+            isDenied={Boolean(geoError)}
+            errorMessage={geoError}
+            title={geoError ? t.geo_denied_heading : (language === "Bahasa Melayu" ? "Cari Kawasan di Malaysia" : language === "中文" ? "搜索马来西亚区域" : "Search Area in Malaysia")}
+            subtitle={geoError ? t.geo_denied_help_desc : (language === "Bahasa Melayu" ? "Pilih kawasan anda untuk mengira jarak terdekat ke klinik MENTARI dan hospital." : language === "中文" ? "选择或搜索您的城市/城镇，即刻获取精准距离排序与就诊指引。" : "Select your area to calculate closest distances to MOH MENTARI clinics and hospitals.")}
+          />
+        )}
+
+        {/* Search input */}
+        <div className="search" style={{ margin: "0 0 14px", padding: "0 12px", background: "var(--paper)", cursor: "text" }}>
+          <Icon name="search" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t.professional_search_prompt}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              width: "100%",
+              border: 0,
+              padding: "10px 4px 10px 0",
+              background: "transparent",
+              fontSize: "13px",
+              textAlign: "left",
+              outline: "none",
+            }}
+            aria-label={t.professional_search_prompt}
+          />
+          {search && (
+            <button
+              type="button"
+              className="area-search-clear-btn"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+            >
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
+
+        {/* State filter scroll */}
+        <div style={{ marginBottom: "6px" }}>
+          <small style={{ fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.06em", display: "block", marginBottom: "6px" }}>
+            {t.professional_filter_state}
+          </small>
+          <div className="state-filter-scroll">
+            {states.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`state-pill ${selectedState === s.id ? "active" : ""}`}
+                onClick={() => setSelectedState(s.id)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Service Type Chips */}
+        <div className="scroll-chips" style={{ marginBottom: "14px" }}>
+          {["All", "Nearest", "Helpline", "MOH", "Hospital", "NGO"].map((item) => (
+            <Button
+              key={item}
+              variant={filter === item ? "primary" : "secondary"}
+              onClick={() => {
+                if (item === "Nearest" && !userCoords) {
+                  void handleDetectLocation();
+                } else {
+                  setFilter(item);
+                }
+              }}
+            >
+              {getFilterLabel(item)}
+            </Button>
+          ))}
+        </div>
+
+        {/* Results Count & Note */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", fontSize: "11px", color: "var(--muted)" }}>
+          <span>
+            {shown.length} {language === "Bahasa Melayu" ? "pusat rawatan disahkan" : language === "中文" ? "所认证医疗服务机构" : "verified healthcare providers"}
+          </span>
+          {userCoords && (
+            <span style={{ color: "#2e7d32", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
+              <Icon name="mapPin" /> {language === "Bahasa Melayu" ? "Disusun mengikut jarak" : language === "中文" ? "按真实距离排序" : "Distance sorted"}
+            </span>
+          )}
+        </div>
+
+        {/* Provider Cards */}
+        {shown.length === 0 ? (
+          <div className="card" style={{ textAlign: "center", padding: "28px 16px" }}>
+            <Icon name="search" />
+            <h3 style={{ marginTop: "10px" }}>
+              {language === "Bahasa Melayu" ? "Tiada pusat rawatan padanan ditemui" : language === "中文" ? "未找到符合条件的机构" : "No matching providers found"}
+            </h3>
+            <p style={{ color: "var(--muted)", fontSize: "12px" }}>
+              {language === "Bahasa Melayu" ? "Cuba ubah pilihan carian negeri atau kosongkan kata kunci carian." : language === "中文" ? "请尝试选择其他州属或清空搜索关键词。" : "Try selecting 'All Malaysia' or clearing your search keywords."}
+            </p>
+            <Button variant="secondary" onClick={() => { setSearch(""); setSelectedState("All"); setFilter("All"); }} style={{ marginTop: "12px" }}>
+              {language === "Bahasa Melayu" ? "Set Semula Carian" : language === "中文" ? "重置筛选条件" : "Reset Filters"}
+            </Button>
+          </div>
+        ) : (
+          shown.map((provider) => {
+            const displayName =
+              language === "Bahasa Melayu" && provider.nameBm
+                ? provider.nameBm
+                : language === "中文" && provider.nameZh
+                  ? provider.nameZh
+                  : provider.name;
+            const displayLabel =
+              language === "Bahasa Melayu"
+                ? provider.labelBm
+                : language === "中文"
+                  ? provider.labelZh
+                  : provider.label;
+            const displayService =
+              language === "Bahasa Melayu"
+                ? provider.serviceBm
+                : language === "中文"
+                  ? provider.serviceZh
+                  : provider.service;
+            const displayHours =
+              language === "Bahasa Melayu"
+                ? provider.hoursBm
+                : language === "中文"
+                  ? provider.hoursZh
+                  : provider.hours;
+
+            const mapDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${provider.lat},${provider.lng}`;
+
+            return (
+              <div className="provider-card" key={provider.id}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+                    <span
+                      className="prototype-label"
+                      style={{
+                        background: provider.type === "hospital" ? "#fee2e2" : provider.type === "mentari" ? "var(--sage-soft)" : "var(--peach-soft)",
+                        color: provider.type === "hospital" ? "#b91c1c" : provider.type === "mentari" ? "#2e7d32" : "var(--coral-dark)",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {displayLabel}
+                    </span>
+
+                    {/* Proximity / Distance Badge */}
+                    {provider.isNationwide ? (
+                      <span className="distance-pill nationwide">
+                        <Icon name="phone" /> {t.professional_nationwide_badge}
+                      </span>
+                    ) : provider.distanceKm !== null ? (
+                      <span className="distance-pill">
+                        <Icon name="mapPin" /> {formatDistanceString(provider.distanceKm, language)}
+                      </span>
+                    ) : (
+                      <span className="distance-pill nationwide">
+                        <Icon name="mapPin" /> {provider.state}
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 style={{ fontSize: "16px", marginTop: "8px", marginBottom: "3px" }}>{displayName}</h3>
+                  <strong style={{ fontSize: "12px", color: "var(--coral-dark)", display: "block" }}>
+                    {displayService}
+                  </strong>
+
+                  {/* Capability tags */}
+                  <div className="provider-tags">
+                    {provider.emergencyAvailable && (
+                      <span className="provider-tag emergency">
+                        🚨 {t.professional_emergency_tag}
+                      </span>
+                    )}
+                    {provider.walkInWelcome && (
+                      <span className="provider-tag walkin">
+                        ✅ {t.professional_walkin_tag}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Physical verified address */}
+                  <div className="provider-address-row">
+                    <Icon name="mapPin" />
+                    <span>{provider.address}</span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
+                    <Icon name="calendarCheck" />
+                    <span>{displayHours}</span>
+                  </div>
+                </div>
+
+                {/* Real Navigation & Action Grid */}
+                <div className="provider-action-grid">
+                  <a className="btn btn-primary" href={`tel:${provider.phone}`} style={{ textDecoration: "none" }}>
+                    <Icon name="phone" /> {t.professional_call_btn}
+                  </a>
+
+                  <a
+                    className="btn btn-secondary"
+                    href={mapDirectionsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: "none" }}
+                    title="Open live navigation in Google Maps"
+                  >
+                    <Icon name="location" /> {t.professional_directions_btn}
+                  </a>
+
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      onSelectProvider(provider);
+                      navigate("provider");
+                    }}
+                  >
+                    {t.professional_details_btn}
+                  </Button>
+                </div>
+              </div>
+            );
+          })
+        )}
+
+        <a
+          className="btn btn-secondary full"
+          href="https://mentari.moh.gov.my"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ marginTop: "14px", textDecoration: "none" }}
+        >
+          <Icon name="externalLink" /> {language === "Bahasa Melayu" ? "Laman Sesawang Rasmi MENTARI KKM Malaysia" : language === "中文" ? "访问马来西亚官方 MENTARI 心理卫生专网" : "Official MENTARI MOH Malaysia Portal"}
+        </a>
+
+        <p className="disclaimer" style={{ marginTop: "16px" }}>
+          <Icon name="info" />
+          {language === "Bahasa Melayu"
+            ? "Semua talian bantuan, pusat MENTARI, dan hospital yang disenaraikan adalah perkhidmatan kesihatan mental bertauliah di bawah Kementerian Kesihatan Malaysia atau badan kebajikan berdaftar."
+            : language === "中文"
+              ? "所列所有 24 小时热线、MENTARI 社区中心及综合公立医院均为马来西亚卫生部 (KKM) 官方认证或国家注册权威公益机构。"
+              : "All listed helplines, MENTARI centres, and hospital psychiatric units are certified under the Ministry of Health Malaysia or legally registered organizations."}
+        </p>
+      </section>
+    </>
+  );
 }
 
-function ProviderDetail({ back, notify }: { back: () => void; notify: (s: string) => void }) {
-  const { language } = useLanguage();
-  const p = providers[0];
-  const label = language === "Bahasa Melayu" ? p.labelBm : language === "中文" ? p.labelZh : p.label;
-  const service = language === "Bahasa Melayu" ? p.serviceBm : language === "中文" ? p.serviceZh : p.service;
-  const hours = language === "Bahasa Melayu" ? p.hoursBm : language === "中文" ? p.hoursZh : p.hours;
-  const description = language === "Bahasa Melayu" ? p.descriptionBm : language === "中文" ? p.descriptionZh : p.description;
+function ProviderDetail({
+  back,
+  notify,
+  provider,
+  userCoords,
+}: {
+  back: () => void;
+  notify: (s: string) => void;
+  provider: HealthcareProvider;
+  userCoords: UserCoordinates | null;
+}) {
+  const { t, language } = useLanguage();
+  const displayName =
+    language === "Bahasa Melayu" && provider.nameBm
+      ? provider.nameBm
+      : language === "中文" && provider.nameZh
+        ? provider.nameZh
+        : provider.name;
+  const displayLabel =
+    language === "Bahasa Melayu"
+      ? provider.labelBm
+      : language === "中文"
+        ? provider.labelZh
+        : provider.label;
+  const displayService =
+    language === "Bahasa Melayu"
+      ? provider.serviceBm
+      : language === "中文"
+        ? provider.serviceZh
+        : provider.service;
+  const displayHours =
+    language === "Bahasa Melayu"
+      ? provider.hoursBm
+      : language === "中文"
+        ? provider.hoursZh
+        : provider.hours;
+  const displayDesc =
+    language === "Bahasa Melayu"
+      ? provider.descriptionBm
+      : language === "中文"
+        ? provider.descriptionZh
+        : provider.description;
+  const displayReferral =
+    language === "Bahasa Melayu"
+      ? provider.referralRequirementBm
+      : language === "中文"
+        ? provider.referralRequirementZh
+        : provider.referralRequirement;
 
-  return <><PageHeader
-    title={language === "Bahasa Melayu" ? "Butiran Pusat Rawatan" : language === "中文" ? "医疗机构详情" : "Provider Details"}
-    subtitle={language === "Bahasa Melayu" ? "Pusat jagaan kesihatan Malaysia disahkan" : language === "中文" ? "经认证的马来西亚心理医疗中心" : "Verified Malaysian care centre"}
-    back={back}
-  /><section className="page-pad">
-    <div className="provider-hero">
-      <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{label}</span>
-      <div className="provider-avatar"><Icon name="shield" /></div>
-      <h1>{p.name}</h1>
-      <p>{service} · {p.area}</p>
-    </div>
-    <div className="card">
-      <h3>{language === "Bahasa Melayu" ? "Mengenai kemudahan ini" : language === "中文" ? "关于该机构" : "About this facility"}</h3>
-      <p>{description}</p>
-      <h3>{language === "Bahasa Melayu" ? "Waktu Operasi & Hubungan" : language === "中文" ? "开放时间与联络方式" : "Hours & Contact"}</h3>
-      <p>{language === "Bahasa Melayu" ? "Waktu Operasi" : language === "中文" ? "服务时间" : "Operating Hours"}: {hours}<br />{language === "Bahasa Melayu" ? "Telefon" : language === "中文" ? "联络电话" : "Telephone"}: {p.contact}</p>
-    </div>
-    <a className="btn btn-primary full" href={`tel:${p.phone}`} style={{ textDecoration: "none" }}>
-      <Icon name="phone" /> {language === "Bahasa Melayu" ? "Hubungi" : language === "中文" ? "拨打电话" : "Call"} {p.contact}
-    </a>
-    <Button className="full" variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Kontak pusat rawatan disimpan ke kenalan kecemasan anda" : language === "中文" ? "机构联络方式已保存至紧急联系人列表" : "Provider contact saved to your emergency contacts")}>
-      {language === "Bahasa Melayu" ? "Simpan ke Kontak Kecemasan" : language === "中文" ? "保存到紧急联络人" : "Save to Emergency Contacts"}
-    </Button>
-    <p className="disclaimer">
-      <Icon name="info" />{language === "Bahasa Melayu" ? "Sekiranya anda memerlukan rawatan perubatan segera atau berasa tidak selamat, sila ke jabatan kecemasan terdekat atau dail 999." : language === "中文" ? "若您需要紧急医疗介入或感到自身安全受到威胁，请前往最近的医院急诊部或拨打 999。" : "If you require immediate medical intervention or feel unsafe, please proceed to the nearest emergency department or dial 999."}
-    </p>
-  </section></>;
+  const distanceKm = userCoords
+    ? haversineDistanceKm(userCoords.lat, userCoords.lng, provider.lat, provider.lng)
+    : null;
+
+  const mapDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${provider.lat},${provider.lng}`;
+
+  return (
+    <>
+      <PageHeader
+        title={language === "Bahasa Melayu" ? "Butiran Pusat Rawatan" : language === "中文" ? "医疗机构详情" : "Provider Details"}
+        subtitle={language === "Bahasa Melayu" ? "Pusat jagaan kesihatan mental Malaysia disahkan" : language === "中文" ? "经认证的马来西亚心理医疗中心" : "Verified Malaysian mental healthcare centre"}
+        back={back}
+      />
+      <section className="page-pad">
+        <div className="provider-hero">
+          <div style={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap", marginBottom: "10px" }}>
+            <span
+              className="prototype-label"
+              style={{
+                background: provider.type === "hospital" ? "#fee2e2" : "var(--sage-soft)",
+                color: provider.type === "hospital" ? "#b91c1c" : "#2e7d32",
+                fontWeight: 800,
+              }}
+            >
+              {displayLabel}
+            </span>
+            {provider.isNationwide ? (
+              <span className="distance-pill nationwide">
+                <Icon name="phone" /> {t.professional_nationwide_badge}
+              </span>
+            ) : distanceKm !== null ? (
+              <span className="distance-pill">
+                <Icon name="mapPin" /> {formatDistanceString(distanceKm, language)}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="provider-avatar">
+            <Icon name="shield" />
+          </div>
+          <h1 style={{ fontSize: "21px", margin: "6px 0 2px" }}>{displayName}</h1>
+          <p style={{ color: "var(--coral-dark)", fontWeight: 700, margin: "2px 0 6px" }}>{displayService}</p>
+          <small style={{ color: "var(--muted)" }}>{provider.address}</small>
+        </div>
+
+        {/* Primary Action Strip */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", margin: "14px 0" }}>
+          <a className="btn btn-primary" href={`tel:${provider.phone}`} style={{ textDecoration: "none", justifyContent: "center" }}>
+            <Icon name="phone" /> {t.professional_call_btn}
+          </a>
+          <a
+            className="btn btn-secondary"
+            href={mapDirectionsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ textDecoration: "none", justifyContent: "center" }}
+          >
+            <Icon name="location" /> {t.professional_directions_btn}
+          </a>
+        </div>
+
+        {/* Detailed Information Cards */}
+        <div className="card">
+          <h3>{language === "Bahasa Melayu" ? "Mengenai kemudahan & kepakaran" : language === "中文" ? "机构背景与专科诊疗" : "About this facility & clinical scope"}</h3>
+          <p>{displayDesc}</p>
+
+          <h3 style={{ marginTop: "14px" }}>
+            {language === "Bahasa Melayu" ? "Panduan Rujukan & Kemasukan" : language === "中文" ? "就诊指引与转介说明" : "Walk-in & Referral Guidelines"}
+          </h3>
+          <p>{displayReferral}</p>
+
+          <h3 style={{ marginTop: "14px" }}>
+            {language === "Bahasa Melayu" ? "Waktu Operasi & Hubungan" : language === "中文" ? "开放时间与联络方式" : "Hours & Contact Details"}
+          </h3>
+          <p>
+            <strong>{language === "Bahasa Melayu" ? "Waktu Operasi:" : language === "中文" ? "门诊时间：" : "Operating Hours:"}</strong> {displayHours}
+            <br />
+            <strong>{language === "Bahasa Melayu" ? "Talian Hubungan:" : language === "中文" ? "联络电话：" : "Contact Number:"}</strong> {provider.contact}
+            <br />
+            <strong>{language === "Bahasa Melayu" ? "Alamat Fizikal:" : language === "中文" ? "详细地址：" : "Physical Address:"}</strong> {provider.address}
+          </p>
+
+          {provider.website && (
+            <div style={{ marginTop: "12px" }}>
+              <a
+                className="btn btn-ghost full"
+                href={provider.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ textDecoration: "none", justifyContent: "center" }}
+              >
+                <Icon name="externalLink" /> {language === "Bahasa Melayu" ? "Buka Laman Rasmi" : language === "中文" ? "访问官方网站" : "Open Official Portal"}
+              </a>
+            </div>
+          )}
+        </div>
+
+        <Button
+          className="full"
+          variant="secondary"
+          onClick={() => {
+            notify(
+              language === "Bahasa Melayu"
+                ? `Kontak ${displayName} disimpan ke senarai kecemasan anda`
+                : language === "中文"
+                  ? `机构 ${displayName} 已保存至紧急联系人列表`
+                  : `Provider ${displayName} saved to your emergency contacts`,
+            );
+          }}
+        >
+          <Icon name="shield" /> {language === "Bahasa Melayu" ? "Simpan ke Kenalan Kecemasan" : language === "中文" ? "保存到紧急联络人" : "Save to Emergency Contacts"}
+        </Button>
+
+        <p className="disclaimer" style={{ marginTop: "16px" }}>
+          <Icon name="info" />
+          {language === "Bahasa Melayu"
+            ? "Sekiranya anda memerlukan rawatan perubatan segera atau berasa tidak selamat, sila ke jabatan kecemasan hospital terdekat atau dail 999 tanpa berlengah."
+            : language === "中文"
+              ? "若您需要紧急医疗救助或身处危险之中，请立即前往最近的综合医院急诊科或拨打 999。"
+              : "If you require immediate medical intervention or feel unsafe, please proceed directly to the nearest hospital emergency department or dial 999."}
+        </p>
+      </section>
+    </>
+  );
 }
 
 function TrustedContact({
