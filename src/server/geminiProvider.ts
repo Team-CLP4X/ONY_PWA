@@ -1,9 +1,9 @@
 import { GoogleGenAI, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
-export const BACKUP_GEMINI_MODEL = "gemini-3.1-flash-lite";
-const GEMINI_TIMEOUT_MS = 12_000;
+export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const BACKUP_GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_TIMEOUT_MS = 20_000;
 
 export interface ProviderTurn {
   role: "user" | "assistant";
@@ -149,7 +149,7 @@ class GeminiChatProvider implements ServerChatProvider {
 
     const primaryModel = this.getModel();
     const candidateModels = Array.from(
-      new Set([primaryModel, DEFAULT_GEMINI_MODEL, BACKUP_GEMINI_MODEL, "gemini-flash-latest"]),
+      new Set([DEFAULT_GEMINI_MODEL, primaryModel, BACKUP_GEMINI_MODEL]),
     );
 
     let lastError: unknown = null;
@@ -176,6 +176,9 @@ class GeminiChatProvider implements ServerChatProvider {
             config: {
               systemInstruction: input.systemInstruction,
               temperature: 0.8,
+              ...(targetModel.includes("3.8")
+                ? { thinkingConfig: { thinkingBudget: 0 } }
+                : {}),
             },
           }),
           timeoutPromise,

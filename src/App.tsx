@@ -14,7 +14,9 @@ import {
 } from "react";
 import logo from "./assets/ony-logo.png";
 import { chatService, ChatServiceError } from "./services/chatService";
-import type { SafetyAction } from "./services/contracts";
+import { FormattedChatMessage } from "./components/FormattedChatMessage";
+import { ContextualVoucherCard } from "./components/ContextualVoucherCard";
+import type { SafetyAction, MarketplaceRecommendation } from "./services/contracts";
 import type { User } from "firebase/auth";
 import { auth } from "./firebase/config";
 import {
@@ -163,7 +165,7 @@ import {
   generateSampleVoiceAudio,
 } from "./services/voiceService";
 
-type Message = { from: "ony" | "user"; text: string };
+type Message = { from: "ony" | "user"; text: string; voucher?: MarketplaceRecommendation | null; dismissedVoucher?: boolean };
 type Conversation = { id: number; title: string; category: string; day: "Today" | "Yesterday"; messages: Message[]; folderId?: number; archived?: boolean; reportAllowed?: boolean };
 type ChatFolder = { id: number; name: string };
 type LegalDocumentId = "disclaimer" | "terms" | "privacy" | "crisis";
@@ -1689,7 +1691,7 @@ function AppInner() {
                   const next = freeUsage + 1;
                   setFreeUsage(next);
                   if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
-                }} notify={notify} />}
+                }} notify={notify} onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
                 {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
                 {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
                 {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
@@ -2133,7 +2135,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
       subtitle: "24/7 verified Malaysian support resources",
       sections: [
         { heading: "Immediate Life-Threatening Danger", text: "If you or someone around you is in immediate danger of injury or suicide, please call 999 immediately or go to the nearest hospital emergency department." },
-        { heading: "Talian HEAL 15555 (MOH Malaysia)", text: "Free, confidential 24-hour national mental health crisis hotline operated by qualified counsellors from the Ministry of Health Malaysia." },
+        { heading: "Talian HEAL 15555 (MOH Malaysia)", text: "Free, confidential national mental health crisis hotline operated daily from 8:00 AM to 12:00 AM (midnight) by qualified counsellors from the Ministry of Health Malaysia." },
         { heading: "Befrienders Kuala Lumpur (03-7627 2929)", text: "24-hour emotional support hotline for anyone in Malaysia experiencing loneliness, depression, or distress. Completely free and confidential." }
       ]
     },
@@ -2170,10 +2172,10 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     },
     crisis: {
       title: "Talian Krisis & Kecemasan",
-      subtitle: "Sumber sokongan Malaysia yang disahkan 24/7",
+      subtitle: "Sumber sokongan Malaysia yang disahkan",
       sections: [
         { heading: "Bahaya Mengancam Nyawa Segera", text: "Sekiranya anda atau sesiapa di sekeliling anda berada dalam bahaya kecederaan atau bunuh diri serta-merta, sila hubungi 999 dengan segera atau pergi ke jabatan kecemasan hospital terdekat." },
-        { heading: "Talian HEAL 15555 (KKM Malaysia)", text: "Talian krisis kesihatan mental kebangsaan 24 jam percuma dan sulit yang dikendalikan oleh kaunselor bertauliah Kementerian Kesihatan Malaysia." },
+        { heading: "Talian HEAL 15555 (KKM Malaysia)", text: "Talian krisis kesihatan mental kebangsaan percuma dan sulit yang beroperasi setiap hari dari jam 8:00 pagi hingga 12:00 tengah malam, dikendalikan oleh kaunselor bertauliah Kementerian Kesihatan Malaysia." },
         { heading: "Befrienders Kuala Lumpur (03-7627 2929)", text: "Talian sokongan emosi 24 jam untuk sesiapa sahaja di Malaysia yang mengalami kesunyian, kemurungan, atau tekanan emosi. Percuma dan sulit." }
       ]
     },
@@ -2210,10 +2212,10 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     },
     crisis: {
       title: "危机干预与紧急援助热线",
-      subtitle: "24小时全天候核实的马来西亚官方支持热线",
+      subtitle: "马来西亚官方核实支持热线",
       sections: [
         { heading: "危及生命的紧急险情", text: "如果您或身旁人员面临即刻的人身伤害或自残自杀危险，请立即拨打 999 报警或前往就近医院的急诊部（A&E）。" },
-        { heading: "Talian HEAL 15555 (马来西亚卫生部 MOH)", text: "由马来西亚卫生部注册辅导员运营的免费、保密 24 小时国家心理健康危机干预热线。" },
+        { heading: "Talian HEAL 15555 (马来西亚卫生部 MOH)", text: "由马来西亚卫生部注册辅导员运营的免费、保密国家心理健康热线（每天开放时间为早上 8:00 至午夜 12:00）。" },
         { heading: "吉隆坡心灵扶助会 Befrienders (03-7627 2929)", text: "面向马来西亚全境感到孤独、抑郁或情绪困扰人士的 24 小时免费情感支持热线。全程严格保密。" }
       ]
     },
@@ -2576,7 +2578,7 @@ export function getOnyTimeGreeting(
   };
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
@@ -2586,6 +2588,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   todayMoodEntry?: MoodEntry | null;
   subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
   registerFreeUse: () => void; notify: (s: string) => void;
+  onOpenMerchant?: (name: string) => void;
 }) {
   const onyxGreeting = useMemo(() => getOnyTimeGreeting(language, displayName), [language, displayName]);
   const activeIdRef = useRef<number | null>(activeChatId);
@@ -2744,7 +2747,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
 
       setServerSafetyAction(response.safetyAction);
       setFailedUserText(null);
-      setMessages((m) => [...m, { from: "ony", text: response.message }]);
+      setMessages((m) => [...m, { from: "ony", text: response.message, voucher: response.recommendedVoucher || null }]);
       scrollToBottom("smooth");
 
       if (autoSpeak) {
@@ -2982,7 +2985,31 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
-        <div className="message">{m.text}</div>
+        <div className="message-col">
+          <div className="message">
+            <FormattedChatMessage text={m.text} isUser={m.from === "user"} />
+          </div>
+          {m.from === "ony" && m.voucher && !m.dismissedVoucher && (
+            <ContextualVoucherCard
+              voucher={m.voucher}
+              language={language}
+              onExplore={() => {
+                if (onOpenMerchant) {
+                  onOpenMerchant(m.voucher!.merchantName);
+                } else {
+                  navigate("merchant");
+                }
+              }}
+              onDismiss={() => {
+                setMessages((prev) =>
+                  prev.map((msg, idx) =>
+                    idx === i ? { ...msg, dismissedVoucher: true } : msg
+                  )
+                );
+              }}
+            />
+          )}
+        </div>
         {m.from === "ony" && (
           <button
             type="button"
@@ -6118,7 +6145,7 @@ function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => v
     <h3 className="group-title">{language === "Bahasa Melayu" ? "Bahaya Segera" : language === "中文" ? "紧急生命安全险情" : "Immediate danger"}</h3>
     <a className="resource emergency-resource" href="tel:999"><span><strong>{language === "Bahasa Melayu" ? "Perkhidmatan Kecemasan Malaysia" : language === "中文" ? "马来西亚紧急呼救中心" : "Malaysian Emergency Services"}</strong><small>{language === "Bahasa Melayu" ? "Polis, ambulans, tindak balas perubatan kecemasan" : language === "中文" ? "报警、救护车、紧急院前医疗救援" : "Police, ambulance, emergency medical response"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 999" : language === "中文" ? "呼叫 999" : "Call 999"}</b></a>
     <h3 className="group-title">{language === "Bahasa Melayu" ? "Talian Bantuan Krisis & Sokongan Emosi" : language === "中文" ? "危机干预与情感支持热线" : "Crisis & Emotional Support Helplines"}</h3>
-    <a className="resource" href="tel:15555"><span><strong>Talian HEAL 15555 (MOH Malaysia)</strong><small>{language === "Bahasa Melayu" ? "Talian kesihatan mental kebangsaan 24/7 · Percuma & sulit" : language === "中文" ? "24/7 全天候国家心理健康热线 · 免费且严格保密" : "24/7 National mental health helpline · Free & confidential"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 15555" : language === "中文" ? "拨打 15555" : "Call 15555"}</b></a>
+    <a className="resource" href="tel:15555"><span><strong>Talian HEAL 15555 (MOH Malaysia)</strong><small>{language === "Bahasa Melayu" ? "Talian kesihatan mental kebangsaan · 8:00 PG – 12:00 MLM setiap hari · Percuma & sulit" : language === "中文" ? "国家心理健康热线 · 每天 8:00 AM – 12:00 AM · 免费且严格保密" : "National mental health helpline · 8:00 AM – 12:00 AM daily · Free & confidential"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 15555" : language === "中文" ? "拨打 15555" : "Call 15555"}</b></a>
     <a className="resource" href="tel:0376272929"><span><strong>Befrienders Kuala Lumpur</strong><small>{language === "Bahasa Melayu" ? "Talian sokongan emosi dan pencegahan bunuh diri 24/7" : language === "中文" ? "24/7 全天候情感关怀与危机干预热线" : "24/7 Emotional support and suicide prevention hotline"}</small></span><b>03-7627 2929</b></a>
     <a className="resource" href="tel:15999"><span><strong>Talian Kasih 15999</strong><small>{language === "Bahasa Melayu" ? "Kementerian Pembangunan Wanita, Keluarga dan Masyarakat" : language === "中文" ? "妇女、家庭及社会发展部关怀热线" : "Ministry of Women, Family and Community Development"}</small></span><b>{language === "Bahasa Melayu" ? "Hubungi 15999" : language === "中文" ? "拨打 15999" : "Call 15999"}</b></a>
     <div className="resource"><span><strong>{language === "Bahasa Melayu" ? "Pusat Kaunseling Universiti" : language === "中文" ? "高校学生心理咨询中心" : "University Counselling Centre"}</strong><small>{language === "Bahasa Melayu" ? "Hubungi pejabat kesejahteraan kampus atau hal ehwal pelajar anda" : language === "中文" ? "联络您所在校园的学生事务处或心理健康中心" : "Contact your campus wellbeing or student affairs office"}</small></span><Icon name="chevron" /></div>

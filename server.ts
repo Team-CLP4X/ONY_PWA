@@ -10,6 +10,7 @@ import {
   type AuthenticatedRequest,
 } from "./src/server/authMiddleware.ts";
 import { buildOnySystemInstruction } from "./src/server/onyPrompt.ts";
+import { evaluateMarketplaceRecommendation } from "./src/server/marketplaceMatcher.ts";
 import type {
   AIConversationRequest,
   AIConversationResponse,
@@ -264,11 +265,20 @@ async function startServer() {
         systemInstruction,
       });
 
+      const recommendedVoucher = evaluateMarketplaceRecommendation({
+        userMessage: rawMessage,
+        recentHistory: sanitizedHistory,
+        safetyAction,
+        memories: approvedMemories,
+        language,
+      });
+
       const responsePayload: AIConversationResponse = {
         message: result.reply,
         safetyAction,
         citedResourceIds,
         model: result.model,
+        recommendedVoucher,
       };
 
       return res.json(responsePayload);

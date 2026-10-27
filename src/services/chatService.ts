@@ -114,6 +114,7 @@ class OnyBackendChatService implements AIService {
         safetyAction: data?.safetyAction || "support",
         citedResourceIds: Array.isArray(data?.citedResourceIds) ? data.citedResourceIds : [],
         model: data?.model || "gemini-3.1-flash-lite",
+        recommendedVoucher: data?.recommendedVoucher || null,
       };
     } catch (error) {
       if (error instanceof ChatServiceError) {

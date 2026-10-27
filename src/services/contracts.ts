@@ -35,11 +35,24 @@ export interface AIConversationRequest {
   approvedContext: ApprovedContext;
 }
 
+export interface MarketplaceRecommendation {
+  merchantName: string;
+  category: string;
+  offer: string;
+  value: string;
+  description: string;
+  image: string;
+  validity: string;
+  contextReason: string;
+  actionLabel: string;
+}
+
 export interface AIConversationResponse {
   message: string;
   safetyAction: SafetyAction;
   citedResourceIds: string[];
   model?: string;
+  recommendedVoucher?: MarketplaceRecommendation | null;
 }
 
 export interface AIServiceErrorPayload {
