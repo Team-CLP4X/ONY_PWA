@@ -1,5 +1,5 @@
 import type { MarketplaceRecommendation, SafetyAction } from "../services/contracts.ts";
-import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../firebase/firestore.ts";
+import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../data/merchants.ts";
 
 // Emotional vulnerability, acute distress, or crisis triggers where commercial suggestions are strictly forbidden
 const SENSITIVE_DISTRESS_PATTERNS = [

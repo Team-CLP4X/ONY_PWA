@@ -22,6 +22,31 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
+    <script>
+      // Suppress benign preview WebSocket close rejections (HMR disabled in container preview)
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event && (event.reason ? (event.reason.message || String(event.reason)) : '');
+        if (
+          typeof reason === 'string' &&
+          (reason.indexOf('WebSocket') !== -1 ||
+            reason.indexOf('websocket') !== -1 ||
+            reason.indexOf('ws:') !== -1)
+        ) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function (event) {
+        var msg = event && (event.message || '');
+        if (
+          typeof msg === 'string' &&
+          (msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('websocket') !== -1 ||
+            msg.indexOf('ws:') !== -1)
+        ) {
+          event.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

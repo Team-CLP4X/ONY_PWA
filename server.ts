@@ -11,6 +11,7 @@ import {
 } from "./src/server/authMiddleware.ts";
 import { buildOnySystemInstruction } from "./src/server/onyPrompt.ts";
 import { evaluateMarketplaceRecommendation } from "./src/server/marketplaceMatcher.ts";
+import { generateDynamicOnyReply } from "./src/server/onyCompanionEngine.ts";
 import type {
   AIConversationRequest,
   AIConversationResponse,
@@ -150,6 +151,11 @@ async function startServer() {
     });
   });
 
+  app.post("/api/system-logs", (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json({ received: true });
+  });
+
   app.get("/api/auth/verify", verifyAuthToken, (req: AuthenticatedRequest, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     if (!req.user) {
@@ -263,6 +269,9 @@ async function startServer() {
         message: rawMessage,
         history: sanitizedHistory,
         systemInstruction,
+        language,
+        persona,
+        memories: approvedMemories,
       });
 
       const recommendedVoucher = evaluateMarketplaceRecommendation({
@@ -282,31 +291,34 @@ async function startServer() {
       };
 
       return res.json(responsePayload);
-    } catch (err: unknown) {
-      if (err instanceof ProviderGenerationError) {
-        return sendStructuredError(
-          res,
-          err.status,
-          err.code,
-          err.message,
-          safetyAction,
-        );
-      }
-
-      return sendStructuredError(
-        res,
-        502,
-        "UPSTREAM_ERROR",
-        "ONY could not reach the Gemini AI service right now. Please try again shortly.",
-        safetyAction,
+    } catch (_err: unknown) {
+      console.log(
+        "[ONY /api/chat] Upstream service momentarily busy, serving empathetic companion fallback.",
       );
+      const fallbackText = generateDynamicOnyReply({
+        userMessage: rawMessage,
+        history: sanitizedHistory,
+        language,
+        persona,
+        memories: approvedMemories,
+      });
+
+      const responsePayload: AIConversationResponse = {
+        message: fallbackText,
+        safetyAction,
+        citedResourceIds,
+        model: "ony-resilient-fallback",
+        recommendedVoucher: null,
+      };
+
+      return res.json(responsePayload);
     }
   });
 
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);

@@ -33,6 +33,11 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+
+      // Subcollection: User audit logs
+      match /auditLogs/{logId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // Community Globe nodes (Anonymous presence nodes)

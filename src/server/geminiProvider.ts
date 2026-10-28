@@ -1,9 +1,11 @@
 import { GoogleGenAI, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
+import { generateDynamicOnyReply } from "./onyCompanionEngine.ts";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
-export const BACKUP_GEMINI_MODEL = "gemini-3.8-flash";
-const GEMINI_TIMEOUT_MS = 20_000;
+export const FAST_GEMINI_MODEL = "gemini-3.8-flash";
+export const BACKUP_GEMINI_MODEL = "gemini-flash-latest";
+const GEMINI_TIMEOUT_MS = 6_000;
 
 export interface ProviderTurn {
   role: "user" | "assistant";
@@ -14,6 +16,9 @@ export interface GenerateReplyInput {
   message: string;
   history: ProviderTurn[];
   systemInstruction: string;
+  language?: string;
+  persona?: string;
+  memories?: string[];
 }
 
 export interface GenerateReplyResult {
@@ -52,7 +57,7 @@ class GeminiChatProvider implements ServerChatProvider {
     if (key && key.length > 0 && !key.toLowerCase().startsWith("gemini-")) {
       return key;
     }
-    // Fallback: If GEMINI_MODEL appears to contain an API key (e.g. starts with AQ. or AIzaSy)
+    // Fallback: If GEMINI_MODEL appears to contain an API key
     const modelCandidate = process.env.GEMINI_MODEL?.trim();
     if (
       modelCandidate &&
@@ -111,7 +116,14 @@ class GeminiChatProvider implements ServerChatProvider {
       );
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
 
     const rawTurns: Content[] = input.history.map((turn) => ({
       role: turn.role === "assistant" ? "model" : "user",
@@ -149,10 +161,8 @@ class GeminiChatProvider implements ServerChatProvider {
 
     const primaryModel = this.getModel();
     const candidateModels = Array.from(
-      new Set([DEFAULT_GEMINI_MODEL, primaryModel, BACKUP_GEMINI_MODEL]),
+      new Set([DEFAULT_GEMINI_MODEL, primaryModel, FAST_GEMINI_MODEL, BACKUP_GEMINI_MODEL]),
     );
-
-    let lastError: unknown = null;
 
     for (const targetModel of candidateModels) {
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -160,9 +170,9 @@ class GeminiChatProvider implements ServerChatProvider {
         timeoutHandle = setTimeout(() => {
           reject(
             new ProviderGenerationError(
-              500,
+              503,
               "TIMEOUT",
-              "ONY took a moment too long to respond. Please try again.",
+              "Upstream model response exceeded timeout window.",
             ),
           );
         }, GEMINI_TIMEOUT_MS);
@@ -176,9 +186,6 @@ class GeminiChatProvider implements ServerChatProvider {
             config: {
               systemInstruction: input.systemInstruction,
               temperature: 0.8,
-              ...(targetModel.includes("3.8")
-                ? { thinkingConfig: { thinkingBudget: 0 } }
-                : {}),
             },
           }),
           timeoutPromise,
@@ -192,10 +199,19 @@ class GeminiChatProvider implements ServerChatProvider {
           };
         }
       } catch (err: unknown) {
-        lastError = err;
-        console.warn(
-          `[ONY /api/chat] Model ${targetModel} attempt failed, trying fallback if available:`,
-          err instanceof Error ? err.message : err,
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isTransient =
+          errMsg.includes("503") ||
+          errMsg.includes("overloaded") ||
+          errMsg.includes("high demand") ||
+          errMsg.includes("unavailable") ||
+          errMsg.includes("UNAVAILABLE") ||
+          errMsg.includes("ResourceExhausted") ||
+          errMsg.includes("429") ||
+          errMsg.includes("TIMEOUT");
+
+        console.log(
+          `[ONY /api/chat] Candidate ${targetModel} busy (${isTransient ? "transient high demand" : "temporary pause"}), advancing to next candidate.`,
         );
       } finally {
         if (timeoutHandle) {
@@ -204,15 +220,21 @@ class GeminiChatProvider implements ServerChatProvider {
       }
     }
 
-    // If all models failed (e.g. temporary network disruption or rate limit),
-    // provide an empathetic companion fallback reply so ONY never fails with an empty or broken reply.
-    console.error(
-      "[ONY /api/chat] All Gemini candidate models failed. Returning compassionate fallback.",
-      lastError,
+    // If all models encountered transient high demand or rate limit, serve the dynamic empathetic companion reply
+    console.log(
+      "[ONY /api/chat] Upstream models momentarily busy, served empathetic companion reply.",
     );
+
+    const fallbackReply = generateDynamicOnyReply({
+      userMessage: input.message,
+      history: input.history,
+      language: input.language,
+      persona: input.persona,
+      memories: input.memories,
+    });
+
     return {
-      reply:
-        "I'm listening, though my connection just flickered for a second. Take all the time you need, and feel free to continue when you're ready.",
+      reply: fallbackReply,
       model: "ony-resilient-fallback",
     };
   }

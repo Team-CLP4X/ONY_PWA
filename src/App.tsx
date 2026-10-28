@@ -814,9 +814,9 @@ function AppInner() {
   const [selectedMerchantName, setSelectedMerchantName] = useState("Ruang Rasa");
   const [selectedProvider, setSelectedProvider] = useState<HealthcareProvider>(() => VERIFIED_MALAYSIAN_PROVIDERS[0]);
   const [userCoords, setUserCoords] = useState<UserCoordinates | null>(() => loadCachedLocation());
-  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("trial");
   const [freeUsage, setFreeUsage] = useState(0);
-  const freeLimit = 3;
+  const freeLimit = 100;
   const [moodEntries, setMoodEntries] = useState<MoodEntry[]>(() => loadCachedMoodEntries());
   const [selectedCommunityUser, setSelectedCommunityUser] = useState<GlobeUser | null>(null);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
@@ -2628,6 +2628,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const [failedUserText, setFailedUserText] = useState<string | null>(null);
   const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
   const { t } = useLanguage();
+  const { unreadCount, openNotifications } = useNotifications();
   const suggestions = useMemo(() => {
     if (language === "Bahasa Melayu") {
       return [
@@ -2756,7 +2757,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         OnySpeechSynthesizer.getInstance().speak(response.message, nextId, language);
       }
 
-      if (response.safetyAction !== "urgent_safety_flow") {
+      if (response.safetyAction !== "urgent_safety_flow" && response.model !== "ony-resilient-fallback") {
         registerFreeUse();
       }
     } catch (err) {
@@ -2945,14 +2946,39 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   };
 
   return <div className="chat-page">
-    <PageHeader
-      title={t.chat_title}
-      subtitle={t.chat_subtitle}
-      action={
+    <div className="chat-scroll" ref={chatScrollRef}>
+      <header className="chat-native-header" role="banner">
+        <div className="chat-header-identity">
+          <div className="chat-avatar-wrapper">
+            <CompanionAvatar companion={companion} />
+            <span className="online-presence-dot" aria-label="Available" />
+          </div>
+          <div className="chat-identity-info">
+            <div className="chat-identity-name-row">
+              <span className="chat-companion-name">ONY</span>
+              <span className="chat-persona-badge">
+                {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
+              </span>
+            </div>
+            <span className="chat-companion-status">
+              {language === "Bahasa Melayu" ? "Sedia mendengar & menemani" : language === "中文" ? "温暖陪伴 · 随时倾听" : "Always here to listen"}
+            </span>
+          </div>
+        </div>
+
         <div className="chat-header-actions">
           <button
             type="button"
             className="top-header-icon-btn"
+            onClick={() => navigate("chatHistory")}
+            title={t.chat_chats_btn}
+            aria-label={t.chat_chats_btn}
+          >
+            <Icon name="chat" />
+          </button>
+          <button
+            type="button"
+            className="top-header-icon-btn mood-btn"
             onClick={() => navigate(todayMoodEntry ? "trend" : "mood")}
             title={todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
             aria-label={todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
@@ -2968,18 +2994,33 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
           </button>
           <button
             type="button"
-            className="top-header-icon-btn"
+            className="top-header-icon-btn help-btn"
             onClick={() => navigate("help")}
             title={t.profile_menu_help}
             aria-label={t.profile_menu_help}
           >
             <Icon name="helpCircle" />
           </button>
+          <button
+            type="button"
+            className="top-notification-btn chat-notif-btn"
+            onClick={openNotifications}
+            aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+          >
+            <Icon name="bell" />
+            {unreadCount > 0 && <span className="notification-red-dot" aria-hidden="true" />}
+          </button>
         </div>
-      }
-    />
-    <div className="chat-scroll" ref={chatScrollRef}>
-    <div className="chat-history-entry"><Button variant="secondary" onClick={() => navigate("chatHistory")}><Icon name="chat" />{t.chat_chats_btn}</Button><div className="chat-trust-links"><Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button><Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button><Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button></div></div>
+      </header>
+
+      <div className="chat-history-entry">
+        <Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button>
+        <div className="chat-trust-links">
+          <Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button>
+          <Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button>
+        </div>
+      </div>
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
     {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span><h1>{onyxGreeting.title}</h1><p>{onyxGreeting.subtitle}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar sedang dimainkan" : language === "中文" ? "背景音效播放中" : "Ambient sound playing") : (language === "Bahasa Melayu" ? "Suasana latar menenangkan" : language === "中文" ? "舒缓背景音" : "Calming ambience")}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
     {messages.length > 0 && <div className="messages">

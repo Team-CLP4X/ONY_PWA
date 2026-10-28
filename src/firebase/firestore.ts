@@ -10,16 +10,20 @@ import {
   orderBy,
   limit,
 } from "firebase/firestore";
-import { auth, db } from "./config";
+import { auth, db } from "./config.ts";
+import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../data/merchants.ts";
+export { DEFAULT_MERCHANTS, type FirestoreMerchant };
 
-export enum OperationType {
-  CREATE = "create",
-  UPDATE = "update",
-  DELETE = "delete",
-  LIST = "list",
-  GET = "get",
-  WRITE = "write",
-}
+export const OperationType = {
+  CREATE: "create",
+  UPDATE: "update",
+  DELETE: "delete",
+  LIST: "list",
+  GET: "get",
+  WRITE: "write",
+} as const;
+
+export type OperationType = (typeof OperationType)[keyof typeof OperationType];
 
 export interface FirestoreErrorInfo {
   error: string;
@@ -173,16 +177,6 @@ export interface FirestoreCommunityPost {
   createdAt: string;
 }
 
-export interface FirestoreMerchant {
-  id?: string;
-  name: string;
-  category: string;
-  offer: string;
-  value: string;
-  description: string;
-  image: string;
-  validity: string;
-}
 
 export interface FirestoreCommunityMessage {
   id: string;
@@ -1464,62 +1458,6 @@ export const DEFAULT_COMMUNITY_POSTS: FirestoreCommunityPost[] = [
   },
 ];
 
-export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
-  {
-    name: "Ruang Rasa",
-    category: "Café",
-    offer: "Slow afternoon set",
-    value: "15% OFF",
-    description: "A quiet table, warm drink, and room to pause.",
-    image: "https://images.unsplash.com/photo-1613274554329-70f997f5789f?auto=format&fit=crop&w=600&q=80",
-    validity: "Valid until 30 Jun · Demo",
-  },
-  {
-    name: "Tangan Studio",
-    category: "Art / creative",
-    offer: "Mindful clay session",
-    value: "RM10 OFF",
-    description: "A gentle hands-on session for curious beginners.",
-    image: "https://images.unsplash.com/photo-1590605095243-072811dbe64c?auto=format&fit=crop&w=600&q=80",
-    validity: "Weekdays only · Demo",
-  },
-  {
-    name: "Nafas Space",
-    category: "Yoga / meditation",
-    offer: "First community class",
-    value: "RM18 CLASS",
-    description: "A calm guided class with no experience required.",
-    image: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=600&q=80",
-    validity: "Valid for first visit · Demo",
-  },
-  {
-    name: "Tenang Goods",
-    category: "Wellness products",
-    offer: "Sleep ritual set",
-    value: "20% OFF",
-    description: "Simple example products for a slower evening.",
-    image: "https://images.unsplash.com/photo-1761864293818-603c23655cee?auto=format&fit=crop&w=600&q=80",
-    validity: "Valid until 15 Jul · Demo",
-  },
-  {
-    name: "Sora Sounds",
-    category: "Music",
-    offer: "Calming playlist session",
-    value: "FREE SESSION",
-    description: "Instrumental and relaxation listening guides.",
-    image: "https://images.unsplash.com/photo-1613040809024-b4ef7ba99bc3?auto=format&fit=crop&w=600&q=80",
-    validity: "Online access · Demo",
-  },
-  {
-    name: "Senja Rest",
-    category: "Relaxation",
-    offer: "Quiet reset session",
-    value: "RM15 OFF",
-    description: "A future-stage relaxation and spa discovery offer.",
-    image: "https://images.unsplash.com/photo-1557388243-e1194223f99b?auto=format&fit=crop&w=600&q=80",
-    validity: "Weekdays only · Demo",
-  },
-];
 
 export const DEFAULT_USER_MEMORIES = [
   { text: "I have exams coming up.", reason: "You mentioned this during a study-pressure chat.", active: true, category: "Study" },
@@ -2153,16 +2091,19 @@ export async function writeSystemLog(entry: {
     localStorage.setItem(LOCAL_STORAGE_LOGS_KEY, JSON.stringify(updated));
   } catch {}
 
-  // 2. Persist to Cloud Firestore `systemLogs` collection
+  // 2. Persist to Cloud Firestore `systemLogs` collection if permitted
   try {
     const docRef = doc(db, "systemLogs", logId);
     await setDoc(docRef, payload);
-  } catch (err) {
-    console.warn("[ONY Logger] Failed to push log to Firestore:", err);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (!errMsg.includes("permission") && !errMsg.includes("PERMISSION_DENIED")) {
+      console.debug("[ONY Logger] Remote log push deferred:", errMsg);
+    }
   }
 
-  // 3. If user is authenticated, also write to their private auditLogs subcollection
-  if (payload.userId) {
+  // 3. If user is authenticated and matches author, also save to private auditLogs
+  if (payload.userId && auth.currentUser?.uid === payload.userId) {
     try {
       const userAuditRef = doc(db, "users", payload.userId, "auditLogs", logId);
       await setDoc(userAuditRef, payload);
@@ -2197,8 +2138,11 @@ export async function listSystemLogs(limitCount = 60): Promise<SystemLogEntry[]>
       });
       return results;
     }
-  } catch (err) {
-    console.warn("[ONY Logger] Querying Firestore logs failed, falling back to local storage:", err);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (!errMsg.includes("permission") && !errMsg.includes("PERMISSION_DENIED")) {
+      console.debug("[ONY Logger] Querying Firestore logs deferred, using local cache:", errMsg);
+    }
   }
 
   // Fallback to local storage
