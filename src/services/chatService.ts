@@ -16,13 +16,24 @@ export class ChatServiceError extends Error {
   readonly code: string;
   readonly status?: number;
   readonly safetyAction?: SafetyAction;
+  readonly isRetryable: boolean;
+  readonly retryAfterSeconds?: number;
 
-  constructor(message: string, code = "UPSTREAM_ERROR", status?: number, safetyAction?: SafetyAction) {
+  constructor(
+    message: string,
+    code = "UPSTREAM_ERROR",
+    status?: number,
+    safetyAction?: SafetyAction,
+    isRetryable = false,
+    retryAfterSeconds?: number,
+  ) {
     super(message);
     this.name = "ChatServiceError";
     this.code = code;
     this.status = status;
     this.safetyAction = safetyAction;
+    this.isRetryable = isRetryable;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -89,11 +100,15 @@ class OnyBackendChatService implements AIService {
           (response.status === 429
             ? "Too many messages sent recently. Please pause for a moment and try again."
             : response.status === 504 || response.status === 408
-              ? "ONY took too long to respond. Please try again."
-              : "ONY is reconnecting to the AI companion service. Please try again in a moment.");
+              ? "ONY took too long to respond. Please tap Retry to try again."
+              : "ONY is experiencing high demand right now. Please tap Retry in a moment.");
         const code = errorBody?.error?.code || "UPSTREAM_ERROR";
         const safetyAction = errorBody?.error?.safetyAction;
-        throw new ChatServiceError(message, code, response.status, safetyAction);
+        const isRetryable =
+          errorBody?.error?.isRetryable ??
+          (response.status === 503 || response.status === 500 || response.status === 504 || response.status === 429);
+        const retryAfterSeconds = errorBody?.error?.retryAfterSeconds;
+        throw new ChatServiceError(message, code, response.status, safetyAction, isRetryable, retryAfterSeconds);
       }
 
       const data = payload as AIConversationResponse | null;
@@ -109,12 +124,20 @@ class OnyBackendChatService implements AIService {
           ? data.message.trim()
           : defaultWarmReply;
 
+      const recommendedVouchers = Array.isArray(data?.recommendedVouchers)
+        ? data.recommendedVouchers
+        : data?.recommendedVoucher
+          ? [data.recommendedVoucher]
+          : [];
+
       return {
         message: messageText,
         safetyAction: data?.safetyAction || "support",
         citedResourceIds: Array.isArray(data?.citedResourceIds) ? data.citedResourceIds : [],
         model: data?.model || "gemini-3.1-flash-lite",
-        recommendedVoucher: data?.recommendedVoucher || null,
+        recommendedVoucher: recommendedVouchers[0] || null,
+        recommendedVouchers,
+        copingActivity: data?.copingActivity || null,
       };
     } catch (error) {
       if (error instanceof ChatServiceError) {

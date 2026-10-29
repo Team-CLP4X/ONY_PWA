@@ -7,10 +7,14 @@ export interface FirestoreMerchant {
   description: string;
   image: string;
   validity: string;
+  active?: boolean;
+  expired?: boolean;
+  tags?: string[];
 }
 
 export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
   {
+    id: "ruang_rasa",
     name: "Ruang Rasa",
     category: "Café",
     offer: "Slow afternoon set",
@@ -20,6 +24,7 @@ export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
     validity: "Valid until 30 Jun · Demo",
   },
   {
+    id: "tangan_studio",
     name: "Tangan Studio",
     category: "Art / creative",
     offer: "Mindful clay session",
@@ -29,6 +34,7 @@ export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
     validity: "Weekdays only · Demo",
   },
   {
+    id: "nafas_space",
     name: "Nafas Space",
     category: "Yoga / meditation",
     offer: "First community class",
@@ -38,6 +44,7 @@ export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
     validity: "Valid for first visit · Demo",
   },
   {
+    id: "tenang_goods",
     name: "Tenang Goods",
     category: "Wellness products",
     offer: "Sleep ritual set",
@@ -47,6 +54,7 @@ export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
     validity: "Valid until 15 Jul · Demo",
   },
   {
+    id: "sora_sounds",
     name: "Sora Sounds",
     category: "Music",
     offer: "Calming playlist session",
@@ -56,6 +64,7 @@ export const DEFAULT_MERCHANTS: FirestoreMerchant[] = [
     validity: "Online access · Demo",
   },
   {
+    id: "senja_rest",
     name: "Senja Rest",
     category: "Relaxation",
     offer: "Quiet reset session",

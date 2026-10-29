@@ -23,29 +23,42 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
     <script>
-      // Suppress benign preview WebSocket close rejections (HMR disabled in container preview)
-      window.addEventListener('unhandledrejection', function (event) {
-        var reason = event && (event.reason ? (event.reason.message || String(event.reason)) : '');
-        if (
-          typeof reason === 'string' &&
-          (reason.indexOf('WebSocket') !== -1 ||
-            reason.indexOf('websocket') !== -1 ||
-            reason.indexOf('ws:') !== -1)
-        ) {
-          event.preventDefault();
-        }
-      });
-      window.addEventListener('error', function (event) {
-        var msg = event && (event.message || '');
-        if (
-          typeof msg === 'string' &&
-          (msg.indexOf('WebSocket') !== -1 ||
-            msg.indexOf('websocket') !== -1 ||
-            msg.indexOf('ws:') !== -1)
-        ) {
-          event.preventDefault();
-        }
-      });
+      // Suppress benign Vite preview WebSocket rejections (HMR is disabled in container preview)
+      (function () {
+        var isWsError = function (val) {
+          if (!val) return false;
+          var str = typeof val === 'string' ? val : (val.message || String(val));
+          return typeof str === 'string' && (
+            str.indexOf('WebSocket') !== -1 ||
+            str.indexOf('websocket') !== -1 ||
+            str.indexOf('[vite] failed to connect') !== -1 ||
+            str.indexOf('ws:') !== -1
+          );
+        };
+        var origConsoleError = console.error;
+        console.error = function () {
+          for (var i = 0; i < arguments.length; i++) {
+            if (isWsError(arguments[i])) return;
+          }
+          return origConsoleError.apply(console, arguments);
+        };
+        window.addEventListener('unhandledrejection', function (event) {
+          if (isWsError(event && event.reason)) {
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+          }
+        }, true);
+        window.addEventListener('error', function (event) {
+          if (isWsError(event && (event.message || event.error))) {
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+          }
+        }, true);
+      })();
     </script>
   </head>
   <body>

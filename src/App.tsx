@@ -165,7 +165,14 @@ import {
   generateSampleVoiceAudio,
 } from "./services/voiceService";
 
-type Message = { from: "ony" | "user"; text: string; voucher?: MarketplaceRecommendation | null; dismissedVoucher?: boolean };
+type Message = {
+  from: "ony" | "user";
+  text: string;
+  voucher?: MarketplaceRecommendation | null;
+  vouchers?: MarketplaceRecommendation[];
+  copingActivity?: string | null;
+  dismissedVoucher?: boolean;
+};
 type Conversation = { id: number; title: string; category: string; day: "Today" | "Yesterday"; messages: Message[]; folderId?: number; archived?: boolean; reportAllowed?: boolean };
 type ChatFolder = { id: number; name: string };
 type LegalDocumentId = "disclaimer" | "terms" | "privacy" | "crisis";
@@ -2747,8 +2754,20 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       });
 
       setServerSafetyAction(response.safetyAction);
-      setFailedUserText(null);
-      setMessages((m) => [...m, { from: "ony", text: response.message, voucher: response.recommendedVoucher || null }]);
+      const vouchersList = (response.recommendedVouchers && response.recommendedVouchers.length > 0)
+        ? response.recommendedVouchers
+        : (response.recommendedVoucher ? [response.recommendedVoucher] : []);
+
+      setMessages((m) => [
+        ...m,
+        {
+          from: "ony",
+          text: response.message,
+          voucher: vouchersList[0] || null,
+          vouchers: vouchersList,
+          copingActivity: response.copingActivity || null,
+        },
+      ]);
       scrollToBottom("smooth");
 
       if (autoSpeak) {
@@ -2784,6 +2803,8 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       return;
     }
     setSavedMemoryId(null);
+    setChatError(null);
+    setFailedUserText(null);
     const lower = trimmed.toLowerCase();
     if (lower === "show my memories") { goTab("memory"); setInput(""); return; }
     if (lower === "open community") { goTab("community"); setInput(""); return; }
@@ -3030,25 +3051,30 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
           <div className="message">
             <FormattedChatMessage text={m.text} isUser={m.from === "user"} />
           </div>
-          {m.from === "ony" && m.voucher && !m.dismissedVoucher && (
-            <ContextualVoucherCard
-              voucher={m.voucher}
-              language={language}
-              onExplore={() => {
-                if (onOpenMerchant) {
-                  onOpenMerchant(m.voucher!.merchantName);
-                } else {
-                  navigate("merchant");
-                }
-              }}
-              onDismiss={() => {
-                setMessages((prev) =>
-                  prev.map((msg, idx) =>
-                    idx === i ? { ...msg, dismissedVoucher: true } : msg
-                  )
-                );
-              }}
-            />
+          {m.from === "ony" && !m.dismissedVoucher && (
+            <div className="chat-vouchers-container" style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%", marginTop: "6px" }}>
+              {((m.vouchers && m.vouchers.length > 0) ? m.vouchers : (m.voucher ? [m.voucher] : [])).map((voucherItem, vIdx) => (
+                <ContextualVoucherCard
+                  key={voucherItem.id || voucherItem.merchantName || vIdx}
+                  voucher={voucherItem}
+                  language={language}
+                  onExplore={() => {
+                    if (onOpenMerchant) {
+                      onOpenMerchant(voucherItem.merchantName);
+                    } else {
+                      navigate("merchant");
+                    }
+                  }}
+                  onDismiss={() => {
+                    setMessages((prev) =>
+                      prev.map((msg, idx) =>
+                        idx === i ? { ...msg, dismissedVoucher: true } : msg
+                      )
+                    );
+                  }}
+                />
+              ))}
+            </div>
           )}
         </div>
         {m.from === "ony" && (

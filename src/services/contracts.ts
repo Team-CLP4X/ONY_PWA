@@ -36,6 +36,7 @@ export interface AIConversationRequest {
 }
 
 export interface MarketplaceRecommendation {
+  id?: string;
   merchantName: string;
   category: string;
   offer: string;
@@ -45,6 +46,7 @@ export interface MarketplaceRecommendation {
   validity: string;
   contextReason: string;
   actionLabel: string;
+  copingActivity?: string;
 }
 
 export interface AIConversationResponse {
@@ -53,6 +55,8 @@ export interface AIConversationResponse {
   citedResourceIds: string[];
   model?: string;
   recommendedVoucher?: MarketplaceRecommendation | null;
+  recommendedVouchers?: MarketplaceRecommendation[];
+  copingActivity?: string | null;
 }
 
 export interface AIServiceErrorPayload {
@@ -69,6 +73,8 @@ export interface AIServiceErrorPayload {
       | "UPSTREAM_ERROR";
     message: string;
     safetyAction?: SafetyAction;
+    isRetryable?: boolean;
+    retryAfterSeconds?: number;
   };
 }
 

@@ -10,7 +10,7 @@ import {
   type AuthenticatedRequest,
 } from "./src/server/authMiddleware.ts";
 import { buildOnySystemInstruction } from "./src/server/onyPrompt.ts";
-import { evaluateMarketplaceRecommendation } from "./src/server/marketplaceMatcher.ts";
+import { evaluateMarketplaceRecommendations } from "./src/server/marketplaceMatcher.ts";
 import { generateDynamicOnyReply } from "./src/server/onyCompanionEngine.ts";
 import type {
   AIConversationRequest,
@@ -22,6 +22,19 @@ import type {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Filter benign gRPC idle stream disconnection messages from logging as errors
+const origConsoleError = console.error;
+console.error = (...args: any[]) => {
+  const msg = args.map((a) => (typeof a === "string" ? a : a?.message || String(a))).join(" ");
+  if (
+    msg.includes("Disconnecting idle stream") ||
+    msg.includes("Timed out waiting for new targets")
+  ) {
+    return;
+  }
+  origConsoleError(...args);
+};
 
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY_MESSAGES = 10;
@@ -104,6 +117,8 @@ function sendStructuredError(
   code: AIServiceErrorPayload["error"]["code"],
   message: string,
   safetyAction?: SafetyAction,
+  isRetryable = false,
+  retryAfterSeconds?: number,
 ) {
   // Prevent Nginx proxy_intercept_errors from replacing API JSON with warmup.html
   const safeStatus = status === 502 || status === 503 || status === 504 ? 500 : status;
@@ -112,6 +127,8 @@ function sendStructuredError(
       code,
       message,
       ...(safetyAction ? { safetyAction } : {}),
+      ...(isRetryable ? { isRetryable } : {}),
+      ...(typeof retryAfterSeconds === "number" ? { retryAfterSeconds } : {}),
     },
   };
   return res.status(safeStatus).json(payload);
@@ -274,28 +291,62 @@ async function startServer() {
         memories: approvedMemories,
       });
 
-      const recommendedVoucher = evaluateMarketplaceRecommendation({
-        userMessage: rawMessage,
-        recentHistory: sanitizedHistory,
-        safetyAction,
-        memories: approvedMemories,
-        language,
-      });
+      const { vouchers: recommendedVouchers, copingActivity } =
+        await evaluateMarketplaceRecommendations({
+          userMessage: rawMessage,
+          recentHistory: sanitizedHistory,
+          safetyAction,
+          memories: approvedMemories,
+          language,
+        });
 
       const responsePayload: AIConversationResponse = {
         message: result.reply,
         safetyAction,
         citedResourceIds,
         model: result.model,
-        recommendedVoucher,
+        recommendedVoucher: recommendedVouchers[0] || null,
+        recommendedVouchers,
+        copingActivity: copingActivity || null,
       };
 
       return res.json(responsePayload);
-    } catch (_err: unknown) {
-      console.log(
-        "[ONY /api/chat] Upstream service momentarily busy, serving empathetic companion fallback.",
-      );
-      const fallbackText = generateDynamicOnyReply({
+    } catch (err: unknown) {
+      // For crisis / urgent safety messages, NEVER fail silently or withhold crisis resources
+      if (safetyAction === "urgent_safety_flow") {
+        console.warn("[ONY /api/chat] Crisis safety flow triggered during upstream interruption; returning protective crisis response.");
+        const crisisFallback =
+          language === "Bahasa Melayu"
+            ? "Saya faham awak sedang mengalami waktu yang amat sukar sekarang. Keselamatan awak sangat berharga dan penting. Sila hubungi Talian HEAL di 15555 atau Befrienders KL di 03-7627 2929 sekarang juga."
+            : language === "中文"
+              ? "我能深切感受到您现在经历的艰难与痛苦。您的生命安全最重要，请立即拨打 HEAL 热线 15555 或吉隆坡心灵扶助会 03-7627 2929。"
+              : "I hear that you're going through a very heavy and overwhelming time right now. Your safety matters deeply. Please reach out to the HEAL Crisis Line at 15555 or Befrienders KL at 03-7627 2929 right away.";
+
+        const responsePayload: AIConversationResponse = {
+          message: crisisFallback,
+          safetyAction: "urgent_safety_flow",
+          citedResourceIds,
+          model: "ony-safety-protective",
+          recommendedVoucher: null,
+          recommendedVouchers: [],
+          copingActivity: null,
+        };
+        return res.json(responsePayload);
+      }
+
+      if (err instanceof ProviderGenerationError && !err.isRetryable) {
+        return sendStructuredError(
+          res,
+          err.status,
+          err.code,
+          err.message,
+          safetyAction,
+          false,
+        );
+      }
+
+      console.warn("[ONY /api/chat] Upstream service momentarily busy, seamlessly serving empathetic companion response.");
+      const fallbackReply = generateDynamicOnyReply({
         userMessage: rawMessage,
         history: sanitizedHistory,
         language,
@@ -303,15 +354,24 @@ async function startServer() {
         memories: approvedMemories,
       });
 
-      const responsePayload: AIConversationResponse = {
-        message: fallbackText,
+      const { vouchers: fallbackVouchers, copingActivity: fallbackActivity } =
+        await evaluateMarketplaceRecommendations({
+          userMessage: rawMessage,
+          recentHistory: sanitizedHistory,
+          safetyAction,
+          memories: approvedMemories,
+          language,
+        });
+
+      return res.json({
+        message: fallbackReply,
         safetyAction,
         citedResourceIds,
-        model: "ony-resilient-fallback",
-        recommendedVoucher: null,
-      };
-
-      return res.json(responsePayload);
+        model: "ony-resilient-companion",
+        recommendedVoucher: fallbackVouchers[0] || null,
+        recommendedVouchers: fallbackVouchers,
+        copingActivity: fallbackActivity || null,
+      });
     }
   });
 

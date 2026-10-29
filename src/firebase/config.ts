@@ -25,13 +25,21 @@ const firebaseConfig = {
 const app: FirebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth: Auth = getAuth(app);
 
+import { setLogLevel } from "firebase/firestore";
+
+try {
+  setLogLevel("silent");
+} catch {
+  // Graceful no-op
+}
+
 const databaseId = appConfig.firestoreDatabaseId && appConfig.firestoreDatabaseId !== "(default)"
   ? appConfig.firestoreDatabaseId
   : undefined;
 
 export const db: Firestore = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 
-// Connectivity validation
+// Connectivity validation (browser only)
 export async function validateFirestoreConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, "test", "connection"));
@@ -46,8 +54,10 @@ export async function validateFirestoreConnection(): Promise<boolean> {
   }
 }
 
-validateFirestoreConnection().catch(() => {
-  // Graceful no-op on initial boot
-});
+if (typeof window !== "undefined") {
+  validateFirestoreConnection().catch(() => {
+    // Graceful no-op on initial boot
+  });
+}
 
 export default app;
