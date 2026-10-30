@@ -1692,7 +1692,7 @@ function AppInner() {
           <div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
           {screen === "main" ? (
             <>
-              <main className="main-content">
+              <main className={`main-content ${tab === "chat" ? "chat-tab-active" : ""}`}>
                 {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                   if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                   const next = freeUsage + 1;
@@ -3043,7 +3043,76 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         </div>
       </div>
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
-    {messages.length === 0 && <div className="chat-welcome"><div className="companion-stage"><CompanionAvatar companion={companion} large /><span className="leaf-accent">ONY</span></div><span className="persona-label">{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span><h1>{onyxGreeting.title}</h1><p>{onyxGreeting.subtitle}</p><div className="welcome-suggestions">{suggestions.map((s) => <button key={s} disabled={typing || isLimitReached} onClick={() => { if (!isLimitReached) { reply(s); } else { navigate("subscription"); } }}>{s}<Icon name="chevron" /></button>)}</div><div className="ambient-mini"><span>{soundOn ? (language === "Bahasa Melayu" ? "Bunyi latar sedang dimainkan" : language === "中文" ? "背景音效播放中" : "Ambient sound playing") : (language === "Bahasa Melayu" ? "Suasana latar menenangkan" : language === "中文" ? "舒缓背景音" : "Calming ambience")}</span><Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>{soundOn ? t.common_pause : t.common_play}</Button></div></div>}
+    {messages.length === 0 && (
+      <div className="chat-welcome">
+        <div className="chat-welcome-card">
+          <div className="chat-welcome-avatar">
+            <CompanionAvatar companion={companion} />
+            <span className="online-presence-dot" aria-label="Available" />
+          </div>
+          <div className="chat-welcome-content">
+            <div className="chat-welcome-badge">
+              <span className="welcome-persona-pill">
+                {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
+              </span>
+              <span className="welcome-time-indicator">
+                {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+            <h2 className="chat-welcome-title">{onyxGreeting.title}</h2>
+            <p className="chat-welcome-subtitle">{onyxGreeting.subtitle}</p>
+          </div>
+        </div>
+
+        <div className="welcome-suggestions-section">
+          <span className="welcome-suggestions-label">
+            {language === "Bahasa Melayu"
+              ? "Topik perbualan dicadangkan"
+              : language === "中文"
+                ? "推荐开启话题"
+                : "Suggested starting thoughts"}
+          </span>
+          <div className="welcome-suggestions">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                disabled={typing || isLimitReached}
+                onClick={() => {
+                  if (!isLimitReached) {
+                    reply(s);
+                  } else {
+                    navigate("subscription");
+                  }
+                }}
+              >
+                <span>{s}</span>
+                <Icon name="chevron" />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="ambient-mini">
+          <span>
+            {soundOn
+              ? (language === "Bahasa Melayu"
+                  ? "Bunyi latar dimainkan"
+                  : language === "中文"
+                    ? "背景音效播放中"
+                    : "Ambient sound playing")
+              : (language === "Bahasa Melayu"
+                  ? "Suasana latar menenangkan"
+                  : language === "中文"
+                    ? "舒缓背景音"
+                    : "Calming ambience")}
+          </span>
+          <Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>
+            {soundOn ? t.common_pause : t.common_play}
+          </Button>
+        </div>
+      </div>
+    )}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
         {m.from === "ony" && <CompanionAvatar companion={companion} />}
@@ -4926,15 +4995,80 @@ function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, db
   };
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const shown = list.filter((m) => (category === "All" || m.category === category) && `${m.name} ${m.offer}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title={t.market_title} subtitle={t.market_subtitle} action={<span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{dbSyncing ? (language === "Bahasa Melayu" ? "Menyegerak…" : language === "中文" ? "同步中…" : "Syncing…") : t.market_verified_partners}</span>} /><section className="page-pad topless">
-    <div className="market-hero"><span className="eyebrow">{t.market_nearby_eyebrow}</span><h2>{t.market_hero_title}</h2><p>{t.market_hero_desc}</p></div>
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.market_search_placeholder} /></div>
-    <div className="scroll-chips">{cats.map((x) => <Button key={x} variant={category === x ? "primary" : "secondary"} onClick={() => x === "Professional support" ? navigate("professional") : setCategory(x)}>{getCatLabel(x)}</Button>)}</div>
-    <div className="market-section-head"><h3>{t.market_wellness_vouchers}</h3><Button variant="ghost" onClick={() => setCategory("All")}>{t.market_view_all}</Button></div>
+  return (
+    <>
+      <PageHeader
+        title={t.market_title}
+        subtitle={t.market_subtitle}
+        action={
+          <span
+            className="prototype-label"
+            style={{ background: "var(--sage-soft)", color: "#2e7d32" }}
+          >
+            {dbSyncing
+              ? language === "Bahasa Melayu"
+                ? "Menyegerak…"
+                : language === "中文"
+                ? "同步中…"
+                : "Syncing…"
+              : t.market_verified_partners}
+          </span>
+        }
+      />
+      <section className="page-pad topless market-page-section">
+        <div className="market-hero">
+          <span className="eyebrow">{t.market_nearby_eyebrow}</span>
+          <h2>{t.market_hero_title}</h2>
+          <p>{t.market_hero_desc}</p>
+        </div>
+        <div className="market-sticky-controls">
+          <div className="search">
+            <Icon name="search" />
+            <TextInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t.market_search_placeholder}
+            />
+            {query && (
+              <button
+                type="button"
+                className="market-search-clear"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                <Icon name="close" />
+              </button>
+            )}
+          </div>
+          <div className="scroll-chips">
+            {cats.map((x) => (
+              <Button
+                key={x}
+                variant={category === x ? "primary" : "secondary"}
+                onClick={() =>
+                  x === "Professional support"
+                    ? navigate("professional")
+                    : setCategory(x)
+                }
+              >
+                {getCatLabel(x)}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="market-section-head">
+          <h3>{t.market_wellness_vouchers}</h3>
+          <Button variant="ghost" onClick={() => setCategory("All")}>
+            {t.market_view_all}
+          </Button>
+        </div>
     <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{getCatLabel(m.category)}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{getCatLabel(m.category)} · {language === "Bahasa Melayu" ? "Rakan" : language === "中文" ? "合作商户" : "Partner"}</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>{t.market_claim_voucher}</i></span></button>)}</div>
     <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>{t.market_prof_banner_title}</strong><small>{t.market_prof_banner_desc}</small></span><Icon name="chevron" /></button>
     <p className="disclaimer"><Icon name="info" /> {language === "Bahasa Melayu" ? "Semua keistimewaan rakan kongsi dan tawaran kesejahteraan telah disahkan bersama komuniti peniaga tempatan kami." : language === "中文" ? "所有合作专属礼遇及身心健康优惠均经由我们本地合作商户社区实名核实。" : "All partner privileges and wellness offers are verified with our local merchant community."}</p>
-  </section></>;
+  </section>
+    </>
+  );
 }
 
 function MerchantDetail({ back, navigate, merchantName, notify, merchants = fallbackMerchants }: { back: () => void; navigate: (s: Screen) => void; merchantName: string; notify: (s: string) => void; merchants?: Merchant[] }) {

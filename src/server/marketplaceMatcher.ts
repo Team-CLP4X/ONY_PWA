@@ -1,8 +1,27 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, collection, getDocs } from "firebase/firestore/lite";
-import appConfig from "../../firebase-applet-config.json";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { MarketplaceRecommendation, SafetyAction } from "../services/contracts.ts";
 import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../data/merchants.ts";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const configPaths = [
+  path.resolve(__dirname, "../../firebase-applet-config.json"),
+  path.resolve(process.cwd(), "firebase-applet-config.json"),
+];
+let appConfig: any = {};
+for (const p of configPaths) {
+  if (fs.existsSync(p)) {
+    try {
+      appConfig = JSON.parse(fs.readFileSync(p, "utf8"));
+      break;
+    } catch {}
+  }
+}
 
 const serverApp = getApps().length > 0 ? getApp() : initializeApp(appConfig);
 const databaseId = appConfig.firestoreDatabaseId && appConfig.firestoreDatabaseId !== "(default)"
