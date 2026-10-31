@@ -3452,28 +3452,232 @@ function MoodTrend({ back, entries, setEntries }: { back: () => void; entries: M
   </section></>;
 }
 
-function MemoryVault({ memories: items, setMemories: setItems, navigate, setEditingMemory, companion, notify }: {
-  memories: Memory[]; setMemories: (v: Memory[]) => void; navigate: (s: Screen) => void;
-  setEditingMemory: (v: Memory | null) => void; companion: Companion; notify: (s: string) => void;
+const memoryCategories = [
+  "All",
+  "About Me",
+  "Preferences",
+  "Important People",
+  "Goals",
+  "Things That Help Me",
+  "Special Memories",
+];
+
+function MemoryVault({
+  memories: items,
+  setMemories: setItems,
+  navigate,
+  setEditingMemory,
+  companion,
+  notify,
+}: {
+  memories: Memory[];
+  setMemories: (v: Memory[]) => void;
+  navigate: (s: Screen) => void;
+  setEditingMemory: (v: Memory | null) => void;
+  companion: Companion;
+  notify: (s: string) => void;
 }) {
   const { t, language } = useLanguage();
   const [query, setQuery] = useState("");
-  const update = (id: number, patch: Partial<Memory>) => setItems(items.map((x) => x.id === id ? { ...x, ...patch } : x));
-  return <><PageHeader title={t.memory_title} subtitle={`${items.filter((x) => x.active).length} ${t.memory_card_active}`} /><section className="page-pad topless">
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.memory_search_placeholder} /></div>
-    <div className="vault-intro"><div><span className="eyebrow">{t.memory_vault_control}</span><h2>{t.memory_vault_heading}</h2><p>{t.memory_vault_desc}</p></div><Icon name="memory" /></div>
-    <Button className="full add-memory-btn" onClick={() => { setEditingMemory(null); navigate("addMemory"); }}>+ {t.memory_add_btn}</Button>
-    <div className="section-head"><h3>{t.memory_saved_section}</h3><Button variant="ghost" onClick={() => { setItems([]); notify(t.memory_cleared_toast); }}>{t.memory_clear_all}</Button></div>
-    {items.filter((x) => x.text.toLowerCase().includes(query.toLowerCase())).map((item) => <div className={`memory-card ${!item.active ? "paused" : ""}`} key={item.id}>
-      <div className="memory-top"><span className="memory-icon"><Icon name="memory" /></span><Toggle on={item.active} setOn={(v) => update(item.id, { active: v })} /></div>
-      {item.kind === "image" && <div className={`memory-image ${item.imageTone || "forest"}`}><span>{t.memory_kind_image}</span></div>}
-      {item.category && <span className="memory-category">{getCategoryLabel(item.category, language)}</span>}<strong>{item.text}</strong>
-      <details><summary>{t.memory_why_remembers}</summary><p>{item.reason}</p></details>
-      <div className="memory-actions"><Button variant="ghost" onClick={() => { setEditingMemory(item); navigate("addMemory"); }}><Icon name="edit" />{t.common_edit}</Button><Button variant="ghost" onClick={() => { setItems(items.filter((x) => x.id !== item.id)); notify(t.memory_deleted_toast); }}><Icon name="trash" />{t.common_delete}</Button></div>
-    </div>)}
-    {!items.length && <div className="empty"><CompanionAvatar companion={companion} large /><h3>{t.memory_empty_title}</h3><p>{t.memory_empty_desc}</p></div>}
-    <div className="privacy-row"><Icon name="shield" /><div><strong>{t.memory_privacy_controls}</strong><p>{t.memory_ask_before_saving} {items.length ? (language === "Bahasa Melayu" ? "mati" : language === "中文" ? "关闭" : "off") : (language === "Bahasa Melayu" ? "hidup" : language === "中文" ? "开启" : "on")}.</p></div><Toggle on={memoryConsentOn(items)} setOn={() => notify(t.personalise_save_toast)} /></div>
-  </section></>;
+  const [category, setCategory] = useState("All");
+  const update = (id: number, patch: Partial<Memory>) =>
+    setItems(items.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+
+  const filteredItems = items.filter((x) => {
+    const q = query.trim().toLowerCase();
+    const matchesQuery =
+      !q ||
+      x.text.toLowerCase().includes(q) ||
+      (x.reason && x.reason.toLowerCase().includes(q)) ||
+      (x.category && x.category.toLowerCase().includes(q));
+    const matchesCat = category === "All" || x.category === category;
+    return matchesQuery && matchesCat;
+  });
+
+  return (
+    <>
+      <PageHeader
+        title={t.memory_title}
+        subtitle={`${items.filter((x) => x.active).length} ${t.memory_card_active}`}
+      />
+      <section className="page-pad topless memory-page-section">
+        <div className="vault-intro">
+          <div>
+            <span className="eyebrow">{t.memory_vault_control}</span>
+            <h2>{t.memory_vault_heading}</h2>
+            <p>{t.memory_vault_desc}</p>
+          </div>
+          <Icon name="memory" />
+        </div>
+        <Button
+          className="full add-memory-btn"
+          onClick={() => {
+            setEditingMemory(null);
+            navigate("addMemory");
+          }}
+        >
+          + {t.memory_add_btn}
+        </Button>
+        <div className="memory-sticky-controls">
+          <div className="search">
+            <Icon name="search" />
+            <TextInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t.memory_search_placeholder}
+            />
+            {query && (
+              <button
+                type="button"
+                className="memory-search-clear"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                <Icon name="close" />
+              </button>
+            )}
+          </div>
+          <div className="scroll-chips">
+            {memoryCategories.map((x) => (
+              <Button
+                key={x}
+                variant={category === x ? "primary" : "secondary"}
+                onClick={() => setCategory(x)}
+              >
+                {getCategoryLabel(x, language)}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="section-head">
+          <h3>
+            {t.memory_saved_section}{" "}
+            {items.length > 0 && <small className="muted">({filteredItems.length})</small>}
+          </h3>
+          {items.length > 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setItems([]);
+                notify(t.memory_cleared_toast);
+              }}
+            >
+              {t.memory_clear_all}
+            </Button>
+          )}
+        </div>
+        {filteredItems.map((item) => (
+          <div className={`memory-card ${!item.active ? "paused" : ""}`} key={item.id}>
+            <div className="memory-top">
+              <span className="memory-icon">
+                <Icon name="memory" />
+              </span>
+              <Toggle on={item.active} setOn={(v) => update(item.id, { active: v })} />
+            </div>
+            {item.kind === "image" && (
+              <div className={`memory-image ${item.imageTone || "forest"}`}>
+                <span>{t.memory_kind_image}</span>
+              </div>
+            )}
+            {item.category && (
+              <span className="memory-category">
+                {getCategoryLabel(item.category, language)}
+              </span>
+            )}
+            <strong>{item.text}</strong>
+            <details>
+              <summary>{t.memory_why_remembers}</summary>
+              <p>{item.reason}</p>
+            </details>
+            <div className="memory-actions">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditingMemory(item);
+                  navigate("addMemory");
+                }}
+              >
+                <Icon name="edit" />
+                {t.common_edit}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setItems(items.filter((x) => x.id !== item.id));
+                  notify(t.memory_deleted_toast);
+                }}
+              >
+                <Icon name="trash" />
+                {t.common_delete}
+              </Button>
+            </div>
+          </div>
+        ))}
+        {!items.length && (
+          <div className="empty">
+            <CompanionAvatar companion={companion} large />
+            <h3>{t.memory_empty_title}</h3>
+            <p>{t.memory_empty_desc}</p>
+          </div>
+        )}
+        {items.length > 0 && filteredItems.length === 0 && (
+          <div className="empty">
+            <span className="empty-emoji">🔍</span>
+            <h3>
+              {language === "Bahasa Melayu"
+                ? "Tiada memori sepadan"
+                : language === "中文"
+                ? "无匹配记忆条目"
+                : "No matching memories"}
+            </h3>
+            <p>
+              {language === "Bahasa Melayu"
+                ? "Cuba ubah carian anda atau pilih kategori lain."
+                : language === "中文"
+                ? "请尝试更改搜索词或选择其它分类标签。"
+                : "Try adjusting your search terms or picking another category filter."}
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setQuery("");
+                setCategory("All");
+              }}
+            >
+              {language === "Bahasa Melayu"
+                ? "Kosongkan carian"
+                : language === "中文"
+                ? "重置筛选"
+                : "Reset filters"}
+            </Button>
+          </div>
+        )}
+        <div className="privacy-row">
+          <Icon name="shield" />
+          <div>
+            <strong>{t.memory_privacy_controls}</strong>
+            <p>
+              {t.memory_ask_before_saving}{" "}
+              {items.length
+                ? language === "Bahasa Melayu"
+                  ? "mati"
+                  : language === "中文"
+                  ? "关闭"
+                  : "off"
+                : language === "Bahasa Melayu"
+                ? "hidup"
+                : language === "中文"
+                ? "开启"
+                : "on"}
+              .
+            </p>
+          </div>
+          <Toggle on={memoryConsentOn(items)} setOn={() => notify(t.personalise_save_toast)} />
+        </div>
+      </section>
+    </>
+  );
 }
 const memoryConsentOn = (items: Memory[]) => items.length > 0;
 
@@ -3945,8 +4149,38 @@ function Community({
     </>}
     {view === "posts" && <>
       <div className="posts-heading"><div><span className="eyebrow">{t.community_posts_heading}</span><h2>{language === "Bahasa Melayu" ? "Berkongsi dengan lembut, bersama-sama." : language === "中文" ? "轻柔分享，一路相伴。" : "Shared gently, together."}</h2></div><Button variant="ghost" onClick={() => setView("globe")}>{t.community_back_globe}</Button></div>
-      <div className="search"><Icon name="search" /><TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.community_search_posts} /></div>
-      <div className="scroll-chips">{categories.map((x) => <Button key={x} variant={filter === x ? "primary" : "secondary"} onClick={() => setFilter(x)}>{getCategoryLabel(x, language)}</Button>)}</div>
+      <div className="community-sticky-controls">
+        <div className="search">
+          <Icon name="search" />
+          <TextInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.community_search_posts}
+          />
+          {query && (
+            <button
+              type="button"
+              className="community-search-clear"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
+        <div className="scroll-chips">
+          {categories.map((x) => (
+            <Button
+              key={x}
+              variant={filter === x ? "primary" : "secondary"}
+              onClick={() => setFilter(x)}
+            >
+              {getCategoryLabel(x, language)}
+            </Button>
+          ))}
+        </div>
+      </div>
       <div className="feed">{shown.map((post) => {
         const likeList = Array.isArray(post.likeRecords) ? post.likeRecords : [];
         const commentList = Array.isArray(post.comments) ? post.comments : [];
@@ -3986,7 +4220,40 @@ function Community({
             </div>
           </article>
         );
-      })}</div>
+      })}
+      {shown.length === 0 && (
+        <div className="empty">
+          <span className="empty-emoji">🌱</span>
+          <h3>
+            {language === "Bahasa Melayu"
+              ? "Tiada perkongsian ditemui"
+              : language === "中文"
+              ? "未找到相关动态"
+              : "No matching posts"}
+          </h3>
+          <p>
+            {language === "Bahasa Melayu"
+              ? "Cuba ubah carian kata kunci atau pilih topik yang berbeza."
+              : language === "中文"
+              ? "请尝试更改搜索词或选择其它话题标签。"
+              : "Try adjusting your search query or picking a different topic filter."}
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setQuery("");
+              setFilter("All");
+            }}
+          >
+            {language === "Bahasa Melayu"
+              ? "Kosongkan carian"
+              : language === "中文"
+              ? "重置筛选"
+              : "Reset filters"}
+          </Button>
+        </div>
+      )}
+      </div>
     </>}
     {view === "myNode" && <>
       <div className="posts-heading">

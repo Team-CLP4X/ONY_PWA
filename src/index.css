@@ -1059,7 +1059,9 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   font-size: 11px;
   line-height: 1.4;
 }
-.market-sticky-controls {
+.market-sticky-controls,
+.community-sticky-controls,
+.memory-sticky-controls {
   position: sticky;
   top: 0;
   z-index: 20;
@@ -1071,7 +1073,9 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-.market-sticky-controls .search {
+.market-sticky-controls .search,
+.community-sticky-controls .search,
+.memory-sticky-controls .search {
   margin: 0 0 8px;
   background: white;
   min-height: 40px;
@@ -1079,7 +1083,9 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   border-radius: 14px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
 }
-.market-sticky-controls .scroll-chips {
+.market-sticky-controls .scroll-chips,
+.community-sticky-controls .scroll-chips,
+.memory-sticky-controls .scroll-chips {
   margin: 0 -14px;
   padding: 0 14px 2px;
   gap: 6px;
@@ -1087,17 +1093,23 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
-.market-sticky-controls .scroll-chips::-webkit-scrollbar {
+.market-sticky-controls .scroll-chips::-webkit-scrollbar,
+.community-sticky-controls .scroll-chips::-webkit-scrollbar,
+.memory-sticky-controls .scroll-chips::-webkit-scrollbar {
   display: none;
 }
-.market-sticky-controls .scroll-chips .btn {
+.market-sticky-controls .scroll-chips .btn,
+.community-sticky-controls .scroll-chips .btn,
+.memory-sticky-controls .scroll-chips .btn {
   min-height: 32px;
   padding: 5px 12px;
   font-size: 10.5px;
   white-space: nowrap;
   border-radius: 100px;
 }
-.market-search-clear {
+.market-search-clear,
+.community-search-clear,
+.memory-search-clear {
   background: transparent;
   border: 0;
   padding: 4px;
@@ -1110,11 +1122,15 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   flex-shrink: 0;
   transition: all 0.15s ease;
 }
-.market-search-clear:hover {
+.market-search-clear:hover,
+.community-search-clear:hover,
+.memory-search-clear:hover {
   color: var(--ink);
   background: var(--peach-soft);
 }
-.market-search-clear .icon {
+.market-search-clear .icon,
+.community-search-clear .icon,
+.memory-search-clear .icon {
   width: 14px;
   height: 14px;
 }
@@ -2440,11 +2456,15 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   .page-pad {
     padding: 10px 10px calc(42px + env(safe-area-inset-bottom));
   }
-  .market-sticky-controls {
+  .market-sticky-controls,
+  .community-sticky-controls,
+  .memory-sticky-controls {
     margin: 0 -10px 8px;
     padding: 6px 10px 6px;
   }
-  .market-sticky-controls .scroll-chips {
+  .market-sticky-controls .scroll-chips,
+  .community-sticky-controls .scroll-chips,
+  .memory-sticky-controls .scroll-chips {
     margin: 0 -10px;
     padding: 0 10px 2px;
   }
