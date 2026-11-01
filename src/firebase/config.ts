@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, doc, getDocFromServer, type Firestore } from "firebase/firestore";
-import appConfig from "../../firebase-applet-config.json";
+import appConfig from "../../firebase-applet-config.json" with { type: "json" };
 
 export interface FirebaseAppletConfig {
   projectId: string;

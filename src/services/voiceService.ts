@@ -67,7 +67,7 @@ export class ChatSpeechRecognizer {
           const isNotAllowed = err === "not-allowed" || err === "service-not-allowed";
           this.onErrorCallback(
             isNotAllowed
-              ? "Microphone access was not permitted by your browser (browser may suppress permission prompts in iframe previews or blocked settings). You can use simulated voice below or switch to text mode."
+              ? "Microphone access was not permitted by your browser. Please check your browser microphone settings or switch to text mode."
               : `Voice error: ${err}`
           );
         }
@@ -269,7 +269,7 @@ export class VoiceRecorder {
       this.cleanup();
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError" || err.name === "SecurityError") {
         throw new Error(
-          "Microphone access could not be granted (browser did not show or allowed permission prompt). You can use 'Use Voice Sample' below or switch to text mode."
+          "Microphone access could not be granted by your browser. Please enable microphone permissions in your browser or switch to text mode."
         );
       }
       throw new Error(err.message || "Could not start audio recording.");

@@ -136,7 +136,14 @@ function sendStructuredError(
 
 async function startServer() {
   const app = express();
-  const port = parseInt(process.env.PORT || "3000", 10);
+
+  const portArgIdx = process.argv.indexOf("--port");
+  const cliPort = portArgIdx !== -1 && process.argv[portArgIdx + 1] ? parseInt(process.argv[portArgIdx + 1], 10) : undefined;
+  const hostArgIdx = process.argv.indexOf("--host");
+  const host = hostArgIdx !== -1 && process.argv[hostArgIdx + 1] ? process.argv[hostArgIdx + 1] : "0.0.0.0";
+
+  const isDev = process.env.NODE_ENV !== "production";
+  const primaryPort = cliPort || (isDev ? 3000 : parseInt(process.env.PORT || "8080", 10));
 
   app.disable("x-powered-by");
 
@@ -390,9 +397,20 @@ async function startServer() {
     });
   }
 
-  app.listen(port, "0.0.0.0", () => {
-    console.log(`ONY server running on http://0.0.0.0:${port}`);
+  app.listen(primaryPort, host, () => {
+    console.log(`ONY server running on http://${host}:${primaryPort}`);
   });
+
+  const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : undefined;
+  if (envPort && envPort !== primaryPort && !isNaN(envPort)) {
+    try {
+      app.listen(envPort, host, () => {
+        console.log(`ONY server also listening on http://${host}:${envPort}`);
+      });
+    } catch {
+      // Graceful fallback if port already in use
+    }
+  }
 }
 
 startServer().catch((error) => {

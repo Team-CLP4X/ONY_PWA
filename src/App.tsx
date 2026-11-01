@@ -142,7 +142,6 @@ type Screen =
   | "chatHistory"
   | "monthlyReport"
   | "postDetail"
-  | "riskDemo"
   | "resources"
   | "legal"
   | "systemLogs"
@@ -162,7 +161,6 @@ import {
   playSoothingChime,
   formatAudioDuration,
   isSpeechRecognitionSupported,
-  generateSampleVoiceAudio,
 } from "./services/voiceService";
 
 type Message = {
@@ -228,7 +226,7 @@ function deduplicateMoodEntriesByDay(entries: MoodEntry[]): MoodEntry[] {
 }
 type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
 type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
-type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string };
+type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string; imageUrl?: string };
 type Post = FirestoreCommunityPost;
 
 const Icon = ({ name }: { name: string }) => {
@@ -261,6 +259,14 @@ const Icon = ({ name }: { name: string }) => {
     volume: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></>,
     volumeOff: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>,
     refresh: <path d="M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5"/>,
+    plus: <path d="M12 5v14M5 12h14" />,
+    sparkles: <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />,
+    cloud: <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />,
+    wind: <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2" />,
+    coffee: <path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8ZM6 1v3M10 1v3M14 1v3" />,
+    music: <path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />,
+    moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></>,
     settings: (
       <>
         <circle cx="12" cy="12" r="3" />
@@ -1850,7 +1856,6 @@ function AppInner() {
                 notify={notify}
               />
             )}
-            {screen === "riskDemo" && <RiskDemo back={back} navigate={navigate} persona={persona} companion={companion} />}
             {screen === "resources" && <ResourceLibrary back={back} navigate={navigate} notify={notify} />}
             {screen === "legal" && <LegalHub back={back} navigate={navigate} />}
           </main>
@@ -2234,7 +2239,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     <>
       <PageHeader title={item.title} subtitle={item.subtitle} back={back} />
       <section className="page-pad legal-document">
-        <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>
+        <span className="status-badge" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>
           {language === "Bahasa Melayu" ? "Dokumen Rasmi" : language === "中文" ? "官方政策文档" : "Official Document"}
         </span>
         {item.sections.map((section) => (
@@ -2364,7 +2369,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
             <div className="companion-confirm"><CompanionAvatar companion={companion} large /><img src={logo} alt="Official ONY logo" /></div>
             <div className="eyebrow">{t.onboarding_complete_eyebrow}</div><h1>{t.onboarding_complete_title}</h1>
             <p className="lead">{t.onboarding_complete_lead}</p>
-            <div className="demo-profile"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{getCompanionLabel(companion, language as AppLanguage)} · {getThemeDetails(theme, themeOptions.find((item) => item.id === theme)?.name || "", "", language as AppLanguage).name}</small></div><Icon name="check" /></div>
+            <div className="user-preview-card"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{getCompanionLabel(companion, language as AppLanguage)} · {getThemeDetails(theme, themeOptions.find((item) => item.id === theme)?.name || "", "", language as AppLanguage).name}</small></div><Icon name="check" /></div>
           </>}
         </div>
         <div className="onboarding-actions">
@@ -2505,82 +2510,130 @@ function PageHeader({
 export function getOnyTimeGreeting(
   language: AppLanguage,
   displayName?: string,
-): { title: string; subtitle: string } {
+): { title: string; subtitle: string; greeting: string; question: string } {
   const hour = new Date().getHours();
   const name = displayName?.trim();
   const hasName = Boolean(name && name.toLowerCase() !== "guest" && name.toLowerCase() !== "user");
 
   if (language === "Bahasa Melayu") {
     if (hour >= 5 && hour < 12) {
+      const greeting = hasName ? `Selamat pagi, ${name} 🌿` : "Selamat pagi 🌿";
+      const question = "Bagaimana perasaan anda pagi ini?";
       return {
-        title: hasName ? `Selamat pagi, ${name} 🌿 Bagaimana perasaan anda?` : "Selamat pagi 🌿 Bagaimana perasaan anda?",
+        greeting,
+        question,
+        title: `${greeting} ${question}`,
         subtitle: "Ambil masa anda—saya sentiasa ada di sini sedia mendengar.",
       };
     }
     if (hour >= 12 && hour < 17) {
+      const greeting = hasName ? `Selamat tengah hari, ${name} ☀️` : "Selamat tengah hari ☀️";
+      const question = "Bagaimana hari anda setakat ini?";
       return {
-        title: hasName ? `Selamat tengah hari, ${name} ☀️ Bagaimana hari anda setakat ini?` : "Selamat tengah hari ☀️ Bagaimana hari anda setakat ini?",
+        greeting,
+        question,
+        title: `${greeting} ${question}`,
         subtitle: "Berehatlah sejenak. Ada apa-apa yang terbuku di fikiran anda?",
       };
     }
     if (hour >= 17 && hour < 21) {
+      const greeting = hasName ? `Selamat petang, ${name} 🌇` : "Selamat petang 🌇";
+      const question = "Bagaimana keadaan anda petang ini?";
       return {
-        title: hasName ? `Selamat petang, ${name} 🌇 Bagaimana keadaan anda petang ini?` : "Selamat petang 🌇 Bagaimana keadaan anda petang ini?",
+        greeting,
+        question,
+        title: `${greeting} ${question}`,
         subtitle: "Tiada paksaan. Kita boleh bualkan apa sahaja dengan tenang.",
       };
     }
+    const greeting = hasName ? `Malam yang tenang, ${name} 🌙` : "Malam yang tenang 🌙";
+    const question = "Bagaimana keadaan anda malam ini?";
     return {
-      title: hasName ? `Malam yang tenang, ${name} 🌙 Bagaimana keadaan anda?` : "Malam yang tenang 🌙 Bagaimana keadaan anda?",
+      greeting,
+      question,
+      title: `${greeting} ${question}`,
       subtitle: "Jika anda sukar tidur atau perlukan teman senyap, saya ada di sini menemani.",
     };
   }
 
   if (language === "中文") {
     if (hour >= 5 && hour < 12) {
+      const greeting = hasName ? `早上好，${name} 🌿` : "早上好 🌿";
+      const question = "今天感觉怎么样？";
       return {
-        title: hasName ? `早上好，${name} 🌿 今天感觉怎么样？` : "早上好 🌿 今天感觉怎么样？",
+        greeting,
+        question,
+        title: `${greeting} ${question}`,
         subtitle: "慢慢来就好，随时可以在这里卸下心里的包袱。",
       };
     }
     if (hour >= 12 && hour < 17) {
+      const greeting = hasName ? `下午好，${name} ☀️` : "下午好 ☀️";
+      const question = "今天过得还顺利吗？";
       return {
-        title: hasName ? `下午好，${name} ☀️ 今天过得还顺利吗？` : "下午好 ☀️ 今天过得还顺利吗？",
+        greeting,
+        question,
+        title: `${greeting} ${question}`,
         subtitle: "停下来深呼吸一下。心里有什么想聊聊的吗？",
       };
     }
     if (hour >= 17 && hour < 21) {
+      const greeting = hasName ? `晚上好，${name} 🌇` : "晚上好 🌇";
+      const question = "此刻心情还好吗？";
       return {
-        title: hasName ? `晚上好，${name} 🌇 此刻心情还好吗？` : "晚上好 🌇 此刻心情还好吗？",
+        greeting,
+        question,
+        title: `${greeting} ${question}`,
         subtitle: "今晚不赶时间，随时和我倾诉今天的点点滴滴。",
       };
     }
+    const greeting = hasName ? `夜深了，${name} 🌙` : "夜深了 🌙";
+    const question = "今夜感觉还好吗？";
     return {
-      title: hasName ? `夜深了，${name} 🌙 感觉还好吗？` : "夜深了 🌙 感觉还好吗？",
+      greeting,
+      question,
+      title: `${greeting} ${question}`,
       subtitle: "要是睡不着或者心事多，别担心，我一直在这里守候着你。",
     };
   }
 
   // English default
   if (hour >= 5 && hour < 12) {
+    const greeting = hasName ? `Good morning, ${name} 🌿` : "Good morning 🌿";
+    const question = "How are you feeling this morning?";
     return {
-      title: hasName ? `Good morning, ${name} 🌿 How are you feeling?` : "Good morning 🌿 How are you feeling?",
+      greeting,
+      question,
+      title: `${greeting} ${question}`,
       subtitle: "Take your time—I'm here whenever you'd like to share.",
     };
   }
   if (hour >= 12 && hour < 17) {
+    const greeting = hasName ? `Good afternoon, ${name} ☀️` : "Good afternoon ☀️";
+    const question = "How is your day going?";
     return {
-      title: hasName ? `Good afternoon, ${name} ☀️ How is your day going?` : "Good afternoon ☀️ How is your day going?",
+      greeting,
+      question,
+      title: `${greeting} ${question}`,
       subtitle: "Even a quick pause can help. What's on your mind?",
     };
   }
   if (hour >= 17 && hour < 21) {
+    const greeting = hasName ? `Good evening, ${name} 🌇` : "Good evening 🌇";
+    const question = "How are you unwinding today?";
     return {
-      title: hasName ? `Good evening, ${name} 🌇 How are you unwinding today?` : "Good evening 🌇 How are you unwinding today?",
+      greeting,
+      question,
+      title: `${greeting} ${question}`,
       subtitle: "No rush at all. We can gently unpack whatever you're carrying.",
     };
   }
+  const greeting = hasName ? `Quiet night, ${name} 🌙` : "Quiet night 🌙";
+  const question = "How are you holding up tonight?";
   return {
-    title: hasName ? `Quiet night, ${name} 🌙 How are you holding up?` : "Quiet night 🌙 How are you holding up?",
+    greeting,
+    question,
+    title: `${greeting} ${question}`,
     subtitle: "I'm right here if your thoughts are keeping you awake.",
   };
 }
@@ -2636,36 +2689,79 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
   const { t } = useLanguage();
   const { unreadCount, openNotifications } = useNotifications();
-  const suggestions = useMemo(() => {
+  const suggestedCards = useMemo(() => {
     if (language === "Bahasa Melayu") {
       return [
-        "Saya rasa tertekan dengan tugasan",
-        "Saya rasa gelisah hari ini",
-        "Perlukan teman untuk meluahkan perasaan",
-        "Bimbing saya dalam pernafasan tenang",
-        "Tekanan belajar dan peperiksaan",
-        "Saya ingin berehat sejenak",
+        {
+          icon: "cloud",
+          label: "Tekanan Harian & Tugasan",
+          prompt: "Saya rasa tertekan dengan tugasan hari ini",
+        },
+        {
+          icon: "heart",
+          label: "Ruang Luahan Hati",
+          prompt: "Saya perlukan teman untuk meluahkan perasaan",
+        },
+        {
+          icon: "wind",
+          label: "Pernafasan Tenang & Relaks",
+          prompt: "Bimbing saya dalam senaman pernafasan tenang",
+        },
+        {
+          icon: "coffee",
+          label: "Rehat Minda Tanpa Bersalah",
+          prompt: "Bagaimana cara untuk berehat tanpa rasa bersalah?",
+        },
       ];
     }
     if (language === "中文") {
       return [
-        "今天感到压力有些大",
-        "感到有些焦虑不安",
-        "想要找一个温暖的倾听者",
-        "带我做一次深呼吸放松",
-        "学习和考试压力很大",
-        "想要在这里静静放松一下",
+        {
+          icon: "cloud",
+          label: "生活与学业压力",
+          prompt: "今天感到压力有些大，想和你理清思绪",
+        },
+        {
+          icon: "heart",
+          label: "温柔倾听陪伴",
+          prompt: "想要找一个温暖的倾听者，聊聊今天的心事",
+        },
+        {
+          icon: "wind",
+          label: "深呼吸正念练习",
+          prompt: "请带我做一次深呼吸平复情绪练习",
+        },
+        {
+          icon: "coffee",
+          label: "安心休息充电",
+          prompt: "总是感到焦虑紧绷，怎样才能安心放松休息？",
+        },
       ];
     }
     return [
-      "I feel stressed",
-      "I feel anxious",
-      "I need someone to talk to",
-      "Guide me through a calming breath",
-      "Study and exam pressure",
-      "I want to relax",
+      {
+        icon: "cloud",
+        label: "Daily Stress",
+        prompt: "I feel stressed and overwhelmed today",
+      },
+      {
+        icon: "heart",
+        label: "Safe to Vent",
+        prompt: "I just need someone to talk to and be heard",
+      },
+      {
+        icon: "wind",
+        label: "Calming Breath",
+        prompt: "Guide me through a calming breathing exercise",
+      },
+      {
+        icon: "coffee",
+        label: "Permission to Rest",
+        prompt: "How can I pause and rest without feeling guilty?",
+      },
     ];
   }, [language]);
+  const suggestions = useMemo(() => suggestedCards.map((c) => c.prompt), [suggestedCards]);
 
   const isSubscribed = subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly";
   const isLimitReached = !isSubscribed && freeUsage >= freeLimit;
@@ -2913,16 +3009,10 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     }
   };
 
-  const handleSimulateVoice = (phrase: string) => {
-    if (typing) return;
+  const handleUsePromptSuggestion = (phrase: string) => {
+    setInput(phrase);
+    setInputMode("text");
     setMicNotice(null);
-    setVoiceState("listening");
-    setVoiceTranscript(phrase);
-    setVoiceVolume(0.75);
-    notify(language === "Bahasa Melayu" ? "Mentranskripsi suara…" : language === "中文" ? "正在转录语音…" : "Transcribing voice…");
-    window.setTimeout(() => {
-      stopVoiceListening(true);
-    }, 1100);
   };
   const latestUserText = [...messages].reverse().find((message) => message.from === "user")?.text || "";
   const latestLower = latestUserText.toLowerCase();
@@ -2966,6 +3056,26 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
     }
   };
 
+  const handleNewChat = () => {
+    if (messages.length === 0) return;
+    const newId = Date.now();
+    activeIdRef.current = newId;
+    setActiveChatId(newId);
+    setConversations((items) => [
+      {
+        id: newId,
+        title: language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "新对话" : "New conversation",
+        category: "Emotional Wellbeing",
+        day: "Today",
+        folderId: selectedFolderId || undefined,
+        reportAllowed: true,
+        messages: [],
+      },
+      ...items,
+    ]);
+    notify(language === "Bahasa Melayu" ? "Perbualan baru dimulakan" : language === "中文" ? "已开启新对话" : "Started new conversation");
+  };
+
   return <div className="chat-page">
     <div className="chat-scroll" ref={chatScrollRef}>
       <header className="chat-native-header" role="banner">
@@ -2988,6 +3098,17 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
         </div>
 
         <div className="chat-header-actions">
+          {messages.length > 0 && (
+            <button
+              type="button"
+              className="top-header-icon-btn new-chat-btn"
+              onClick={handleNewChat}
+              title={language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "开启新对话" : "New conversation"}
+              aria-label={language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "开启新对话" : "New conversation"}
+            >
+              <Icon name="plus" />
+            </button>
+          )}
           <button
             type="button"
             className="top-header-icon-btn"
@@ -3038,78 +3159,109 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
       <div className="chat-history-entry">
         <Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button>
         <div className="chat-trust-links">
-          <Button variant="ghost" onClick={() => navigate("riskDemo")}>{t.chat_safety_protocols}</Button>
+          <Button variant="ghost" onClick={() => navigate("safety")}>{t.chat_safety_protocols}</Button>
           <Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button>
         </div>
       </div>
     {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
     {messages.length === 0 && (
-      <div className="chat-welcome">
-        <div className="chat-welcome-card">
-          <div className="chat-welcome-avatar">
-            <CompanionAvatar companion={companion} />
-            <span className="online-presence-dot" aria-label="Available" />
-          </div>
-          <div className="chat-welcome-content">
-            <div className="chat-welcome-badge">
-              <span className="welcome-persona-pill">
-                {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
-              </span>
-              <span className="welcome-time-indicator">
-                {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            </div>
-            <h2 className="chat-welcome-title">{onyxGreeting.title}</h2>
-            <p className="chat-welcome-subtitle">{onyxGreeting.subtitle}</p>
+      <div className="chat-welcome-hero">
+        {/* Big Chatbot Profile Avatar in Middle */}
+        <div className="chat-hero-avatar-stage">
+          <div className="chat-hero-halo-aura" aria-hidden="true" />
+          <div className="chat-hero-avatar-bubble">
+            <CompanionAvatar companion={companion} large />
+            <span className="chat-hero-presence-badge" aria-label="Available & online">
+              <span className="chat-hero-presence-pulse" />
+            </span>
           </div>
         </div>
 
-        <div className="welcome-suggestions-section">
-          <span className="welcome-suggestions-label">
-            {language === "Bahasa Melayu"
-              ? "Topik perbualan dicadangkan"
-              : language === "中文"
-                ? "推荐开启话题"
-                : "Suggested starting thoughts"}
+        {/* Companion Persona & Live Status */}
+        <div className="chat-hero-meta-row">
+          <span className="chat-hero-status-tag">
+            <span className="live-dot" aria-hidden="true" />
+            {language === "Bahasa Melayu" ? "ONY · 24/7 Sedia Mendengar" : language === "中文" ? "ONY · 24/7 随时倾听" : "ONY · 24/7 Active & Listening"}
           </span>
-          <div className="welcome-suggestions">
-            {suggestions.map((s) => (
+          <span className="chat-hero-persona-tag">
+            {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
+          </span>
+        </div>
+
+        {/* Time Greeting Header & Inquiry ("ask good evening smth") */}
+        <div className="chat-hero-copy">
+          <h1 className="chat-hero-greeting-heading">{onyxGreeting.greeting}</h1>
+          <p className="chat-hero-question-line">{onyxGreeting.question}</p>
+          <p className="chat-hero-safety-line">{onyxGreeting.subtitle}</p>
+        </div>
+
+        {/* Calming Ambience Audio Quick Action */}
+        <div className="chat-hero-ambience-strip">
+          <button
+            type="button"
+            className={`hero-ambience-toggle ${soundOn ? "active" : ""}`}
+            onClick={() => setSoundOn(!soundOn)}
+            aria-label={soundOn ? "Pause calming audio" : "Play calming audio"}
+          >
+            <Icon name={soundOn ? "pause" : "music"} />
+            <span>
+              {soundOn
+                ? (language === "Bahasa Melayu" ? "Muzik Tenang Dimainkan" : language === "中文" ? "舒缓白噪音播放中" : "Calming Ambience Playing")
+                : (language === "Bahasa Melayu" ? "Pasang Suasana Tenang" : language === "中文" ? "开启舒缓背景音" : "Play Calming Ambience")}
+            </span>
+          </button>
+        </div>
+
+        {/* Suggested Conversation Starters ("den only suggested something") */}
+        <div className="chat-hero-suggestions-wrap">
+          <div className="chat-hero-suggestions-title-row">
+            <span className="chat-hero-suggestions-title">
+              <Icon name="sparkles" />
+              {language === "Bahasa Melayu"
+                ? "Cadangan topik perbualan"
+                : language === "中文"
+                  ? "推荐开启暖心话题"
+                  : "Suggested conversation starters"}
+            </span>
+            <span className="chat-hero-suggestions-hint">
+              {language === "Bahasa Melayu"
+                ? "Ketik untuk mula"
+                : language === "中文"
+                  ? "轻点直接开启"
+                  : "Tap to begin"}
+            </span>
+          </div>
+
+          <div className="chat-hero-suggestions-grid">
+            {suggestedCards.map((card) => (
               <button
-                key={s}
+                key={card.prompt}
                 type="button"
+                className="hero-suggestion-card"
                 disabled={typing || isLimitReached}
                 onClick={() => {
                   if (!isLimitReached) {
-                    reply(s);
+                    reply(card.prompt);
                   } else {
                     navigate("subscription");
                   }
                 }}
               >
-                <span>{s}</span>
-                <Icon name="chevron" />
+                <div className="suggestion-card-left">
+                  <span className="suggestion-card-icon" aria-hidden="true">
+                    <Icon name={card.icon} />
+                  </span>
+                  <div className="suggestion-card-texts">
+                    <strong className="suggestion-card-label">{card.label}</strong>
+                    <p className="suggestion-card-prompt">"{card.prompt}"</p>
+                  </div>
+                </div>
+                <span className="suggestion-card-arrow" aria-hidden="true">
+                  <Icon name="chevron" />
+                </span>
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="ambient-mini">
-          <span>
-            {soundOn
-              ? (language === "Bahasa Melayu"
-                  ? "Bunyi latar dimainkan"
-                  : language === "中文"
-                    ? "背景音效播放中"
-                    : "Ambient sound playing")
-              : (language === "Bahasa Melayu"
-                  ? "Suasana latar menenangkan"
-                  : language === "中文"
-                    ? "舒缓背景音"
-                    : "Calming ambience")}
-          </span>
-          <Button variant="ghost" onClick={() => setSoundOn(!soundOn)}>
-            {soundOn ? t.common_pause : t.common_play}
-          </Button>
         </div>
       </div>
     )}
@@ -3212,7 +3364,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
                   t.chat_voice_prompt_breathing,
                   t.chat_voice_prompt_talk,
                 ].map((phrase) => (
-                  <button key={phrase} type="button" onClick={() => handleSimulateVoice(phrase)}>
+                  <button key={phrase} type="button" onClick={() => handleUsePromptSuggestion(phrase)}>
                     💬 "{phrase}"
                   </button>
                 ))}
@@ -3315,7 +3467,15 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
               </div>
             </div>
           ) : (
-            <form className="chat-input-bar text-mode" onSubmit={submit}>
+            <form
+              className="chat-input-bar text-mode"
+              onSubmit={submit}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).tagName !== "BUTTON" && !(e.target as HTMLElement).closest("button")) {
+                  textareaRef.current?.focus();
+                }
+              }}
+            >
               <textarea
                 ref={textareaRef}
                 className="chat-textarea"
@@ -3576,9 +3736,15 @@ function MemoryVault({
               <Toggle on={item.active} setOn={(v) => update(item.id, { active: v })} />
             </div>
             {item.kind === "image" && (
-              <div className={`memory-image ${item.imageTone || "forest"}`}>
-                <span>{t.memory_kind_image}</span>
-              </div>
+              item.imageUrl ? (
+                <div style={{ marginBottom: "12px", borderRadius: "14px", overflow: "hidden" }}>
+                  <img src={item.imageUrl} alt={item.text} style={{ width: "100%", maxHeight: "200px", objectFit: "cover" }} />
+                </div>
+              ) : (
+                <div className={`memory-image ${item.imageTone || "forest"}`}>
+                  <span>{t.memory_kind_image}</span>
+                </div>
+              )
             )}
             {item.category && (
               <span className="memory-category">
@@ -3689,22 +3855,89 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
   const [category, setCategory] = useState(editing?.category || "");
   const [active, setActive] = useState(editing?.active ?? true);
   const [kind, setKind] = useState<"text" | "image">(editing?.kind || "text");
-  const [imageSelected, setImageSelected] = useState(editing?.kind === "image");
+  const [imageUrl, setImageUrl] = useState<string | undefined>(editing?.imageUrl);
+  const [imageFileName, setImageFileName] = useState<string | undefined>(editing?.imageUrl ? "Uploaded memory photo" : undefined);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
   const save = () => {
-    const item: Memory = { id: editing?.id || Date.now(), text: text || (language === "Bahasa Melayu" ? "Memori imej istimewa" : language === "中文" ? "特别的心情照片" : "A special image memory"), category: category || undefined, active, kind, imageTone: kind === "image" ? "forest" : undefined, reason: editing?.reason || (language === "Bahasa Melayu" ? "Anda menambah ini terus ke Kubah Memori anda." : language === "中文" ? "您直接将其添加到了记忆宝库中。" : "You added this directly to your Memory Vault.") };
+    const item: Memory = {
+      id: editing?.id || Date.now(),
+      text: text || (language === "Bahasa Melayu" ? "Memori imej istimewa" : language === "中文" ? "特别的心情照片" : "A special image memory"),
+      category: category || undefined,
+      active,
+      kind,
+      imageUrl: kind === "image" ? imageUrl : undefined,
+      imageTone: kind === "image" ? "forest" : undefined,
+      reason: editing?.reason || (language === "Bahasa Melayu" ? "Anda menambah ini terus ke Kubah Memori anda." : language === "中文" ? "您直接将其添加到了记忆宝库中。" : "You added this directly to your Memory Vault.")
+    };
     setMemories(editing ? memories.map((memory) => memory.id === editing.id ? item : memory) : [item, ...memories]);
     notify(editing ? t.memory_updated_toast : t.memory_added_toast);
     back();
   };
-  return <><PageHeader title={editing ? t.memory_edit_title : t.memory_add_title} subtitle={t.memory_add_sub} back={back} /><section className="page-pad">
-    <div className="help-hero"><Icon name="memory" /><div><h2>{t.memory_hero_title}</h2><p>{t.memory_hero_desc}</p></div></div>
-    <div className="memory-type"><Button variant={kind === "text" ? "primary" : "secondary"} onClick={() => setKind("text")}>{t.memory_kind_text}</Button><Button variant={kind === "image" ? "primary" : "secondary"} onClick={() => setKind("image")}>{t.memory_kind_image}</Button></div>
-    {kind === "image" && <button className={`image-upload ${imageSelected ? "selected" : ""}`} onClick={() => { setImageSelected(true); notify(t.memory_kind_image); }}>{imageSelected ? <><span className="sample-photo"><i /></span><strong>Forest walk.jpg</strong><small>{t.memory_change_image}</small></> : <><Icon name="market" /><strong>{t.memory_select_image}</strong><small>{t.memory_select_image_sub}</small></>}</button>}
-    <label className="field-label">{kind === "text" ? t.memory_what_should_remember : t.memory_caption_label}</label><TextArea rows={kind === "text" ? 5 : 3} value={text} onChange={(e) => setText(e.target.value)} placeholder={kind === "text" ? t.memory_text_placeholder : t.memory_image_placeholder} />
-    <label className="field-label">{t.memory_category_label}</label><div className="chips memory-categories">{["About Me", "Preferences", "Important People", "Goals", "Things That Help Me", "Special Memories"].map((item) => <Button key={item} variant={category === item ? "primary" : "secondary"} onClick={() => setCategory(item)}>{getCategoryLabel(item, language)}</Button>)}</div>
-    <div className="setting-toggle"><div><strong>{t.memory_allow_use}</strong><p>{t.memory_allow_use_sub}</p></div><Toggle on={active} setOn={setActive} /></div>
-    <Button className="full" disabled={kind === "text" ? !text.trim() : !imageSelected} onClick={save}>{t.memory_save_btn}</Button><Button className="full" variant="secondary" onClick={back}>{t.common_cancel}</Button>
-  </section></>;
+
+  return (
+    <>
+      <PageHeader title={editing ? t.memory_edit_title : t.memory_add_title} subtitle={t.memory_add_sub} back={back} />
+      <section className="page-pad">
+        <div className="help-hero"><Icon name="memory" /><div><h2>{t.memory_hero_title}</h2><p>{t.memory_hero_desc}</p></div></div>
+        <div className="memory-type">
+          <Button variant={kind === "text" ? "primary" : "secondary"} onClick={() => setKind("text")}>{t.memory_kind_text}</Button>
+          <Button variant={kind === "image" ? "primary" : "secondary"} onClick={() => setKind("image")}>{t.memory_kind_image}</Button>
+        </div>
+        {kind === "image" && (
+          <div>
+            <input
+              type="file"
+              ref={imageInputRef}
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    setImageUrl(reader.result as string);
+                    setImageFileName(file.name);
+                    notify(language === "Bahasa Melayu" ? "Imej dipilih" : language === "中文" ? "已选择图片" : "Image selected");
+                  };
+                  reader.readAsDataURL(file);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className={`image-upload ${imageUrl ? "selected" : ""}`}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              {imageUrl ? (
+                <img src={imageUrl} alt="Memory preview" style={{ width: "100%", height: "140px", objectFit: "cover", borderRadius: "14px" }} />
+              ) : (
+                <span className="sample-photo forest"><i /></span>
+              )}
+              <strong>{imageFileName || (language === "Bahasa Melayu" ? "Pilih foto dari peranti anda" : language === "中文" ? "从设备选择照片" : "Select photo from your device")}</strong>
+              <small>{imageUrl ? t.memory_change_image : (language === "Bahasa Melayu" ? "Ketik untuk muat naik foto kenangan" : language === "中文" ? "轻点上传珍贵照片" : "Tap to upload memory photo")}</small>
+            </button>
+          </div>
+        )}
+        <label className="field-label">{kind === "text" ? t.memory_what_should_remember : t.memory_caption_label}</label>
+        <TextArea rows={kind === "text" ? 5 : 3} value={text} onChange={(e) => setText(e.target.value)} placeholder={kind === "text" ? t.memory_text_placeholder : t.memory_image_placeholder} />
+        <label className="field-label">{t.memory_category_label}</label>
+        <div className="chips memory-categories">
+          {["About Me", "Preferences", "Important People", "Goals", "Things That Help Me", "Special Memories"].map((item) => (
+            <Button key={item} variant={category === item ? "primary" : "secondary"} onClick={() => setCategory(item)}>
+              {getCategoryLabel(item, language)}
+            </Button>
+          ))}
+        </div>
+        <div className="setting-toggle">
+          <div><strong>{t.memory_allow_use}</strong><p>{t.memory_allow_use_sub}</p></div>
+          <Toggle on={active} setOn={setActive} />
+        </div>
+        <Button className="full" disabled={kind === "text" ? !text.trim() : !imageUrl} onClick={save}>{t.memory_save_btn}</Button>
+        <Button className="full" variant="secondary" onClick={back}>{t.common_cancel}</Button>
+      </section>
+    </>
+  );
 }
 
 
@@ -3834,7 +4067,6 @@ function Community({
   const mySupportMessages = propMySupportMessages || internalSupportMessages;
   const setMySupportMessages = propSetMySupportMessages || setInternalSupportMessages;
   const [loadingMyMessages, setLoadingMyMessages] = useState(false);
-  const [sendingSampleToMe, setSendingSampleToMe] = useState(false);
 
   const myMoodLabel = latestMood ? latestMood.label : "Calm";
   const myMoodGlow: "bright" | "soft" | "dim" | "neutral" = latestMood
@@ -3888,51 +4120,6 @@ function Community({
     }
   }, [view]);
 
-  const handleSimulateIncomingSupport = async () => {
-    if (sendingSampleToMe) return;
-    setSendingSampleToMe(true);
-    const sampleNotes = [
-      language === "Bahasa Melayu"
-        ? "Menghantar detik kedamaian yang hening merentasi glob. Apa sahaja yang anda pikul hari ini, anda tidak perlu laluinya seorang diri 🌱"
-        : language === "中文"
-        ? "从星球的另一端为您送上一份安静的平和。无论今天背负着什么，你都不必独自承担 🌱"
-        : "Sending you a quiet moment of peace from across the globe. Whatever you are carrying today, you don’t have to carry it alone 🌱",
-      language === "Bahasa Melayu"
-        ? "Hai pengembara—hanya ingin mengingatkan anda untuk merehatkan bahu, melepaskan rahang, dan menarik satu nafas perlahan. Anda telah mencuba yang terbaik 💫"
-        : language === "中文"
-        ? "嘿，同路的旅人——只是想提醒你放松紧绷的双肩，松开咬紧的下颌，深呼吸一次。你已经做得足够好了 💫"
-        : "Hey there traveler—just wanted to remind you to rest your shoulders, unclench your jaw, and take one slow breath. You’re doing enough 💫",
-      language === "Bahasa Melayu"
-        ? "Melihat cahaya anda di glob dan ingin mengirimkan sedikit kehangatan kepada anda. Semoga ada perkara lembut yang membuatkan anda tersenyum hari ini ☕"
-        : language === "中文"
-        ? "在星球上看见了你发出的微光，想送去一份温暖。愿今天有些温柔的小事能让你嘴角微扬 ☕"
-        : "Saw your light on the globe and wanted to send some warmth your way. Hope something gentle makes you smile today ☕",
-    ];
-    const randomText = sampleNotes[Math.floor(Math.random() * sampleNotes.length)];
-    const randomSenderNum = Math.floor(100 + Math.random() * 899);
-    const now = new Date().toISOString();
-    const payload: Omit<FirestoreCommunityMessage, "id"> = {
-      toUserId: "0",
-      toUserMood: myMoodLabel,
-      fromUserId: `community_member_${randomSenderNum}`,
-      senderAnonymous: language === "Bahasa Melayu" ? `Ahli Tanpa Nama #${randomSenderNum}` : language === "中文" ? `匿名成员 #${randomSenderNum}` : `Anonymous Member #${randomSenderNum}`,
-      recipientAnonymous: language === "Bahasa Melayu" ? "Anda (Pengembara Tanpa Nama)" : language === "中文" ? "您（匿名同行者）" : "You (Anonymous Traveler)",
-      kind: "text",
-      text: randomText,
-      createdAt: now,
-    };
-
-    try {
-      const id = await createCommunityMessage(payload);
-      setMySupportMessages((prev) => [{ id: id || `msg_${Date.now()}`, ...payload }, ...prev]);
-      notify(language === "Bahasa Melayu" ? `Mesej sokongan baharu diterima daripada Ahli Tanpa Nama #${randomSenderNum} 🌱` : language === "中文" ? `收到来自匿名成员 #${randomSenderNum} 的暖心留言 🌱` : `New support message received from Anonymous Member #${randomSenderNum} 🌱`);
-    } catch {
-      setMySupportMessages((prev) => [{ id: `local_${Date.now()}`, ...payload }, ...prev]);
-      notify(language === "Bahasa Melayu" ? `Mesej sokongan baharu diterima daripada Ahli Tanpa Nama #${randomSenderNum} 🌱` : language === "中文" ? `收到来自匿名成员 #${randomSenderNum} 的暖心留言 🌱` : `New support message received from Anonymous Member #${randomSenderNum} 🌱`);
-    } finally {
-      setSendingSampleToMe(false);
-    }
-  };
 
   const regions = [
     {
@@ -3979,7 +4166,7 @@ function Community({
   const visibleUsers = normalizedGlobeUsers.filter((user) => user.discoverable && user.minLevel <= regionLevel);
   const selectedUser = normalizedGlobeUsers.find((user) => user.id === selectedNode) || null;
   const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title={t.community_title} subtitle={t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="prototype-label">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className="page-pad community-page">
+  return <><PageHeader title={t.community_title} subtitle={t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className="page-pad community-page">
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
@@ -4024,7 +4211,7 @@ function Community({
           <div className="node-card user-node-card">
             <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
             <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="prototype-label">{language === "Bahasa Melayu" ? "Nod Tanpa Nama Anda · Malaysia" : language === "中文" ? "您的匿名节点 · 马来西亚" : "Your Anonymous Node · Malaysia"}</span>
+            <span className="status-badge">{language === "Bahasa Melayu" ? "Nod Tanpa Nama Anda · Malaysia" : language === "中文" ? "您的匿名节点 · 马来西亚" : "Your Anonymous Node · Malaysia"}</span>
             <strong>{t.community_your_light}</strong>
             <p>
               {language === "Bahasa Melayu"
@@ -4044,7 +4231,7 @@ function Community({
           <div className="node-card user-node-card">
             <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
             <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="prototype-label">{language === "Bahasa Melayu" ? "Ahli Tanpa Nama" : language === "中文" ? "匿名成员" : "Anonymous Member"}</span>
+            <span className="status-badge">{language === "Bahasa Melayu" ? "Ahli Tanpa Nama" : language === "中文" ? "匿名成员" : "Anonymous Member"}</span>
             <strong>{t.community_someone_here}</strong>
             <p>
               {language === "Bahasa Melayu"
@@ -4268,7 +4455,7 @@ function Community({
         <div className="my-node-card-header">
           <div className="my-node-beacon-large">{latestMood ? latestMood.emoji : "🌱"}</div>
           <div style={{ flex: 1 }}>
-            <span className="prototype-label">{language === "Bahasa Melayu" ? "Cahaya Tanpa Nama Anda · Nod #0" : language === "中文" ? "您的匿名微光 · 节点 #0" : "Your Anonymous Light · Node #0"}</span>
+            <span className="status-badge">{language === "Bahasa Melayu" ? "Cahaya Tanpa Nama Anda · Nod #0" : language === "中文" ? "您的匿名微光 · 节点 #0" : "Your Anonymous Light · Node #0"}</span>
             <h2>{language === "Bahasa Melayu" ? "Anda di Glob Komuniti" : language === "中文" ? "社区星球上的您" : "You on the Community Globe"}</h2>
             <p>{t.community_my_node_desc}</p>
           </div>
@@ -4286,13 +4473,6 @@ function Community({
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <Button
             variant="secondary"
-            onClick={handleSimulateIncomingSupport}
-            disabled={sendingSampleToMe || !acceptMessages}
-          >
-            {sendingSampleToMe ? (language === "Bahasa Melayu" ? "Menerima…" : language === "中文" ? "接收中…" : "Receiving…") : (language === "Bahasa Melayu" ? "+ Terima Kata Semangat daripada Ahli" : language === "中文" ? "+ 接收来自成员的暖心鼓励" : "+ Receive Encouragement from Member")}
-          </Button>
-          <Button
-            variant="ghost"
             onClick={() => {
               setSelectedNode(0);
               setView("globe");
@@ -4361,6 +4541,8 @@ function CreatePost({
   const [postAs, setPostAs] = useState("Anonymous");
   const [media, setMedia] = useState<"text" | "image" | "voice">("text");
   const [guidelineError, setGuidelineError] = useState<string | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState("");
 
   // Real voice recording state
   const [recording, setRecording] = useState(false);
@@ -4378,17 +4560,6 @@ function CreatePost({
       if (previewAudioRef.current) previewAudioRef.current.pause();
     };
   }, []);
-
-  const handleUseVoiceSample = async () => {
-    try {
-      const sample = await generateSampleVoiceAudio(10);
-      setRecordedAudio(sample);
-      setMicError(null);
-      notify(language === "Bahasa Melayu" ? "Nota suara dilampirkan · 00:10" : language === "中文" ? "已附加语音留言 · 00:10" : "Voice note attached · 00:10");
-    } catch {
-      notify(language === "Bahasa Melayu" ? "Tidak dapat melampirkan nota suara" : language === "中文" ? "无法附加语音留言" : "Could not attach voice note");
-    }
-  };
 
   const handleStartRecording = async () => {
     try {
@@ -4463,7 +4634,41 @@ function CreatePost({
     <label className="field-label">{t.community_format}</label><div className="segmented"><Button variant={media === "text" ? "primary" : "secondary"} onClick={() => setMedia("text")}>{t.community_text}</Button><Button variant={media === "image" ? "primary" : "secondary"} onClick={() => setMedia("image")}>{t.community_image}</Button><Button variant={media === "voice" ? "primary" : "secondary"} onClick={() => setMedia("voice")}>{t.community_voice}</Button></div>
     <label className="field-label">{t.community_title_label}</label><TextInput value={title} onChange={(e) => { setTitle(e.target.value); setGuidelineError(null); }} placeholder={t.community_title_placeholder} />
     {media !== "voice" && <><label className="field-label">{t.community_body_label}</label><TextArea value={body} onChange={(e) => { setBody(e.target.value); setGuidelineError(null); }} rows={5} placeholder={t.community_body_placeholder} /></>}
-    {media === "image" && <button className="image-upload selected" onClick={() => notify(t.community_image)}><span className="sample-photo sunset"><i /></span><strong>{language === "Bahasa Melayu" ? "Saat matahari terbenam.jpg" : language === "中文" ? "日落治愈时刻.jpg" : "Sunset moment.jpg"}</strong><small>{language === "Bahasa Melayu" ? "Ketik untuk menukar imej" : language === "中文" ? "轻点更换图片" : "Tap to change image"}</small></button>}
+    {media === "image" && (
+      <div>
+        <input
+          type="file"
+          id="post-image-picker"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              const r = new FileReader();
+              r.onload = () => {
+                setUploadedImage(r.result as string);
+                setImageFileName(f.name);
+                notify(language === "Bahasa Melayu" ? "Imej dipilih" : language === "中文" ? "已选择图片" : "Image selected");
+              };
+              r.readAsDataURL(f);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="image-upload selected"
+          onClick={() => document.getElementById("post-image-picker")?.click()}
+        >
+          {uploadedImage ? (
+            <img src={uploadedImage} alt="Post preview" style={{ width: "100%", height: "130px", objectFit: "cover", borderRadius: "14px" }} />
+          ) : (
+            <span className="sample-photo sunset"><i /></span>
+          )}
+          <strong>{imageFileName || (language === "Bahasa Melayu" ? "Pilih foto dari peranti anda" : language === "中文" ? "从设备选择照片" : "Select photo from your device")}</strong>
+          <small>{language === "Bahasa Melayu" ? "Ketik untuk muat naik foto" : language === "中文" ? "轻点上传照片" : "Tap to upload photo"}</small>
+        </button>
+      </div>
+    )}
     {media === "voice" && (
       <div className="voice-record-card">
         {!recordedAudio ? (
@@ -4502,16 +4707,14 @@ function CreatePost({
                 {t.common_done}
               </Button>
             ) : (
-              <Button variant="secondary" onClick={handleUseVoiceSample} title="Attach an audio note">
-                {t.community_quick_audio}
+              <Button variant="secondary" onClick={() => void handleStartRecording()}>
+                <Icon name="mic" />
+                {language === "Bahasa Melayu" ? "Rakam Suara" : language === "中文" ? "录制语音" : "Record Voice"}
               </Button>
             )}
             {micError && (
               <div className="voice-mic-inline-help">
                 <small>{micError}</small>
-                <Button variant="secondary" onClick={handleUseVoiceSample}>
-                  {t.community_quick_audio} (10s)
-                </Button>
               </div>
             )}
           </>
@@ -4809,22 +5012,6 @@ function PostDetail({
     }
   };
 
-  const handleSimulateOtherLikeOnComment = async (c: PostCommentRecord) => {
-    const samplePeers = [
-      { uid: "user_mei", name: "Mei · ONY profile" },
-      { uid: "user_harith", name: "Harith · ONY profile" },
-      { uid: "user_sofia", name: "Sofia · ONY profile" },
-      { uid: "user_daniel", name: "Daniel · ONY profile" },
-      { uid: "user_nina", name: "Nina · ONY profile" },
-    ];
-    const existingIds = new Set((c.likeRecords || []).map((l) => l.userId));
-    const availablePeer =
-      samplePeers.find((p) => !existingIds.has(p.uid)) || {
-        uid: `peer_${Date.now()}`,
-        name: `Community Member #${Math.floor(100 + Math.random() * 899)}`,
-      };
-    await handleToggleCommentLike(c.id, availablePeer);
-  };
 
   const handleAddReply = async (commentId: string) => {
     const check = validateCommunityCommentText(replyText);
@@ -5269,7 +5456,7 @@ function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, db
         subtitle={t.market_subtitle}
         action={
           <span
-            className="prototype-label"
+            className="status-badge"
             style={{ background: "var(--sage-soft)", color: "#2e7d32" }}
           >
             {dbSyncing
@@ -5461,7 +5648,7 @@ function Profile({
         <Button variant="secondary" className="full logout" onClick={onLogout}>
           {t.profile_menu_logout}
         </Button>
-        <p className="prototype-foot">
+        <p className="platform-foot">
           {currentLang === "Bahasa Melayu"
             ? "Platform Selamat ONY · Privasi anda dilindungi dengan penyulitan selamat."
             : currentLang === "中文"
@@ -6726,7 +6913,7 @@ function JobOpportunities({ back, navigate }: { back: () => void; navigate: (s: 
     </div>
     {jobs.map((job) => (
       <div className="job-card" key={job.title}>
-        <span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
+        <span className="status-badge" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
           {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}
         </span>
         <h3>{job.title}</h3>
@@ -6757,7 +6944,7 @@ function JobDetail({ back, notify }: { back: () => void; notify: (s: string) => 
     back={back}
   /><section className="page-pad">
     <div className="job-detail-head">
-      <span className="prototype-label" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
+      <span className="status-badge" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
         {language === "Bahasa Melayu" ? "Mesra Belia" : language === "中文" ? "青年友好" : "Youth Friendly"}
       </span>
       <h1>{language === "Bahasa Melayu" ? "Penyelaras Kandungan Junior" : language === "中文" ? "初级内容策划专员" : "Junior Content Coordinator"}</h1>
@@ -7210,7 +7397,7 @@ function ProfessionalSupport({
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
                     <span
-                      className="prototype-label"
+                      className="status-badge"
                       style={{
                         background: provider.type === "hospital" ? "#fee2e2" : provider.type === "mentari" ? "var(--sage-soft)" : "var(--peach-soft)",
                         color: provider.type === "hospital" ? "#b91c1c" : provider.type === "mentari" ? "#2e7d32" : "var(--coral-dark)",
@@ -7388,7 +7575,7 @@ function ProviderDetail({
         <div className="provider-hero">
           <div style={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap", marginBottom: "10px" }}>
             <span
-              className="prototype-label"
+              className="status-badge"
               style={{
                 background: provider.type === "hospital" ? "#fee2e2" : "var(--sage-soft)",
                 color: provider.type === "hospital" ? "#b91c1c" : "#2e7d32",
@@ -7965,7 +8152,7 @@ function TrustedContact({
         <div className="card" style={{ marginBottom: "16px" }}>
           <div className="card-title">
             <h3>{t.trusted_invite_link_title}</h3>
-            <span className="prototype-label">{language === "Bahasa Melayu" ? "Pautan Boleh Dikongsi" : language === "中文" ? "专属邀请链接" : "Shareable Link"}</span>
+            <span className="status-badge">{language === "Bahasa Melayu" ? "Pautan Boleh Dikongsi" : language === "中文" ? "专属邀请链接" : "Shareable Link"}</span>
           </div>
           <p className="muted" style={{ marginTop: "4px", marginBottom: "10px" }}>
             {t.trusted_invite_link_desc}
@@ -8075,7 +8262,7 @@ function TrustedContact({
                             : (language === "Bahasa Melayu" ? "Ingin menambah anda sebagai Kenalan Dipercayai mereka" : language === "中文" ? "希望将您添加为其信任联系人" : "Wants to add you as their Trusted Contact")}
                         </small>
                       </div>
-                      <span className="prototype-label">{language === "Bahasa Melayu" ? "Menunggu" : language === "中文" ? "待审核" : "Pending"}</span>
+                      <span className="status-badge">{language === "Bahasa Melayu" ? "Menunggu" : language === "中文" ? "待审核" : "Pending"}</span>
                     </div>
                     {req.relationshipNote && (
                       <p style={{ margin: "8px 0 0", fontSize: "13px", fontStyle: "italic" }}>
@@ -8257,7 +8444,7 @@ function TrustedContact({
           <div className="card">
             <div className="trusted-card">
               <span className="trusted-avatar">{activeDirectOutgoing.toName[0]?.toUpperCase() || "T"}</span>
-              <span className="prototype-label">{t.trusted_waiting_recipient}</span>
+              <span className="status-badge">{t.trusted_waiting_recipient}</span>
               <h1>{activeDirectOutgoing.toName}</h1>
               <p style={{ margin: "4px 0" }}>
                 <strong>ONY Account:</strong> {activeDirectOutgoing.toEmail}
@@ -8332,7 +8519,7 @@ function TrustedContact({
           <div className="card">
             <div className="trusted-card">
               <span className="trusted-avatar">{name[0]?.toUpperCase() || "T"}</span>
-              <span className="prototype-label">{language === "Bahasa Melayu" ? "Permohonan Ditolak" : language === "中文" ? "请求已被谢绝" : "Request Declined"}</span>
+              <span className="status-badge">{language === "Bahasa Melayu" ? "Permohonan Ditolak" : language === "中文" ? "请求已被谢绝" : "Request Declined"}</span>
               <h1>{name}</h1>
               <p className="muted">
                 {language === "Bahasa Melayu"
@@ -8507,18 +8694,6 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     };
   }, [user.id, user.moodLabel]);
 
-  const handleUseVoiceSample = async () => {
-    try {
-      const sample = await generateSampleVoiceAudio(8);
-      setRecordedVoice({ dataUrl: sample.dataUrl, duration: sample.duration });
-      setComposerMode("voice");
-      setVoice("ready");
-      setMicNotice(null);
-      notify("Voice greeting attached · 00:08 (Tap Send Audio)");
-    } catch {
-      notify("Could not attach voice greeting");
-    }
-  };
 
   const handleStartVoice = async () => {
     setComposerMode("voice");
@@ -8800,7 +8975,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
         <div className="anonymous-profile compact">
           <span className={`anonymous-orbit mood-${user.moodGlow}`}><i /></span>
           <div>
-            <span className="prototype-label">{language === "Bahasa Melayu" ? `Ahli tanpa nama · Nod #${user.id}` : language === "中文" ? `匿名成员 · 节点 #${user.id}` : `Anonymous member · Node #${user.id}`}</span>
+            <span className="status-badge">{language === "Bahasa Melayu" ? `Ahli tanpa nama · Nod #${user.id}` : language === "中文" ? `匿名成员 · 节点 #${user.id}` : `Anonymous member · Node #${user.id}`}</span>
             <h1>{t.community_someone_here}</h1>
             <strong>{language === "Bahasa Melayu" ? `Cahaya emosi semasa: ${user.moodLabel}` : language === "中文" ? `当前心情微光: ${user.moodLabel}` : `Current mood glow: ${user.moodLabel}`}</strong>
             <p>{language === "Bahasa Melayu" ? "Mesej dihantar oleh orang lain atau anda muncul sebagai buih sembang tanpa nama di bawah." : language === "中文" ? "您或他人发送的支持留言将作为匿名气泡显示在下方。" : "Messages sent by others or by you appear as anonymous chat bubbles below."}</p>
@@ -8917,7 +9092,6 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           <div className="voice-mic-inline-help" style={{ marginBottom: "8px" }}>
             <small>{micNotice}</small>
             <div style={{ display: "flex", gap: "6px" }}>
-              <Button variant="secondary" onClick={handleUseVoiceSample}>{language === "Bahasa Melayu" ? "Sertakan Salam Suara (8s)" : language === "中文" ? "附加问候音频 (8秒)" : "Attach Voice Greeting (8s)"}</Button>
               <Button variant="ghost" onClick={() => setMicNotice(null)}>{t.common_dismiss}</Button>
             </div>
           </div>
@@ -8937,11 +9111,8 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                 </button>
                 <div className="voice-composer-info">
                   <strong>{language === "Bahasa Melayu" ? "Ketik mikrofon untuk rakam audio sokongan" : language === "中文" ? "点击麦克风录制语音鼓励" : "Tap mic to record audio support"}</strong>
-                  <small>{language === "Bahasa Melayu" ? "Atau sertakan salam suara mesra di bawah" : language === "中文" ? "或在下方附上温暖的语音问候" : "Or attach a warm voice greeting below"}</small>
+                  <small>{language === "Bahasa Melayu" ? "Rakam nota suara peribadi anda (sehingga 60 saat)" : language === "中文" ? "轻点麦克风录制真诚的语音留言（最长60秒）" : "Record your authentic voice note (up to 60s)"}</small>
                 </div>
-                <Button variant="secondary" onClick={handleUseVoiceSample}>
-                  {language === "Bahasa Melayu" ? "Salam Suara (8s)" : language === "中文" ? "问候音频 (8秒)" : "Voice Greeting (8s)"}
-                </Button>
               </div>
             )}
 
@@ -8992,7 +9163,15 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
             )}
           </div>
         ) : (
-          <form className="node-text-bar" onSubmit={handleSendText}>
+          <form
+            className="node-text-bar"
+            onSubmit={handleSendText}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).tagName !== "BUTTON" && !(e.target as HTMLElement).closest("button")) {
+                textareaRef.current?.focus();
+              }
+            }}
+          >
             <button
               type="button"
               className="node-inline-mic-btn"
@@ -9049,129 +9228,6 @@ function CommunityGuidelines({ back }: { back: () => void }) {
         <Button className="full" onClick={back}>
           {language === "Bahasa Melayu" ? "Saya faham" : language === "中文" ? "我已理解" : "I understand"}
         </Button>
-      </section>
-    </>
-  );
-}
-
-function RiskDemo({ back, navigate, persona, companion }: { back: () => void; navigate: (s: Screen) => void; persona: Persona; companion: Companion }) {
-  const { t, language } = useLanguage();
-  const [level, setLevel] = useState<RiskLevel>("low");
-  const scenarios: Record<RiskLevel, { label: string; message: string; response: string; next: string[] }> = {
-    low: {
-      label: language === "Bahasa Melayu" ? "Tekanan Harian" : language === "中文" ? "日常压力" : "Everyday Stress",
-      message: language === "Bahasa Melayu" ? "Saya tertekan dengan tugasan dan tak dapat fokus." : language === "中文" ? "我对作业任务感到焦虑，无法集中注意力。" : "I’m stressed about an assignment and can’t focus.",
-      response: persona === "friendly"
-        ? (language === "Bahasa Melayu" ? "Tekanan tarikh akhir itu memang meletihkan. Nak pilih satu tugas paling kecil dan buat reset pernafasan ringkas dahulu?" : language === "中文" ? "截稿压力确实让人喘不过气。想先选一个最微小的小任务，然后做个简短的呼吸重置吗？" : "That deadline pressure sounds rough. Want to pick one tiny task and do a short breathing reset first?")
-        : persona === "calm"
-        ? (language === "Bahasa Melayu" ? "Mari kita perlahankan ritma ini. Kita boleh namakan tugas seterusnya yang boleh diurus, kemudian berhenti sejenak untuk menenangkan diri." : language === "中文" ? "让我们把节奏慢下来。我们可以先确定下一个最容易处理的小事，然后做短暂的着陆平复。" : "Let’s slow this down. We can name the next manageable task, then take a brief grounding pause.")
-        : (language === "Bahasa Melayu" ? "Kedengaran meletihkan. Kita boleh ringankan beban ini bersama—mungkin satu tugas lembut dan sedikit jeda pernafasan." : language === "中文" ? "听起来让人很疲惫。我们可以一起把事情拆小——或许先从一个微小的任务和一个温和的呼吸小憩开始。" : "That sounds tiring. We can make it feel smaller together—perhaps one gentle task and a short breathing pause."),
-      next: language === "Bahasa Melayu"
-        ? ["Cuba senaman pembumian (grounding)", "Pecahkan tugas kepada satu langkah kecil", "Teruskan berbual dengan ONY"]
-        : language === "中文"
-        ? ["尝试身心着陆练习", "将任务拆解为最小一步", "继续与 ONY 倾诉"]
-        : ["Try a grounding exercise", "Break the task into one step", "Keep talking with ONY"],
-    },
-    moderate: {
-      label: language === "Bahasa Melayu" ? "Tekanan Emosi Meningkat" : language === "中文" ? "情绪高度困扰" : "Elevated Distress",
-      message: language === "Bahasa Melayu" ? "Saya rasa sukar bertahan sejak beberapa hari. Saya rasa putus asa dan menjauhkan diri daripada semua orang." : language === "中文" ? "好几天我都撑不下去了。我感到绝望，并下意识远离身边所有人。" : "I haven’t been coping for days. I feel hopeless and I’m pulling away from everyone.",
-      response: language === "Bahasa Melayu"
-        ? "Maafkan saya jika keadaan terasa seberat ini. Saya tidak akan membuat andaian, tetapi saya ingin memahami apa sokongan yang mungkin membantu sekarang. Kita boleh cuba satu langkah pembumian, hubungi orang yang dipercayai, atau terokai sokongan pakar yang disahkan."
-        : language === "中文"
-        ? "看到你承受如此重压，我很心疼。我不会妄下定论，但希望能了解此刻对你最适切的支持。我们可以尝试一步着陆练习、联系你信任的人，或查看核实的专业医疗求助资源。"
-        : "I’m sorry things have felt this heavy. I won’t assume what this means, but I’d like to understand what support feels possible right now. We can try one grounding step, contact someone you trust, or look at verified human-support options.",
-      next: language === "Bahasa Melayu"
-        ? ["Kekal berhubung dengan seseorang", "Cuba langkah pembumian mudah", "Terokai sokongan profesional"]
-        : language === "中文"
-        ? ["与身边信任的人保持联络", "尝试简单的呼吸着陆步法", "探索经过核实的专业支持"]
-        : ["Stay connected to someone", "Try a simple grounding step", "Explore human support"],
-    },
-    high: {
-      label: language === "Bahasa Melayu" ? "Krisis Segera" : language === "中文" ? "即时危机" : "Immediate Crisis",
-      message: language === "Bahasa Melayu" ? "Saya berfikir untuk menamatkan hidup dan rasa tidak selamat." : language === "中文" ? "我产生了结束生命的念头，现在感到很不安全。" : "I’m thinking about ending my life and I don’t feel safe.",
-      response: language === "Bahasa Melayu"
-        ? "Saya amat bersimpati dengan kesakitan berat ini. Adakah anda berada dalam bahaya serta-merta sekarang? Jika ya, sila hubungi talian kecemasan (999 atau Talian HEAL 15555) sekarang, jauhi sebarang benda yang boleh mencederakan, dan pergi ke tempat selamat atau bersama orang yang dipercayai. Saya boleh bantu anda membuka pilihan ini."
-        : language === "中文"
-        ? "非常难过你正在经历如此巨大的痛苦。你目前是否处于紧急危险中？如果是，请立即拨打紧急求助电话 (999 或 Talian HEAL 15555)，远离任何可能伤害自己的物品，前往公共场所或信任的人身边。我可以立即为你打开求助选项。"
-        : "I’m really sorry you’re in this much pain. Are you in immediate danger or likely to act now? If yes, call emergency services (999 or Talian HEAL 15555) now, move away from anything you could use to hurt yourself, and go to a trusted person or public place. I can help you open those options.",
-      next: language === "Bahasa Melayu"
-        ? ["Jelaskan bahaya serta-merta", "Hubungi sokongan kecemasan", "Hubungi kenalan dipercayai"]
-        : language === "中文"
-        ? ["明确当前紧急危险状态", "联系专业危机急救支持", "联系身边的信任联系人"]
-        : ["Clarify immediate danger", "Contact emergency support", "Reach a trusted person"],
-    },
-  };
-  const scenario = scenarios[level];
-  return (
-    <>
-      <PageHeader title={t.chat_safety_protocols || "Safety Protocols"} subtitle={language === "Bahasa Melayu" ? "Seni Bina Tahap Eskalasi & Penjagaan" : language === "中文" ? "升级与护理层级架构" : "Escalation & Care Tier Architecture"} back={back} />
-      <section className="page-pad">
-        <div className="demo-notice">
-          <Icon name="shield" />
-          <div>
-            <strong>{language === "Bahasa Melayu" ? "Seni Bina Mengutamakan Keselamatan" : language === "中文" ? "安全第一架构" : "Safety-First Architecture"}</strong>
-            <p>{language === "Bahasa Melayu" ? "ONY direka dengan penilaian risiko progresif untuk mengutamakan keselamatan anda dan menghubungkan anda dengan penjagaan manusia setiap kali tekanan dikesan." : language === "中文" ? "ONY 采用渐进式风险评估设计，在检测到情绪困扰时优先保障您的安全，并引导您及时获取人工支持。" : "ONY is designed with progressive risk assessment to prioritize your safety and connect you with human care whenever distress is detected."}</p>
-          </div>
-        </div>
-        <div className="risk-switch" aria-label="Review safety escalation levels">
-          {(["low", "moderate", "high"] as RiskLevel[]).map((item) => (
-            <Button
-              key={item}
-              variant={level === item ? (item === "high" ? "danger" : "primary") : "secondary"}
-              onClick={() => setLevel(item)}
-            >
-              {scenarios[item].label}
-            </Button>
-          ))}
-        </div>
-        <div className={`risk-indicator risk-${level}`}>
-          <span />
-          <div>
-            <strong>{scenario.label} {language === "Bahasa Melayu" ? "Protokol" : language === "中文" ? "协议" : "Protocol"}</strong>
-            <small>{language === "Bahasa Melayu" ? "Sokongan automatik digandingkan dengan laluan terus ke sumber krisis profesional." : language === "中文" ? "自动化同伴陪伴结合直通专业危机资源的保障路径。" : "Automated support paired with direct pathways to professional crisis resources."}</small>
-          </div>
-        </div>
-        <div className="scenario-thread">
-          <span className="scenario-label">{language === "Bahasa Melayu" ? "Situasi Pengguna" : language === "中文" ? "用户场景" : "User Situation"}</span>
-          <div className="message-row user">
-            <div className="message">{scenario.message}</div>
-          </div>
-          <span className="scenario-label">{language === "Bahasa Melayu" ? "Balasan Teman ONY" : language === "中文" ? "ONY 伴侣回复" : "ONY Companion Response"} · {personaOptions.find((item) => item.id === persona)?.name}</span>
-          <div className="message-row ony">
-            <CompanionAvatar companion={companion} />
-            <div className="message">{scenario.response}</div>
-          </div>
-        </div>
-        <div className="card next-steps">
-          <h3>{language === "Bahasa Melayu" ? "Laluan Eskalasi" : language === "中文" ? "转介与求助路径" : "Escalation Pathways"}</h3>
-          {scenario.next.map((item) => (
-            <span key={item}>
-              <Icon name="check" />
-              {item}
-            </span>
-          ))}
-        </div>
-        {level === "low" && <Button className="full" onClick={() => navigate("resources")}>{language === "Bahasa Melayu" ? "Buka perpustakaan bantu diri" : language === "中文" ? "打开自助资源库" : "Open self-help library"}</Button>}
-        {level === "moderate" && (
-          <>
-            <Button className="full" onClick={() => navigate("resources")}>{language === "Bahasa Melayu" ? "Lihat sumber daya tindak" : language === "中文" ? "查看心理调适资源" : "View coping resources"}</Button>
-            <Button className="full" variant="secondary" onClick={() => navigate("professional")}>{language === "Bahasa Melayu" ? "Terokai profesional disahkan" : language === "中文" ? "寻找核实专业医生与咨询师" : "Explore verified professionals"}</Button>
-          </>
-        )}
-        {level === "high" && (
-          <>
-            <Button className="full" variant="danger" onClick={() => navigate("safety")}>{language === "Bahasa Melayu" ? "Buka langkah keselamatan segera" : language === "中文" ? "开启即时安全保护步骤" : "Open immediate safety steps"}</Button>
-            <Button className="full" variant="secondary" onClick={() => navigate("trusted")}>{t.chat_action_contact_trusted}</Button>
-          </>
-        )}
-        <p className="disclaimer">
-          <Icon name="shield" />{" "}
-          {language === "Bahasa Melayu"
-            ? "Gaya persona hanya mengubah nada suara. Setiap interaksi mematuhi sempadan keselamatan, panduan klinikal, dan eskalasi kecemasan dengan ketat."
-            : language === "中文"
-            ? "人设风格仅改变沟通语调。所有对话均严格遵守安全边界、临床指导原则与危机升级规范。"
-            : "Persona styles change tone only. Every interaction adheres strictly to safety boundaries, clinical guidance, and emergency escalation."}
-        </p>
       </section>
     </>
   );
@@ -9238,7 +9294,7 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
           </div>
         </div>
         <div className="knowledge-status">
-          <span className="prototype-label" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{language === "Bahasa Melayu" ? "Perpustakaan Disahkan" : language === "中文" ? "权威核实资源库" : "Verified Library"}</span>
+          <span className="status-badge" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{language === "Bahasa Melayu" ? "Perpustakaan Disahkan" : language === "中文" ? "权威核实资源库" : "Verified Library"}</span>
           <p>{language === "Bahasa Melayu" ? "Disusun selaras dengan garis panduan kesihatan mental dan talian bantuan krisis Malaysia yang disahkan." : language === "中文" ? "依据心理健康准则与马来西亚官方核实危机热线精选编制。" : "Curated in alignment with mental health guidelines and verified Malaysian crisis helplines."}</p>
         </div>
         <div className="resource-library">
