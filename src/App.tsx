@@ -907,6 +907,15 @@ function AppInner() {
     ambientMusicEngine.play(trackId);
   };
 
+  const handleSetPersona = (nextPersona: Persona) => {
+    setPersona(nextPersona);
+    if (currentUser) {
+      updateUserProfile(currentUser.uid, { persona: nextPersona }).catch((e) =>
+        console.warn("[ONY] Profile persona update notice:", e)
+      );
+    }
+  };
+
   const handleSetPendingInvite = (nextInvite: TrustedInvitePayload | null) => {
     setPendingInvite(nextInvite);
     saveStoredPendingInvite(nextInvite);
@@ -1740,7 +1749,7 @@ function AppInner() {
           {screen === "main" ? (
             <>
               <main className={`main-content ${tab === "chat" ? "chat-tab-active" : ""}`}>
-                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={handleSetSoundOn} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
+                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} setPersona={handleSetPersona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={handleSetSoundOn} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                   if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                   const next = freeUsage + 1;
                   setFreeUsage(next);
@@ -2702,8 +2711,9 @@ export function getOnyTimeGreeting(
   };
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
+  setPersona?: (p: Persona) => void;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
   conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
@@ -3153,9 +3163,30 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
           <div className="chat-identity-info">
             <div className="chat-identity-name-row">
               <span className="chat-companion-name">ONY</span>
-              <span className="chat-persona-badge">
-                {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
-              </span>
+              {setPersona ? (
+                <button
+                  type="button"
+                  className="chat-persona-badge-btn"
+                  onClick={() => {
+                    const personaList: Persona[] = ["gentle", "friendly", "calm"];
+                    const curIdx = personaList.indexOf(persona);
+                    const nextPersona = personaList[(curIdx + 1) % personaList.length];
+                    setPersona(nextPersona);
+                    const details = getPersonaDetails(nextPersona, personaOptions.find((item) => item.id === nextPersona)?.name || "", "", "", language);
+                    notify(language === "Bahasa Melayu" ? `Nada ditukar kepada: ${details.name}` : language === "中文" ? `已切换语气：${details.name}` : `Tone switched to: ${details.name}`);
+                  }}
+                  title={language === "Bahasa Melayu" ? "Klik untuk tukar nada respons" : language === "中文" ? "点击切换对话语气" : "Click to switch conversational tone"}
+                  aria-label={language === "Bahasa Melayu" ? "Tukar nada respons" : language === "中文" ? "切换对话语气" : "Switch conversational tone"}
+                >
+                  <span className="chat-persona-badge-dot" />
+                  <span>{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span>
+                  <span className="chat-persona-badge-switch-hint">⇄</span>
+                </button>
+              ) : (
+                <span className="chat-persona-badge">
+                  {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
+                </span>
+              )}
             </div>
             <span className="chat-companion-status">
               {language === "Bahasa Melayu" ? "Sedia mendengar & menemani" : language === "中文" ? "温暖陪伴 · 随时倾听" : "Always here to listen"}
@@ -3260,6 +3291,42 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
           <p className="chat-hero-question-line">{onyxGreeting.question}</p>
           <p className="chat-hero-safety-line">{onyxGreeting.subtitle}</p>
         </div>
+
+        {/* Interactive Conversational Tone Switcher */}
+        {setPersona && (
+          <div className="chat-tone-pill-selector" role="radiogroup" aria-label="Select ONY conversational tone">
+            <span className="chat-tone-label">
+              {language === "Bahasa Melayu" ? "Pilih Nada & Gaya Respons" : language === "中文" ? "选择对话语气风格" : "Conversation Tone"}
+            </span>
+            <div className="chat-tone-pills">
+              {personaOptions.map((opt) => {
+                const details = getPersonaDetails(opt.id, opt.name, opt.note, opt.preview, language);
+                const isActive = persona === opt.id;
+                const icon = opt.id === "gentle" ? "🌸" : opt.id === "friendly" ? "💬" : "🌿";
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    className={`chat-tone-pill ${isActive ? "active" : ""}`}
+                    onClick={() => {
+                      if (persona !== opt.id) {
+                        setPersona(opt.id);
+                        notify(language === "Bahasa Melayu" ? `Nada ditukar kepada: ${details.name}` : language === "中文" ? `已切换语气：${details.name}` : `Tone switched to: ${details.name}`);
+                      }
+                    }}
+                    title={details.note}
+                  >
+                    <span className="chat-tone-emoji">{icon}</span>
+                    <span className="chat-tone-pill-text">{details.name}</span>
+                    {isActive && <span className="chat-tone-active-dot" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Calming Ambience Audio Quick Action */}
         <div className="chat-hero-ambience-strip">

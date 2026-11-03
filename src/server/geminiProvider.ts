@@ -2,14 +2,16 @@ import { GoogleGenAI, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
 import { generateDynamicOnyReply } from "./onyCompanionEngine.ts";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
-export const FAST_GEMINI_MODEL = "gemini-3.1-flash-lite-preview";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
 export const STABLE_GEMINI_MODEL = "gemini-3.6-flash";
 export const BACKUP_GEMINI_MODEL = "gemini-3.5-flash";
+export const FAST_GEMINI_MODEL = "gemini-3.1-flash-lite";
 export const LITE_GEMINI_MODEL = "gemini-3.5-flash-lite";
 
-// In-memory blacklist for models that encountered quota exhaustion (429) or deprecation (404)
+// In-memory blacklist for models that encountered quota exhaustion (429) or deprecation (404) or timeout
 export const exhaustedModels = new Set<string>([
+  "gemini-3.1-flash-lite", // Times out / unavailable in this environment
+  "gemini-3.1-flash-lite-preview", // Times out / unavailable in this environment
   "gemini-3.8-flash", // Known daily free-tier quota exhausted in this environment
   "gemini-flash-latest", // Known quota exhausted in this environment
   "gemini-3.7-flash", // Known quota exhausted in this environment
@@ -322,11 +324,11 @@ export class GeminiChatProvider implements ServerChatProvider {
     const primaryModel = this.getModel();
     const candidatePool = [
       primaryModel,
-      DEFAULT_GEMINI_MODEL, // gemini-3.1-flash-lite (fastest, tested ~1.2s)
-      FAST_GEMINI_MODEL,    // gemini-3.1-flash-lite-preview (tested ~1.4s)
-      STABLE_GEMINI_MODEL,  // gemini-3.6-flash (tested ~1.7s)
-      BACKUP_GEMINI_MODEL,  // gemini-3.5-flash (tested ~2.7s)
-      LITE_GEMINI_MODEL,    // gemini-3.5-flash-lite (tested ~5.0s)
+      STABLE_GEMINI_MODEL,  // gemini-3.6-flash (verified reliable and responsive ~1.7s)
+      DEFAULT_GEMINI_MODEL, // gemini-3.6-flash
+      BACKUP_GEMINI_MODEL,  // gemini-3.5-flash (~2.7s)
+      FAST_GEMINI_MODEL,    // gemini-3.1-flash-lite
+      LITE_GEMINI_MODEL,    // gemini-3.5-flash-lite
     ];
 
     // Filter out models known to have exhausted quotas or returned permanent errors

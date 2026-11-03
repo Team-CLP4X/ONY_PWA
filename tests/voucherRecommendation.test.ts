@@ -35,27 +35,44 @@ async function test1_databaseConnectionAndRealVouchers() {
 }
 
 async function test2_normalStressMessageReturnsMatchingVouchers() {
-  console.log("\n[Test 2] Normal stress message matches relevant real vouchers:");
-  const res = await evaluateMarketplaceRecommendations({
+  console.log("\n[Test 2] Single stress message does NOT push vouchers; continuous inquiry for places/activities returns vouchers:");
+
+  // A) Merely stating stress/fatigue without asking for places or activities must return 0 vouchers
+  const singleStatementRes = await evaluateMarketplaceRecommendations({
     userMessage: "I've been working late all week and feel completely exhausted and drained.",
     recentHistory: [],
     safetyAction: "support",
     language: "English",
   });
+  assert.equal(
+    singleStatementRes.vouchers.length,
+    0,
+    "Merely expressing stress/fatigue must NOT pop up voucher cards without places/activities inquiry",
+  );
 
-  assert.ok(res.vouchers.length > 0, "Should return matching vouchers for work fatigue/exhaustion");
-  assert.ok(res.vouchers.length <= 3, "Must return at most 3 suitable matches");
+  // B) When user asks continuously for places/activities that the bot suggests:
+  const continuousRes = await evaluateMarketplaceRecommendations({
+    userMessage: "What places or activities do you suggest to relax and unwind?",
+    recentHistory: [
+      { role: "user", content: "I've been working late all week and feel completely exhausted and drained." },
+      { role: "assistant", content: "That sounds like a heavy week. Taking a gentle pause at a quiet café or resting your mind can help." },
+    ],
+    safetyAction: "support",
+    language: "English",
+  });
 
-  const merchantNames = res.vouchers.map((v) => v.merchantName);
-  console.log("Returned vouchers for work stress:", merchantNames);
-  // Ruang Rasa (slow café break) or Senja Rest (relaxation reset) should be recommended
+  assert.ok(continuousRes.vouchers.length > 0, "Should return matching vouchers when asking continuously for places/activities");
+  assert.ok(continuousRes.vouchers.length <= 3, "Must return at most 3 suitable matches");
+
+  const merchantNames = continuousRes.vouchers.map((v) => v.merchantName);
+  console.log("Returned vouchers for work stress places/activities inquiry:", merchantNames);
   assert.ok(
     merchantNames.includes("Ruang Rasa") || merchantNames.includes("Senja Rest"),
     "Work fatigue should recommend restorative café pause or relaxation reset",
   );
 
   // Check structured fields on returned recommendation
-  const primary = res.vouchers[0];
+  const primary = continuousRes.vouchers[0];
   assert.ok(primary.id, "Recommendation must have an id");
   assert.ok(primary.merchantName, "Must have merchantName");
   assert.ok(primary.offer, "Must have offer");
@@ -63,15 +80,15 @@ async function test2_normalStressMessageReturnsMatchingVouchers() {
   assert.ok(primary.contextReason.length > 0, "Must have empathetic contextReason");
   assert.equal(primary.actionLabel, "View / Use Voucher");
 
-  console.log("✓ PASS: Work stress returns up to 3 real matching vouchers with complete structured details.");
+  console.log("✓ PASS: Single statement withholds vouchers; continuous inquiry for places/activities returns matching vouchers.");
 }
 
 async function test3_studyPressureAndLonelinessMatches() {
-  console.log("\n[Test 3] Study pressure and loneliness emotion matching:");
+  console.log("\n[Test 3] Study pressure and loneliness emotion matching when asking for places/activities:");
 
-  // A) Study pressure (English, Chinese, BM)
+  // A) Study pressure (English)
   const studyRes = await evaluateMarketplaceRecommendations({
-    userMessage: "Finals week is killing me, I have three assignments due tomorrow and my brain is fried.",
+    userMessage: "Finals week is killing me, what quiet places or activities do you suggest where I can decompress?",
     recentHistory: [],
     safetyAction: "support",
     language: "English",
@@ -85,7 +102,7 @@ async function test3_studyPressureAndLonelinessMatches() {
 
   // B) Loneliness (feeling isolated)
   const lonelyRes = await evaluateMarketplaceRecommendations({
-    userMessage: "I moved to KL recently and feel so lonely in my room with no one to talk to.",
+    userMessage: "I moved to KL recently and feel so lonely, what places or activities do you suggest to connect?",
     recentHistory: [],
     safetyAction: "support",
     language: "English",
@@ -99,7 +116,7 @@ async function test3_studyPressureAndLonelinessMatches() {
 
   // C) Multilingual Malay matching
   const bmRes = await evaluateMarketplaceRecommendations({
-    userMessage: "Penat sangat hari ni, rasa serabut dengan assignment universiti.",
+    userMessage: "Penat sangat hari ni serabut dengan assignment universiti, apa tempat atau aktiviti santai yang awak cadang?",
     recentHistory: [],
     safetyAction: "support",
     language: "Bahasa Melayu",
@@ -109,7 +126,7 @@ async function test3_studyPressureAndLonelinessMatches() {
 
   // D) Multilingual Chinese matching
   const zhRes = await evaluateMarketplaceRecommendations({
-    userMessage: "最近连日加班赶项目，好心累，想找个地方安静歇一歇。",
+    userMessage: "最近连日加班赶项目好心累，你有什么推荐的放松地方或活动吗？",
     recentHistory: [],
     safetyAction: "support",
     language: "中文",
@@ -121,11 +138,15 @@ async function test3_studyPressureAndLonelinessMatches() {
 }
 
 async function test4_noMatchingEmotionalNeedReturnsNoFabricatedOffers() {
-  console.log("\n[Test 4] No matching emotion/lifestyle need returns 0 fabricated offers:");
+  console.log("\n[Test 4] No matching emotion/lifestyle need and non-places queries return 0 fabricated offers:");
   const testInputs = [
     "What is the capital of France?",
     "Can you solve this algebra equation: 3x + 12 = 48?",
     "Hello there, what is the weather like in Penang today?",
+    "I have work tomorrow morning at 9am.",
+    "Just finished classes for the afternoon.",
+    "I'm feeling really sad today.",
+    "I've been crying in my room.",
   ];
 
   for (const input of testInputs) {
@@ -138,7 +159,7 @@ async function test4_noMatchingEmotionalNeedReturnsNoFabricatedOffers() {
     assert.equal(res.vouchers.length, 0, `Query '${input}' must not fabricate any vouchers`);
   }
 
-  console.log("✓ PASS: Non-emotional, factual, and unrelated queries return 0 fabricated vouchers.");
+  console.log("✓ PASS: Non-emotional, factual, and single sadness statements return 0 fabricated vouchers.");
 }
 
 async function test5_expiredOrInactiveVouchersAreExcluded() {
@@ -208,9 +229,9 @@ async function test6_suicideRiskMessageNeverReturnsVouchers() {
 async function test7_avoidDuplicateRecommendationsInConsecutiveMessages() {
   console.log("\n[Test 7] Avoid duplicate recommendations in consecutive messages:");
 
-  // Turn 1: User is stressed, receives Ruang Rasa
+  // Turn 1: User asks for suggested places/activities, receives Ruang Rasa
   const turn1 = await evaluateMarketplaceRecommendations({
-    userMessage: "I'm feeling so burnt out from work, need coffee or a quiet place.",
+    userMessage: "I'm feeling so burnt out from work, what places or activities do you suggest?",
     recentHistory: [],
     safetyAction: "support",
     language: "English",
@@ -218,11 +239,11 @@ async function test7_avoidDuplicateRecommendationsInConsecutiveMessages() {
   assert.ok(turn1.vouchers.length > 0);
   const firstMerchant = turn1.vouchers[0].merchantName;
 
-  // Turn 2: User again mentions needing a break, but history shows Ruang Rasa was just recommended
+  // Turn 2: User again asks for other spots, but history shows Ruang Rasa was just recommended
   const turn2 = await evaluateMarketplaceRecommendations({
-    userMessage: "Still feeling exhausted and need another spot to chill.",
+    userMessage: "Still feeling exhausted, what other spots or activities do you suggest?",
     recentHistory: [
-      { role: "user", content: "I'm feeling so burnt out from work, need coffee or a quiet place." },
+      { role: "user", content: "I'm feeling so burnt out from work, what places or activities do you suggest?" },
       { role: "assistant", content: `I hear you. Here is a voucher for ${firstMerchant}.` },
     ],
     safetyAction: "support",
@@ -244,7 +265,7 @@ async function test8_databaseErrorGracefulFallback() {
 
   // Even if live network fails, evaluateMarketplaceRecommendations uses valid DEFAULT_MERCHANTS fallback without throwing
   const res = await evaluateMarketplaceRecommendations({
-    userMessage: "I feel stressed from exams and want a relaxing café pause.",
+    userMessage: "I feel stressed from exams, what places or activities do you suggest for a relaxing pause?",
     recentHistory: [],
     safetyAction: "support",
     language: "English",

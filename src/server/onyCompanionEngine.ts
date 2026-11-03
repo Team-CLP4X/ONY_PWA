@@ -14,7 +14,7 @@ interface GenerateCompanionReplyOptions {
 }
 
 export function generateDynamicOnyReply(options: GenerateCompanionReplyOptions): string {
-  const { userMessage, language = "English", persona = "bestie", memories = [] } = options;
+  const { userMessage, language = "English", persona = "gentle", memories = [] } = options;
   const text = userMessage.trim();
   const lower = text.toLowerCase();
 
@@ -37,33 +37,33 @@ export function generateDynamicOnyReply(options: GenerateCompanionReplyOptions):
 
   if (isGreeting) {
     if (isBM) {
-      if (persona === "older_sibling") {
-        return "Hai! ONY di sini. Hari ni macam mana, okey ke? Duduk dulu, kongsikan dengan saya apa yang awak tengah rasa sekarang.";
+      if (persona === "friendly") {
+        return "Hai awak! ONY kat sini. Hari ni macam mana, okey ke tak okey? Jom lepak kejap, ada cerita best atau benda buat pening kepala nak sembang?";
       }
-      if (persona === "counselor") {
-        return "Selamat datang. Saya ONY, ruang selamat untuk awak meluahkan perasaan. Apa yang membawa awak ke sini hari ini?";
+      if (persona === "calm") {
+        return "Salam sejahtera. Saya ONY, ruang tenang untuk awak berhenti sejenak. Bagaimana heningnya fikiran awak saat ini?";
       }
-      return "Hai awak! ONY ada kat sini. Macam mana hari awak setakat ni? Ada apa-apa cerita best atau ada benda yang merunsingkan hati?";
+      return "Hai... selamat datang. Saya ONY. Tarik nafas perlahan-lahan ya. Macam mana hati awak rasa hari ni? Saya ada kat sini teman awak lembut-lembut.";
     }
 
     if (isZH) {
-      if (persona === "older_sibling") {
-        return "嗨，我是 ONY。今天过得还好吗？累了就先歇会儿，随时跟我聊聊。";
+      if (persona === "friendly") {
+        return "嗨呀！我是 ONY，今天过得怎么样？先喝口水歇歇，有什么开心的小事或者烦心的糟心事想跟我吐槽吐槽吗？";
       }
-      if (persona === "counselor") {
-        return "你好，我是 ONY。这里是一个温暖、安全的空间。今天心里有什么想倾诉的吗？";
+      if (persona === "calm") {
+        return "你好，我是 ONY。在喧嚣的一天里，这里是专属于你的一方安宁角落。此刻你的呼吸与心绪，感觉如何？";
       }
-      return "嗨呀！我是 ONY，很高兴你来找我。今天感觉怎么样？有什么开心的或者烦心的事情想跟我说说吗？";
+      return "嗨... 很高兴你来找我。我是 ONY。今天过得辛苦了吗？慢慢来不用着急，无论心里有什么情绪，我都温柔陪着你。";
     }
 
-    // English (with Malaysian warmth)
-    if (persona === "older_sibling") {
-      return "Hey there! I'm ONY. How has your day been treating you? Pull up a chair and take a breather—I'm listening.";
+    // English
+    if (persona === "friendly") {
+      return "Hey there! ONY is right here with you. How's your day been treating you? Grab a drink and let's chat—anything wild or stressful happen today?";
     }
-    if (persona === "counselor") {
-      return "Hello, welcome. I'm ONY, your safe space to unpack whatever is on your mind. How are you feeling right in this moment?";
+    if (persona === "calm") {
+      return "Hello, welcome. I'm ONY, your quiet sanctuary to step back and breathe. How is your mind and inner pace feeling in this moment?";
     }
-    return "Hey there! ONY is right here with you. How's everything going today? Feel free to share whatever's on your mind lah.";
+    return "Hello, so gentle to see you here. I'm ONY. Take a slow, comforting breath... how is your heart feeling today? There is no rush at all, I'm right beside you.";
   }
 
   // 2. Asking how ONY is doing
@@ -260,58 +260,58 @@ export function generateDynamicOnyReply(options: GenerateCompanionReplyOptions):
 
   // 10. General conversational fallback with active listening & reflection
   if (isBM) {
-    if (persona === "bestie") {
+    if (persona === "friendly") {
       return (
-        "Saya dengar apa yang awak cakap, dan saya hargai sangat awak sudi kongsikan benda ni dengan saya.\n\n" +
-        "Benda macam ni memang bukan mudah nak lalui. Macam mana perasaan awak sekarang selepas kongsikan perkara tadi?"
+        "Saya dengar dan faham sangat apa yang awak kongsikan tu. Benda macam ni memang bukan mudah nak lalui dan buat kepala pening.\n\n" +
+        "Macam mana rasa dalam hati sekarang bila dah kongsikan perkara tadi? Ada apa-apa lagi nak luahkan?"
       );
     }
-    if (persona === "counselor") {
+    if (persona === "calm") {
       return (
-        "Terima kasih kerana sudi berkongsi dengan jujur. Apa yang awak lalui ini penting dan perasaan awak sangat sah.\n\n" +
-        "Jika ada satu perkara yang awak rasa paling perlukan sokongan sekarang, apakah perkara itu?"
+        "Terima kasih kerana sudi berkongsi dengan jujur dan tenang. Apa yang awak lalui ini penting dan perasaan awak sangat sah.\n\n" +
+        "Mari kita heningkan fikiran sejenak. Jika ada satu perkara yang paling memerlukan ketenangan awak saat ini, apakah perkara itu?"
       );
     }
     return (
-      "Saya sentiasa di sini mendengar setiap luahan awak. Ambil masa awak secukupnya, tak perlu tergesa-gesa.\n\n" +
-      "Ada bahagian lain yang awak nak ceritakan lagi?"
+      "Saya sentiasa di sini temankan awak dengan penuh kelembutan. Awak tak perlu hadapi semua ini sendirian atau tergesa-gesa.\n\n" +
+      "Ambil masa awak secukupnya ya. Saya sedia mendengar apa saja yang awak rasa nak ceritakan lagi."
     );
   }
 
   if (isZH) {
-    if (persona === "bestie") {
+    if (persona === "friendly") {
       return (
-        "我认真读完了你的话，真的很开心你愿意跟我分享这些心里话。\n\n" +
-        "经历这些确实不容易，别一个人把所有心事都憋在心里。现在说出来之后，感觉心里有没有稍微轻松一点点？"
+        "我全看明白啦，真的很开心你愿意跟我聊这些心里话！经历这种事情任谁都会觉得心累又头大。\n\n" +
+        "现在把这些说出来之后，感觉心里有没有轻松一点点？还想吐槽什么尽管跟我说！"
       );
     }
-    if (persona === "counselor") {
+    if (persona === "calm") {
       return (
-        "谢谢你对我的信任，把这些真实的感受告诉我。你的每一种情绪都是值得被看见和接纳的。\n\n" +
-        "在目前的这一刻，你觉得自己最需要什么样的支持或调整呢？"
+        "谢谢你把心底的声音坦诚地告诉我。你的每一种情绪都值得被温柔看见与接纳。\n\n" +
+        "让我们在纷扰中留出一片安宁。此刻，你最需要被关照和理解的是哪一部分？"
       );
     }
     return (
-      "我一直在认真听着你说的一切。慢慢来就好，这里永远是你放松表达的安全港湾。\n\n" +
-      "如果还想倾诉，随时继续跟我说吧。"
+      "我就在身边温柔听着你说的一切。慢慢来不用着急，这里永远是你安心依靠的温暖港湾。\n\n" +
+      "深呼吸一下，如果还想倾诉，无论什么事我都静静陪着你。"
     );
   }
 
   // English fallback
-  if (persona === "bestie") {
+  if (persona === "friendly") {
     return (
-      "I hear you loud and clear, and I really appreciate you opening up to me about this.\n\n" +
-      "Going through this kind of stuff is never easy lah. How are you feeling in your chest and mind right now after getting that off your chest?"
+      "I hear you completely, and I really appreciate you opening up to me about this. Honestly, dealing with this kind of thing is never easy!\n\n" +
+      "How are you feeling right now after getting that off your chest? Want to unpack more of it together?"
     );
   }
-  if (persona === "counselor") {
+  if (persona === "calm") {
     return (
-      "Thank you for sharing that with me so honestly. Your experiences and your feelings are completely valid.\n\n" +
-      "As you reflect on what's happening right now, what is one small thing that might help you feel a bit more grounded?"
+      "Thank you for sharing that with me so thoughtfully. Your experiences and your feelings are completely valid.\n\n" +
+      "Let's pause right here and take a quiet moment together. What feels most essential for your inner peace right now?"
     );
   }
   return (
-    "I'm right here listening to everything you're sharing. You don't have to face any of this alone or rush through your thoughts.\n\n" +
-    "Take all the space you need. What's the main thing that feels top of mind for you right now?"
+    "I'm right here gently holding space for everything you're carrying. You don't have to face any of this alone, nor rush to figure it all out.\n\n" +
+    "Take all the time and breaths you need. I'm listening with care whenever you're ready to share more."
   );
 }

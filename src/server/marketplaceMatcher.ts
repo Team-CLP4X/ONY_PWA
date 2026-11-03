@@ -175,8 +175,13 @@ export async function evaluateMarketplaceRecommendations(
   };
 
   // 4. Emotional Context Classification
+  const userTurns = recentHistory
+    .filter((h) => h.role === "user")
+    .map((h) => h.content.toLowerCase());
+
+  const priorUserText = userTurns.slice(-2).join(" ");
   const memoryText = memories.join(" ").toLowerCase();
-  const combinedContext = `${userMsgLower} ${memoryText}`;
+  const combinedContext = `${userMsgLower} ${priorUserText} ${memoryText}`;
 
   // Work fatigue, exhaustion, burnout, feeling drained
   const isWorkFatigueOrBurnout =
@@ -220,7 +225,11 @@ export async function evaluateMarketplaceRecommendations(
     /\b(berserabut|stres|berat kepala|serabut)\b/i.test(combinedContext) ||
     /压力好大|压力很大|好压抑|心好累/.test(combinedContext);
 
-  // If no emotional or lifestyle need was expressed, return 0 vouchers (no fabricated offers)
+  // 4b. STRICT USER CONSTRAINT:
+  // "if someone ask continuously for the places or activities that the bot suggest, den only maybe can like show the voucher card"
+  // The voucher card must NOT pop up on pure sadness, stress statements, or casual chatting.
+  // It only shows when the user is specifically or continuously asking for the places or activities that the bot suggests / can suggest.
+
   const hasEmotionalIntent =
     isWorkFatigueOrBurnout ||
     isStudyPressure ||
@@ -230,7 +239,43 @@ export async function evaluateMarketplaceRecommendations(
     isRelaxationOrLeisure ||
     isGeneralStress;
 
-  if (!hasEmotionalIntent) {
+  // Current message specifically asks about places, spots, cafes, activities, or workshops to relax:
+  const isAskingAboutPlacesOrActivities =
+    /(places?|spots?|caf[eé]|coffee|studio|workshop|activities|activity|where (can|should) (i|we) go|where to (go|relax|chill|unwind|visit|rest)|what (places?|spots?|activities|activity)|tell me more (about|of) (the|those)? *(places?|spots?|activities?)|which (place|spot|caf[eé]|activity)|any (quiet|relaxing)? *(place|spot|caf[eé]|activity)|places? (or|and) activities|activities (or|and) places)/i.test(userMsgLower) ||
+    /\b(tempat|mana tempat|tempat lepak|tempat santai|tempat rehat|tempat tenang|kafe|kopi|bengkel|aktiviti|aktiviti menarik|mana boleh pergi|cerita pasal tempat|tempat atau aktiviti|aktiviti atau tempat)\b/i.test(userMsgLower) ||
+    /地方|去处|去哪里|去哪儿|有什么地方|咖啡馆|工坊|活动|有什么活动|推荐地方|推荐活动|哪里可以放松|可以去哪|地方或活动|活动或地方|介绍一下那个地方/.test(userMsgLower);
+
+  // Directly asking what places or activities the bot suggests / recommends:
+  const isDirectlyAskingForBotSuggestions =
+    /(what|any|which) (places?|activities|activity|spots?) (do you|did you|would you) (suggest|recommend)|(suggest|recommend) (some |any )?(places?|activities|spots?|caf[eé])|(places?|activities) (that )?(you|the bot) (suggest|recommend)/i.test(userMsgLower) ||
+    /\b(apa|mana) (tempat|aktiviti) (yang )?(awak|kamu|bot) cadang|\b(cadangkan|cadang) (tempat|aktiviti)/i.test(userMsgLower) ||
+    /你(推荐|建议)(什么|哪些)?(地方|活动)|(推荐|建议)一些?(地方|活动)|(地方|活动)(是)?你(推荐|建议)的/.test(userMsgLower);
+
+  // Analyze multi-turn context:
+  const assistantTurns = recentHistory
+    .filter((h) => h.role === "assistant" || h.role === "ony")
+    .map((h) => h.content.toLowerCase());
+
+  // Did the bot in recent messages suggest calming places or restorative activities?
+  const botSuggestedPlacesOrActivities = assistantTurns.slice(-2).some((msg) =>
+    /(place|spot|caf[eé]|coffee|tea|pottery|clay|yoga|stretch|breathe|breathwork|music|soundscape|walk|studio|rest|unwind|rehat|kafe|tempat|aktiviti|放松|去处|地方|咖啡|活动|工坊|伸展|正念)/i.test(msg)
+  );
+
+  // Did the user in prior turns ask for places, activities, or suggestions?
+  const priorUserAskedForPlacesOrSuggestions = userTurns.some((msg) =>
+    /(suggest|recommend|place|spot|caf[eé]|activity|activities|where|cadang|tempat|aktiviti|建议|推荐|地方|去处|活动)/i.test(msg)
+  );
+
+  // Check if the user is asking continuously for places or activities that the bot suggests:
+  const isAskingContinuouslyForPlacesOrActivities =
+    isDirectlyAskingForBotSuggestions ||
+    (isAskingAboutPlacesOrActivities && (botSuggestedPlacesOrActivities || priorUserAskedForPlacesOrSuggestions || userTurns.length >= 1)) ||
+    (isAskingAboutPlacesOrActivities && /(suggest|recommend|cadang|推荐|建议)/i.test(userMsgLower));
+
+  // If no emotional/lifestyle context was present, OR user did NOT ask continuously for places/activities, do NOT show vouchers:
+  const shouldRecommendVoucher = isAskingContinuouslyForPlacesOrActivities && hasEmotionalIntent;
+
+  if (!shouldRecommendVoucher) {
     return { vouchers: [] };
   }
 
