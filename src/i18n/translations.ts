@@ -709,7 +709,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_like: "Support",
     community_comment: "Comment",
     community_reply: "Reply",
-    community_send_support: "Send Warm Encouragement",
+    community_send_support: "Send Supportive Messages",
     community_voice_greeting: "Voice Greeting",
     community_post_placeholder: "Share an honest reflection anonymously...",
 
@@ -1324,7 +1324,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_like: "Sokong",
     community_comment: "Ulasan",
     community_reply: "Balas",
-    community_send_support: "Hantar Kata-Kata Semangat",
+    community_send_support: "Hantar Mesej Sokongan",
     community_voice_greeting: "Salam Suara",
     community_post_placeholder: "Kongsi refleksi jujur secara tanpa nama...",
 
@@ -1939,7 +1939,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_like: "抱抱支持",
     community_comment: "留言",
     community_reply: "回复",
-    community_send_support: "传递温暖鼓励",
+    community_send_support: "发送支持留言",
     community_voice_greeting: "温馨语音问候",
     community_post_placeholder: "在温暖安全的社区里匿名分享真实心声...",
 

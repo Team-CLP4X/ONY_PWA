@@ -112,6 +112,15 @@ import {
   VERIFIED_MALAYSIAN_PROVIDERS,
   type HealthcareProvider,
 } from "./data/providers";
+import {
+  ambientMusicEngine,
+  CALMING_TRACKS,
+  type CalmingTrack,
+} from "./services/ambientMusicEngine";
+import {
+  CalmingMusicFloatingBar,
+  CalmingMusicModal,
+} from "./components/CalmingMusicPlayer";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -817,6 +826,8 @@ function AppInner() {
   const [persona, setPersona] = useState<Persona>("gentle");
   const [soundOn, setSoundOn] = useState(false);
   const [volume, setVolume] = useState(55);
+  const [currentTrack, setCurrentTrack] = useState<CalmingTrack>(() => ambientMusicEngine.getCurrentTrack());
+  const [showMusicModal, setShowMusicModal] = useState(false);
   const [trustedName, setTrustedName] = useState("Alex Tan");
   const [trustedEmail, setTrustedEmail] = useState("alex@ony.app");
   const [trustedNumber, setTrustedNumber] = useState("012-345 6789");
@@ -865,6 +876,36 @@ function AppInner() {
   const back = () => { const prev = history[history.length - 1] || "main"; setHistory((h) => h.slice(0, -1)); setScreen(prev); };
   const notify = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
   const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); };
+
+  useEffect(() => {
+    const unsub = ambientMusicEngine.subscribe((state) => {
+      setSoundOn(state.isPlaying);
+      setVolume(Math.round(state.volume * 100));
+      setCurrentTrack(ambientMusicEngine.getCurrentTrack());
+    });
+    return unsub;
+  }, []);
+
+  const handleToggleSound = (targetTrackId?: string) => {
+    ambientMusicEngine.toggle(targetTrackId);
+  };
+
+  const handleSetSoundOn = (on: boolean) => {
+    if (on) {
+      ambientMusicEngine.play();
+    } else {
+      ambientMusicEngine.pause();
+    }
+  };
+
+  const handleSetVolume = (val: number) => {
+    setVolume(val);
+    ambientMusicEngine.setVolume(val);
+  };
+
+  const handleSelectTrack = (trackId: string) => {
+    ambientMusicEngine.play(trackId);
+  };
 
   const handleSetPendingInvite = (nextInvite: TrustedInvitePayload | null) => {
     setPendingInvite(nextInvite);
@@ -1533,7 +1574,7 @@ function AppInner() {
       persona={persona}
       setPersona={setPersona}
       soundOn={soundOn}
-      setSoundOn={setSoundOn}
+      setSoundOn={handleSetSoundOn}
     />;
   }
 
@@ -1699,7 +1740,7 @@ function AppInner() {
           {screen === "main" ? (
             <>
               <main className={`main-content ${tab === "chat" ? "chat-tab-active" : ""}`}>
-                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={setSoundOn} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
+                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={handleSetSoundOn} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                   if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                   const next = freeUsage + 1;
                   setFreeUsage(next);
@@ -1741,7 +1782,7 @@ function AppInner() {
               {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={handleSetMoodEntries} />}
               {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
               {screen === "help" && <Help back={back} navigate={navigate} />}
-              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => void handleSelectLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={setSoundOn} volume={volume} setVolume={setVolume} notify={notify} onSave={() => {
+              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => void handleSelectLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={handleSetSoundOn} volume={volume} setVolume={handleSetVolume} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} notify={notify} onSave={() => {
                 if (currentUser) {
                   updateUserProfile(currentUser.uid, {
                     theme,
@@ -1797,7 +1838,7 @@ function AppInner() {
             {screen === "jobPrefs" && <JobPreferences back={back} navigate={navigate} />}
             {screen === "jobs" && <JobOpportunities back={back} navigate={navigate} />}
             {screen === "jobDetail" && <JobDetail back={back} notify={notify} />}
-            {screen === "wellbeing" && <Wellbeing back={back} navigate={navigate} notify={notify} />}
+            {screen === "wellbeing" && <Wellbeing back={back} navigate={navigate} notify={notify} onOpenMusicModal={() => setShowMusicModal(true)} />}
             {screen === "professional" && <ProfessionalSupport back={back} navigate={navigate} onSelectProvider={setSelectedProvider} userCoords={userCoords} setUserCoords={setUserCoords} notify={notify} />}
             {screen === "provider" && <ProviderDetail back={back} notify={notify} provider={selectedProvider} userCoords={userCoords} />}
             {screen === "trusted" && (
@@ -1860,8 +1901,31 @@ function AppInner() {
             {screen === "legal" && <LegalHub back={back} navigate={navigate} />}
           </main>
         )}
+        {soundOn && (
+          <CalmingMusicFloatingBar
+            currentTrack={currentTrack}
+            isPlaying={soundOn}
+            onTogglePlay={() => handleToggleSound()}
+            onNext={() => ambientMusicEngine.nextTrack()}
+            onPrev={() => ambientMusicEngine.prevTrack()}
+            onOpenModal={() => setShowMusicModal(true)}
+            onClose={() => ambientMusicEngine.pause()}
+            language={language}
+          />
+        )}
         <BottomNav tab={tab} setTab={goTab} />
         {toast && <div className="toast"><Icon name="check" />{toast}</div>}
+        <CalmingMusicModal
+          isOpen={showMusicModal}
+          onClose={() => setShowMusicModal(false)}
+          currentTrack={currentTrack}
+          isPlaying={soundOn}
+          volume={volume}
+          onSelectTrack={handleSelectTrack}
+          onTogglePlay={() => handleToggleSound()}
+          onVolumeChange={handleSetVolume}
+          language={language}
+        />
       </div>
     </div>
   </NotificationsContext.Provider>
@@ -2638,7 +2702,7 @@ export function getOnyTimeGreeting(
   };
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
@@ -2649,6 +2713,8 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
   subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
   registerFreeUse: () => void; notify: (s: string) => void;
   onOpenMerchant?: (name: string) => void;
+  currentTrack?: CalmingTrack;
+  onOpenMusicModal?: () => void;
 }) {
   const onyxGreeting = useMemo(() => getOnyTimeGreeting(language, displayName), [language, displayName]);
   const activeIdRef = useRef<number | null>(activeChatId);
@@ -3197,19 +3263,68 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, language, 
 
         {/* Calming Ambience Audio Quick Action */}
         <div className="chat-hero-ambience-strip">
-          <button
-            type="button"
+          <div
             className={`hero-ambience-toggle ${soundOn ? "active" : ""}`}
             onClick={() => setSoundOn(!soundOn)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setSoundOn(!soundOn);
+              }
+            }}
             aria-label={soundOn ? "Pause calming audio" : "Play calming audio"}
           >
-            <Icon name={soundOn ? "pause" : "music"} />
-            <span>
-              {soundOn
-                ? (language === "Bahasa Melayu" ? "Muzik Tenang Dimainkan" : language === "中文" ? "舒缓白噪音播放中" : "Calming Ambience Playing")
-                : (language === "Bahasa Melayu" ? "Pasang Suasana Tenang" : language === "中文" ? "开启舒缓背景音" : "Play Calming Ambience")}
+            <span className="hero-ambience-eq-icon">
+              {soundOn ? (
+                <span className="calming-mini-eq">
+                  <span className="eq-bar bar-1"></span>
+                  <span className="eq-bar bar-2"></span>
+                  <span className="eq-bar bar-3"></span>
+                </span>
+              ) : (
+                <Icon name="music" />
+              )}
             </span>
-          </button>
+            <span className="hero-ambience-text">
+              <strong>
+                {soundOn
+                  ? (language === "Bahasa Melayu" ? "Muzik Dimainkan: " : language === "中文" ? "正在播放: " : "Playing: ") +
+                    (currentTrack
+                      ? (language === "Bahasa Melayu" ? currentTrack.titleBm : language === "中文" ? currentTrack.titleZh : currentTrack.title)
+                      : (language === "Bahasa Melayu" ? "Muzik Tenang" : language === "中文" ? "舒缓白噪音" : "Calming Ambience"))
+                  : (language === "Bahasa Melayu" ? "Pasang Muzik Tenang (432Hz / Hujan / Ombak)" : language === "中文" ? "开启疗愈音乐 (432Hz / 寺庙雨 / 潮汐)" : "Play Calming Music & Ambience")}
+              </strong>
+              <small>
+                {soundOn
+                  ? (language === "Bahasa Melayu" ? "Ketik untuk jeda · Tukar trek di butang kanan" : language === "中文" ? "轻点暂停 · 点击右侧挑选曲目" : "Tap to pause · Tap button to switch tracks")
+                  : (language === "Bahasa Melayu" ? "Terbukti redakan kegelisahan & tekanan" : language === "中文" ? "缓解焦虑紧绷、神经减压与助眠" : "Acoustic frequencies for anxiety & stress relief")}
+              </small>
+            </span>
+            {onOpenMusicModal && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="hero-ambience-browse-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenMusicModal();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onOpenMusicModal();
+                  }
+                }}
+                title={language === "Bahasa Melayu" ? "Pilih senarai muzik" : language === "中文" ? "浏览疗愈曲库" : "Browse calming playlist"}
+              >
+                <Icon name="sparkles" />
+                <span>{language === "Bahasa Melayu" ? "Tukar" : language === "中文" ? "选曲" : "Tracks"}</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Suggested Conversation Starters ("den only suggested something") */}
@@ -4242,7 +4357,7 @@ function Community({
             </p>
             {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />{language === "Bahasa Melayu" ? "Ahli ini kelihatan tetapi tidak menerima mesej sokongan buat masa ini." : language === "中文" ? "该成员目前可见，但暂时关闭了接收支持留言。" : "This member is visible but is not receiving supportive messages right now."}</div>}
             <div>
-              {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>{t.community_receive_support}</Button> : <Button disabled>{language === "Bahasa Melayu" ? "Mesej sokongan dimatikan" : language === "中文" ? "支持留言已关闭" : "Support messages off"}</Button>}
+              {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>{t.community_send_support}</Button> : <Button disabled>{language === "Bahasa Melayu" ? "Mesej sokongan dimatikan" : language === "中文" ? "支持留言已关闭" : "Support messages off"}</Button>}
               <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih atas laporan anda. Nod ahli ini telah dihantar untuk semakan moderasi." : language === "中文" ? "感谢您的反馈。该成员节点已提交社区审核。" : "Thank you for reporting. This member node has been sent for moderation review.")}>{t.common_report}</Button>
               <Button variant="ghost" onClick={() => { notify(language === "Bahasa Melayu" ? "Ahli tanpa nama disekat dalam sesi ini" : language === "中文" ? "已在此会话中屏蔽该匿名成员" : "Anonymous member blocked in this session"); setSelectedNode(null); }}>{t.common_block}</Button>
             </div>
@@ -5788,7 +5903,7 @@ function LanguagePreferences({
   );
 }
 
-function Personalise({ back, language, setLanguage, conversationStyle, setConversationStyle, responseLength, setResponseLength, useActiveMemories, setUseActiveMemories, theme, setTheme, companion, setCompanion, persona, setPersona, soundOn, setSoundOn, volume, setVolume, notify, onSave }: {
+function Personalise({ back, language, setLanguage, conversationStyle, setConversationStyle, responseLength, setResponseLength, useActiveMemories, setUseActiveMemories, theme, setTheme, companion, setCompanion, persona, setPersona, soundOn, setSoundOn, volume, setVolume, notify, onSave, currentTrack, onOpenMusicModal }: {
   back: () => void; language: string; setLanguage: (v: string) => void;
   conversationStyle: string; setConversationStyle: (v: string) => void;
   responseLength: string; setResponseLength: (v: string) => void;
@@ -5796,6 +5911,8 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
   theme: Theme; setTheme: (v: Theme) => void; companion: Companion; setCompanion: (v: Companion) => void;
   soundOn: boolean; setSoundOn: (v: boolean) => void; volume: number; setVolume: (v: number) => void; notify: (s: string) => void;
   persona: Persona; setPersona: (v: Persona) => void; onSave?: () => void;
+  currentTrack?: CalmingTrack;
+  onOpenMusicModal?: () => void;
 }) {
   const { t } = useLanguage();
   const currentLang = (language as AppLanguage) || "English";
@@ -5804,10 +5921,41 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
   const activePersonaObj = personaOptions.find((item) => item.id === persona);
   const personaDetails = activePersonaObj ? getPersonaDetails(activePersonaObj.id, activePersonaObj.name, activePersonaObj.note, activePersonaObj.preview, currentLang) : { name: persona, note: "", preview: "" };
 
+  const currentTrackTitle = currentTrack
+    ? currentLang === "Bahasa Melayu"
+      ? currentTrack.titleBm
+      : currentLang === "中文"
+      ? currentTrack.titleZh
+      : currentTrack.title
+    : `${themeDetails.name} ${currentLang === "Bahasa Melayu" ? "suasana latar" : currentLang === "中文" ? "背景音效" : "ambience"}`;
+
   return <><PageHeader title={t.personalise_title} subtitle={t.personalise_subtitle} back={back} /><section className="page-pad">
     <div className="setting-block"><h3>{t.personalise_companion}</h3><p>{currentLang === "Bahasa Melayu" ? "Pilih siapa yang menemani anda." : currentLang === "中文" ? "选择谁来陪伴您的旅程。" : "Choose who accompanies you."}</p><CompanionPicker value={companion} setValue={setCompanion} /></div>
     <div className="setting-block"><h3>{t.personalise_theme}</h3><p>{currentLang === "Bahasa Melayu" ? "Pilih suasana menenangkan untuk keseluruhan aplikasi." : currentLang === "中文" ? "为整个应用选择舒适宁静的视觉空间。" : "Choose a calming space for the whole app."}</p><ThemePicker value={theme} setValue={setTheme} /></div>
-    <div className="ambient-settings"><div><strong>{themeDetails.name} {currentLang === "Bahasa Melayu" ? "suasana latar" : currentLang === "中文" ? "背景音效" : "ambience"}</strong><small>{currentLang === "Bahasa Melayu" ? "Lanskap bunyi latar yang menenangkan" : currentLang === "中文" ? "宁静舒缓的环境背景音效" : "Soothing ambient soundscape"}</small></div><Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>{soundOn ? (currentLang === "Bahasa Melayu" ? "Jeda" : currentLang === "中文" ? "暂停" : "Pause") : (currentLang === "Bahasa Melayu" ? "Main" : currentLang === "中文" ? "播放" : "Play")}</Button><label>{currentLang === "Bahasa Melayu" ? "Kelantangan" : currentLang === "中文" ? "音量" : "Volume"} <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} /></label></div>
+    <div className="ambient-settings">
+      <div>
+        <strong>{currentTrackTitle}</strong>
+        <small>
+          {soundOn
+            ? (currentLang === "Bahasa Melayu" ? "Muzik terapi sintesis aktif · 100% luar talian" : currentLang === "中文" ? "声学疗愈音乐播放中 · 支持完全离线收听" : "Live Web Audio synthesis · 100% offline")
+            : (currentLang === "Bahasa Melayu" ? "Lanskap bunyi 432Hz & alam semula jadi" : currentLang === "中文" ? "432Hz 颂钵、雨声与自然节律白噪音" : "432Hz drone, nature soundscapes & warm chords")}
+        </small>
+      </div>
+      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+        <Button variant={soundOn ? "primary" : "secondary"} onClick={() => setSoundOn(!soundOn)}>
+          {soundOn ? (currentLang === "Bahasa Melayu" ? "Jeda" : currentLang === "中文" ? "暂停" : "Pause") : (currentLang === "Bahasa Melayu" ? "Main" : currentLang === "中文" ? "播放" : "Play")}
+        </Button>
+        {onOpenMusicModal && (
+          <Button variant="secondary" onClick={onOpenMusicModal}>
+            {currentLang === "Bahasa Melayu" ? "Pilih Trek" : currentLang === "中文" ? "选曲" : "Tracks"}
+          </Button>
+        )}
+      </div>
+      <label>
+        {currentLang === "Bahasa Melayu" ? "Kelantangan" : currentLang === "中文" ? "音量" : "Volume"} ({volume}%)
+        <TextInput type="range" min="0" max="100" value={volume} onChange={(e) => setVolume(Number(e.target.value))} />
+      </label>
+    </div>
     <div className="setting-block"><h3>{t.personalise_persona}</h3><p>{currentLang === "Bahasa Melayu" ? "Gaya nada berubah, tetapi peraturan keselamatan ONY kekal terjamin." : currentLang === "中文" ? "语气风格随心选，但 ONY 的安全原则始终如一。" : "Tone changes, but ONY’s safety rules never do."}</p><PersonaPicker value={persona} setValue={setPersona} /></div>
     <SettingChoices
       title={t.personalise_style}
@@ -6973,39 +7121,74 @@ function JobDetail({ back, notify }: { back: () => void; notify: (s: string) => 
   </section></>;
 }
 
-function Wellbeing({ back, navigate, notify }: { back: () => void; navigate: (s: Screen) => void; notify: (s: string) => void }) {
+function Wellbeing({ back, navigate, notify, onOpenMusicModal }: { back: () => void; navigate: (s: Screen) => void; notify: (s: string) => void; onOpenMusicModal?: () => void }) {
   const { language } = useLanguage();
   const [mode, setMode] = useState("All");
-  const options = [
+  const [isPlaying, setIsPlaying] = useState(() => ambientMusicEngine.getIsPlaying());
+  const [activeTrack, setActiveTrack] = useState(() => ambientMusicEngine.getCurrentTrack());
+
+  useEffect(() => {
+    const unsub = ambientMusicEngine.subscribe((state) => {
+      setIsPlaying(state.isPlaying);
+      setActiveTrack(ambientMusicEngine.getCurrentTrack());
+    });
+    return unsub;
+  }, []);
+
+  const options: {
+    id: string;
+    title: string;
+    type: "Music" | "Nature" | "Relaxation" | "Wellness";
+    detail: string;
+    tone: string;
+    trackId?: string;
+  }[] = [
     {
-      title: language === "Bahasa Melayu" ? "Campuran instrumental perlahan" : language === "中文" ? "慢节奏轻柔器乐混音" : "Slow instrumental mix",
+      id: "serenity_432",
+      title: language === "Bahasa Melayu" ? "Dron Tenang 432Hz (Redakan Gelisah)" : language === "中文" ? "432Hz 颂钵疗愈共鸣 (缓解焦虑)" : "432Hz Serenity Drone (Anxiety Relief)",
       type: "Music",
-      detail: language === "Bahasa Melayu" ? "Fokus & tenang · 24 min" : language === "中文" ? "专注与宁神 · 24分钟" : "Focus & calm · 24 min",
-      tone: "ocean"
+      detail: language === "Bahasa Melayu" ? "Harmonik 432Hz · Redakan degupan laju" : language === "中文" ? "432Hz 疗愈谐波 · 平复心悸紧绷" : "432Hz Solfeggio harmonics · Calms rapid heartbeat",
+      tone: "peach",
+      trackId: "serenity_432",
     },
     {
-      title: language === "Bahasa Melayu" ? "Jeda pernafasan satu minit" : language === "中文" ? "一分钟正念深呼吸" : "One-minute breathing pause",
+      id: "rain_leaves",
+      title: language === "Bahasa Melayu" ? "Hujan di Daun Rimba (Dekompresi Tekanan)" : language === "中文" ? "热带雨林静心微雨 (深度减压)" : "Rain on Temple Leaves (Stress Relief)",
+      type: "Nature",
+      detail: language === "Bahasa Melayu" ? "Bunyi hujan & titisan · Kurangkan burnout" : language === "中文" ? "粉红噪音白噪音 · 洗涤疲惫思绪" : "Filtered pink noise · Mind decompression & burnout relief",
+      tone: "forest",
+      trackId: "rain_leaves",
+    },
+    {
+      id: "ocean_breath",
+      title: language === "Bahasa Melayu" ? "Ombak Pernafasan 10 Saat (Irama Tenang)" : language === "中文" ? "潮汐腹式深呼吸 (10秒呼吸法)" : "Ocean Tide Breathing (10s Vagus Cycle)",
       type: "Relaxation",
-      detail: language === "Bahasa Melayu" ? "Penetapan semula berpandu · 1 min" : language === "中文" ? "引导式重置 · 1分钟" : "Guided reset · 1 min",
-      tone: "forest"
+      detail: language === "Bahasa Melayu" ? "Rentak ombak: 5s tarik / 5s hembus" : language === "中文" ? "10秒潮涨潮落 · 同步5秒吸气5秒呼气" : "10s wave rhythm matching 5s in / 5s out breathing",
+      tone: "ocean",
+      trackId: "ocean_breath",
     },
     {
-      title: language === "Bahasa Melayu" ? "Kaki langit lautan" : language === "中文" ? "辽阔海平线" : "Ocean horizon",
-      type: "Nature",
-      detail: language === "Bahasa Melayu" ? "Ketenangan visual · Ombak" : language === "中文" ? "视觉静心 · 海浪" : "Visual grounding · Waves",
-      tone: "ocean"
+      id: "singing_bowls",
+      title: language === "Bahasa Melayu" ? "Mangkuk Nyanyian Tibet (Redakan Panik)" : language === "中文" ? "藏式颂钵与古道清钟 (平复惊恐)" : "Tibetan Singing Bowls (Panic Grounding)",
+      type: "Relaxation",
+      detail: language === "Bahasa Melayu" ? "Gema harmonik 216Hz/432Hz untuk panik" : language === "中文" ? "沉浸式谐波回响 · 抚平惊恐心慌" : "Harmonic resonance for acute panic grounding",
+      tone: "lavender",
+      trackId: "singing_bowls",
     },
     {
-      title: language === "Bahasa Melayu" ? "Matahari terbenam lembut" : language === "中文" ? "柔和日落晚霞" : "Soft sunset",
-      type: "Nature",
-      detail: language === "Bahasa Melayu" ? "Ketenangan visual · Matahari Terbenam" : language === "中文" ? "视觉静心 · 日落" : "Visual grounding · Sunset",
-      tone: "sunset"
+      id: "lofi_piano",
+      title: language === "Bahasa Melayu" ? "Piano Lembut Tengah Malam (Tidur & Fokus)" : language === "中文" ? "午夜温润暖心钢琴 (助眠伴读)" : "Midnight Cozy Piano (Sleep & Focus)",
+      type: "Music",
+      detail: language === "Bahasa Melayu" ? "Kord akustik Rhodes & vinil hangat" : language === "中文" ? "暖心爵士和弦 · 助眠伴读与舒心安歇" : "Warm acoustic Rhodes chords & gentle focus",
+      tone: "sunset",
+      trackId: "lofi_piano",
     },
     {
+      id: "pottery",
       title: language === "Bahasa Melayu" ? "Seramik & tanah liat minda" : language === "中文" ? "正念陶艺与手作泥工" : "Mindful pottery & clay",
       type: "Wellness",
       detail: language === "Bahasa Melayu" ? "Sesi penetapan semula kreatif" : language === "中文" ? "创意放松治愈体验" : "Creative reset session",
-      tone: "peach"
+      tone: "peach",
     },
   ];
 
@@ -7022,13 +7205,87 @@ function Wellbeing({ back, navigate, notify }: { back: () => void; navigate: (s:
 
   const shown = options.filter((item) => mode === "All" || item.type === mode);
   return <><PageHeader
-    title={language === "Bahasa Melayu" ? "Cadangan Lembut" : language === "中文" ? "舒心微习惯" : "Gentle Suggestions"}
-    subtitle={language === "Bahasa Melayu" ? "Ketenangan & kesejahteraan harian" : language === "中文" ? "日常身心安顿与舒缓" : "Everyday grounding & well-being"}
+    title={language === "Bahasa Melayu" ? "Cadangan Lembut & Muzik" : language === "中文" ? "舒心微习惯与疗愈音" : "Gentle Suggestions & Soundscapes"}
+    subtitle={language === "Bahasa Melayu" ? "Ketenangan, muzik 432Hz & kesejahteraan" : language === "中文" ? "日常身心安顿、432Hz 颂钵与白噪音" : "Everyday grounding, 432Hz audio & well-being"}
     back={back}
   /><section className="page-pad">
-    <div className="reflection"><SmallLogo /><div><strong>{language === "Bahasa Melayu" ? "Mari jadikan saat ini lebih tenang dan ringan." : language === "中文" ? "让此刻的心情更轻松一些。" : "Let’s make this moment a little lighter."}</strong><p>{language === "Bahasa Melayu" ? "Pilih apa sahaja yang terasa selesa. Anda boleh menjeda atau menukar aktiviti pada bila-bila masa." : language === "中文" ? "选择任何让您感到舒适的微小活动。您可以随时暂停或切换。" : "Choose whatever feels manageable. You can pause or change activities at any time."}</p></div></div>
+    <div className="reflection"><SmallLogo /><div><strong>{language === "Bahasa Melayu" ? "Mari jadikan saat ini lebih tenang dan ringan." : language === "中文" ? "让此刻的心情更轻松一些。" : "Let’s make this moment a little lighter."}</strong><p>{language === "Bahasa Melayu" ? "Ketik mana-mana trek untuk terus mendengar frekuensi penenang degupan jantung dan pernafasan." : language === "中文" ? "轻点下方任意卡片，即可立即播放舒缓心率与平复交感神经的音频。" : "Tap any soundscape to immediately play frequencies designed to down-regulate nervous system stress."}</p></div></div>
+    
+    {onOpenMusicModal && (
+      <button
+        type="button"
+        className="professional-banner"
+        style={{ marginBottom: "12px", background: "linear-gradient(135deg, #fff3f0, #fcf6ed)" }}
+        onClick={onOpenMusicModal}
+      >
+        <Icon name="music" />
+        <span>
+          <strong>
+            {language === "Bahasa Melayu"
+              ? "Buka Pemain Muzik & Lanskap Tenang Penuh"
+              : language === "中文"
+              ? "打开完整疗愈音乐与情绪白噪音播放器"
+              : "Open Full Calming Music & Soundscape Player"}
+          </strong>
+          <small>
+            {language === "Bahasa Melayu"
+              ? "Kawalan kelantangan, frekuensi 432Hz & irama nafas"
+              : language === "中文"
+              ? "支持音量无极调节、432Hz 共鸣与10秒深呼吸节律"
+              : "Master volume, 432Hz frequencies & 10s vagus nerve sync"}
+          </small>
+        </span>
+        <Icon name="chevron" />
+      </button>
+    )}
+
     <div className="scroll-chips wellbeing-tabs">{["All", "Music", "Nature", "Relaxation", "Wellness"].map((item) => <Button key={item} variant={mode === item ? "primary" : "secondary"} onClick={() => setMode(item)}>{getTabName(item)}</Button>)}</div>
-    <div className="wellbeing-grid">{shown.map((item) => <button key={item.title} className="wellbeing-card" onClick={() => item.type === "Wellness" ? navigate("merchant") : notify(`${item.title} ${language === "Bahasa Melayu" ? "dimulakan · Bernafas perlahan-lahan 🌱" : language === "中文" ? "已开启 · 缓慢平稳地深呼吸 🌱" : "started · Breathe gently 🌱"}`)}><span className={`wellbeing-visual visual-${item.tone}`}><i /></span><span className="eyebrow">{getTabName(item.type)}</span><strong>{item.title}</strong><small>{item.detail}</small><b>{language === "Bahasa Melayu" ? "Buka" : language === "中文" ? "开始" : "Open"}</b></button>)}</div>
+    <div className="wellbeing-grid">{shown.map((item) => {
+      const isThisTrack = Boolean(item.trackId && activeTrack.id === item.trackId);
+      const isThisPlaying = isThisTrack && isPlaying;
+
+      return (
+        <button
+          key={item.title}
+          className={`wellbeing-card ${isThisPlaying ? "active-playing" : ""}`}
+          onClick={() => {
+            if (item.trackId) {
+              if (isPlaying && activeTrack.id === item.trackId) {
+                ambientMusicEngine.pause();
+                notify(language === "Bahasa Melayu" ? "Muzik dijeda" : language === "中文" ? "音频已暂停" : "Audio paused");
+              } else {
+                ambientMusicEngine.play(item.trackId);
+                notify(`${item.title} ${language === "Bahasa Melayu" ? "dimulakan · Bernafas perlahan-lahan 🌱" : language === "中文" ? "已开启 · 缓慢平稳地深呼吸 🌱" : "started · Breathe gently 🌱"}`);
+              }
+            } else if (item.type === "Wellness") {
+              navigate("merchant");
+            }
+          }}
+        >
+          <span className={`wellbeing-visual visual-${item.tone}`}>
+            {isThisPlaying ? (
+              <span className="calming-equalizer-bars" aria-hidden="true" style={{ marginTop: "8px" }}>
+                <i className="bar b1" />
+                <i className="bar b2" />
+                <i className="bar b3" />
+              </span>
+            ) : (
+              <i />
+            )}
+          </span>
+          <span className="eyebrow">{getTabName(item.type)}</span>
+          <strong>{item.title}</strong>
+          <small>{item.detail}</small>
+          <b>
+            {isThisPlaying
+              ? (language === "Bahasa Melayu" ? "Jeda" : language === "中文" ? "暂停" : "Pause")
+              : item.trackId
+              ? (language === "Bahasa Melayu" ? "Main" : language === "中文" ? "播放" : "Play")
+              : (language === "Bahasa Melayu" ? "Buka" : language === "中文" ? "开始" : "Open")}
+          </b>
+        </button>
+      );
+    })}</div>
     <button className="professional-banner" onClick={() => navigate("merchant")}><Icon name="market" /><span><strong>{language === "Bahasa Melayu" ? "Terokai rakan kesihatan & kesejahteraan" : language === "中文" ? "探索身心疗愈伙伴" : "Explore wellness partners"}</strong><small>{language === "Bahasa Melayu" ? "Kafe tenang, seramik, yoga, dan aktiviti santai" : language === "中文" ? "静心咖啡馆、陶艺手作、轻瑜伽及放松体验" : "Mindful cafés, pottery, yoga, and calming activities"}</small></span><Icon name="chevron" /></button>
     <p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Cadangan gaya hidup ini adalah untuk kelonggaran harian dan tidak menggantikan penjagaan kesihatan mental klinikal." : language === "中文" ? "此类生活方式建议仅用于日常放松减压，不可替代专业临床心理医疗。" : "These lifestyle suggestions are for everyday relaxation and do not substitute for clinical mental healthcare."}</p>
   </section></>;
@@ -8772,7 +9029,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     setText(event.target.value);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 38), 110)}px`;
+      textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 38), 120)}px`;
     }
   };
 
@@ -9064,107 +9321,174 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
         )}
       </div>
 
-      {/* Fixed Bottom Composer Bar: Send Audio or Text */}
-      <div className="node-chat-fixed">
-        <div className="mode-switch">
-          <button
-            type="button"
-            className={composerMode === "text" && voice === "idle" ? "active" : ""}
-            onClick={() => {
-              if (voice !== "idle") handleCancelVoice();
-              setComposerMode("text");
-            }}
-          >
-            <Icon name="chat" />
-            {t.community_text}
-          </button>
-          <button
-            type="button"
-            className={composerMode === "voice" || voice !== "idle" ? "active" : ""}
-            onClick={() => setComposerMode("voice")}
-          >
-            <Icon name="mic" />
-            {t.community_voice}
-          </button>
-        </div>
-
+      {/* Fixed Bottom Composer Bar: Send Audio or Text (matching Chatbot input UI) */}
+      <div className="node-chat-fixed chat-composer">
         {micNotice && (
-          <div className="voice-mic-inline-help" style={{ marginBottom: "8px" }}>
-            <small>{micNotice}</small>
-            <div style={{ display: "flex", gap: "6px" }}>
-              <Button variant="ghost" onClick={() => setMicNotice(null)}>{t.common_dismiss}</Button>
+          <div className="voice-mic-notice-card" style={{ marginBottom: "8px" }}>
+            <div className="voice-mic-notice-header">
+              <Icon name="info" />
+              <span style={{ flex: 1, fontSize: "12px", color: "var(--ink)" }}>{micNotice}</span>
+              <button
+                type="button"
+                className="notice-dismiss-btn"
+                onClick={() => setMicNotice(null)}
+                aria-label="Dismiss notice"
+              >
+                <Icon name="close" />
+              </button>
             </div>
           </div>
         )}
 
         {composerMode === "voice" || voice !== "idle" ? (
-          <div className="node-audio-bar">
+          <div className={`chat-input-bar voice-mode state-${voice}`}>
+            <button
+              type="button"
+              className="composer-icon-btn keyboard-toggle-btn"
+              onClick={() => {
+                if (voice !== "idle") handleCancelVoice();
+                setComposerMode("text");
+              }}
+              title={t.chat_mode_text}
+              aria-label="Switch to typing keyboard"
+            >
+              <Icon name="keyboard" />
+            </button>
+
             {voice === "idle" && (
-              <div className="node-audio-idle-row">
+              <div
+                className="voice-recording-track"
+                onClick={() => void handleStartVoice()}
+              >
                 <button
                   type="button"
-                  className="primary-mic mini"
-                  onClick={() => void handleStartVoice()}
+                  className="voice-mic-pill"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleStartVoice();
+                  }}
                   aria-label="Start recording audio"
+                  title="Record audio support"
                 >
                   <Icon name="mic" />
                 </button>
-                <div className="voice-composer-info">
-                  <strong>{language === "Bahasa Melayu" ? "Ketik mikrofon untuk rakam audio sokongan" : language === "中文" ? "点击麦克风录制语音鼓励" : "Tap mic to record audio support"}</strong>
-                  <small>{language === "Bahasa Melayu" ? "Rakam nota suara peribadi anda (sehingga 60 saat)" : language === "中文" ? "轻点麦克风录制真诚的语音留言（最长60秒）" : "Record your authentic voice note (up to 60s)"}</small>
+                <div className="voice-text-stream">
+                  <span className="voice-status-hint">
+                    {language === "Bahasa Melayu"
+                      ? "Ketik mikrofon untuk rakam audio sokongan"
+                      : language === "中文"
+                      ? "轻点麦克风录制语音鼓励"
+                      : "Tap mic to record audio support"}
+                  </span>
                 </div>
               </div>
             )}
 
             {voice === "recording" && (
-              <div className="node-audio-active-row">
+              <div
+                className="voice-recording-track"
+                onClick={() => void handleStopVoice()}
+              >
                 <button
                   type="button"
-                  className="primary-mic mini recording"
-                  onClick={() => void handleStopVoice()}
+                  className="voice-mic-pill recording"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleStopVoice();
+                  }}
                   aria-label="Stop recording audio"
+                  title="Stop recording"
                 >
                   <Icon name="close" />
                 </button>
-                <div className="voice-composer-info">
-                  <strong>{language === "Bahasa Melayu" ? "Merakam audio · " : language === "中文" ? "正在录音 · " : "Recording audio · "}{formatAudioDuration(voiceSeconds)}</strong>
-                  <div className="voice-live-waves mini">
-                    <span style={{ height: `${Math.max(4, voiceVolume * 20)}px` }} />
-                    <span style={{ height: `${Math.max(6, voiceVolume * 28)}px` }} />
-                    <span style={{ height: `${Math.max(5, voiceVolume * 22)}px` }} />
-                    <span style={{ height: `${Math.max(8, voiceVolume * 30)}px` }} />
-                    <span style={{ height: `${Math.max(4, voiceVolume * 18)}px` }} />
-                  </div>
+                <div className="voice-live-waves mini" aria-hidden="true">
+                  <span style={{ height: `${Math.max(4, voiceVolume * 18)}px` }} />
+                  <span style={{ height: `${Math.max(6, voiceVolume * 26)}px` }} />
+                  <span style={{ height: `${Math.max(5, voiceVolume * 22)}px` }} />
+                  <span style={{ height: `${Math.max(8, voiceVolume * 30)}px` }} />
+                  <span style={{ height: `${Math.max(4, voiceVolume * 16)}px` }} />
                 </div>
-                <Button variant="ghost" onClick={handleCancelVoice}>{t.common_cancel}</Button>
-                <Button variant="danger" onClick={() => void handleStopVoice()}>{language === "Bahasa Melayu" ? "Berhenti" : language === "中文" ? "停止" : "Stop"}</Button>
+                <div className="voice-text-stream">
+                  <span className="transcript-live">
+                    {language === "Bahasa Melayu" ? "Merakam audio · " : language === "中文" ? "正在录音 · " : "Recording audio · "}
+                    {formatAudioDuration(voiceSeconds)}
+                  </span>
+                </div>
               </div>
             )}
 
             {voice === "ready" && (
-              <div className="node-audio-active-row">
+              <div
+                className="voice-recording-track"
+                onClick={handleTogglePreview}
+              >
                 <button
                   type="button"
-                  className="preview-play-btn mini"
-                  onClick={handleTogglePreview}
+                  className="voice-mic-pill"
+                  style={{ background: isPlayingPreview ? "var(--ink)" : "var(--sage)" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTogglePreview();
+                  }}
                   aria-label={isPlayingPreview ? "Pause preview" : "Play preview"}
+                  title={isPlayingPreview ? "Pause" : "Play preview"}
                 >
                   <Icon name={isPlayingPreview ? "pause" : "play"} />
                 </button>
-                <div className="voice-composer-info">
-                  <strong>{language === "Bahasa Melayu" ? "Audio sedia · " : language === "中文" ? "音频就绪 · " : "Audio ready · "}{formatAudioDuration(recordedVoice?.duration || 8)}</strong>
-                  <small>{isPlayingPreview ? (language === "Bahasa Melayu" ? "Memainkan pratonton…" : language === "中文" ? "正在试听…" : "Playing preview…") : (language === "Bahasa Melayu" ? "Ketik main untuk dengar sebelum hantar" : language === "中文" ? "点击播放试听，确认后发送" : "Tap play to review before sending")}</small>
+                <div className="voice-text-stream">
+                  <span className="transcript-live">
+                    {language === "Bahasa Melayu" ? "Audio sedia · " : language === "中文" ? "音频就绪 · " : "Audio ready · "}
+                    {formatAudioDuration(recordedVoice?.duration || voiceSeconds || 8)}
+                  </span>
+                  <span className="voice-status-hint" style={{ display: "block", fontSize: "11px" }}>
+                    {isPlayingPreview
+                      ? (language === "Bahasa Melayu" ? "Memainkan pratonton…" : language === "中文" ? "正在试听…" : "Playing preview…")
+                      : (language === "Bahasa Melayu" ? "Ketik untuk dengar sebelum hantar" : language === "中文" ? "点击播放试听，确认后发送" : "Tap play to review before sending")}
+                  </span>
                 </div>
-                <Button variant="ghost" onClick={handleCancelVoice}>{t.common_cancel}</Button>
-                <Button disabled={sending} onClick={() => void confirmVoice()}>
-                  {sending ? (language === "Bahasa Melayu" ? "Menghantar…" : language === "中文" ? "发送中…" : "Sending…") : (language === "Bahasa Melayu" ? "Hantar Audio" : language === "中文" ? "发送音频" : "Send Audio")}
-                </Button>
               </div>
             )}
+
+            <div className="composer-actions">
+              {voice !== "idle" && (
+                <button
+                  type="button"
+                  className="composer-icon-btn cancel-btn"
+                  onClick={handleCancelVoice}
+                  title={t.common_cancel}
+                  aria-label={t.common_cancel}
+                >
+                  <Icon name="close" />
+                </button>
+              )}
+              {voice === "ready" && (
+                <button
+                  type="button"
+                  className="composer-icon-btn send-btn ready"
+                  onClick={() => void confirmVoice()}
+                  disabled={sending}
+                  title={language === "Bahasa Melayu" ? "Hantar Audio" : language === "中文" ? "发送音频" : "Send Audio"}
+                  aria-label={language === "Bahasa Melayu" ? "Hantar Audio" : language === "中文" ? "发送音频" : "Send Audio"}
+                >
+                  <Icon name="send" />
+                </button>
+              )}
+              {voice === "recording" && (
+                <button
+                  type="button"
+                  className="composer-icon-btn send-btn ready"
+                  onClick={() => void handleStopVoice()}
+                  title="Done recording"
+                  aria-label="Done recording"
+                >
+                  <Icon name="check" />
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <form
-            className="node-text-bar"
+            className="chat-input-bar text-mode"
             onSubmit={handleSendText}
             onClick={(e) => {
               if ((e.target as HTMLElement).tagName !== "BUTTON" && !(e.target as HTMLElement).closest("button")) {
@@ -9172,29 +9496,41 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
               }
             }}
           >
-            <button
-              type="button"
-              className="node-inline-mic-btn"
-              onClick={() => void handleStartVoice()}
-              title="Record audio message"
-              aria-label="Record audio message"
-            >
-              <Icon name="mic" />
-            </button>
             <textarea
               ref={textareaRef}
-              className="node-message-textarea"
+              className="chat-textarea"
               rows={1}
               value={text}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               placeholder={language === "Bahasa Melayu" ? "Tulis mesej sokongan…" : language === "中文" ? "写下一句鼓励支持…" : "Write a supportive message…"}
-              aria-label="Supportive message"
+              aria-label={language === "Bahasa Melayu" ? "Mesej sokongan" : language === "中文" ? "支持留言" : "Supportive message"}
               maxLength={2000}
             />
-            <Button className="send-btn" type="submit" disabled={!text.trim() || sending} aria-label="Send message">
-              <Icon name="send" />
-            </Button>
+            <div className="composer-actions">
+              <button
+                type="button"
+                className="composer-icon-btn mic-btn"
+                onClick={() => {
+                  setComposerMode("voice");
+                  void handleStartVoice();
+                }}
+                title={language === "Bahasa Melayu" ? "Rakam audio sokongan" : language === "中文" ? "录制语音鼓励" : "Record audio support"}
+                aria-label={language === "Bahasa Melayu" ? "Rakam audio sokongan" : language === "中文" ? "录制语音鼓励" : "Record audio support"}
+                disabled={sending}
+              >
+                <Icon name="mic" />
+              </button>
+              <button
+                type="submit"
+                className={`composer-icon-btn send-btn ${text.trim() ? "ready" : ""}`}
+                disabled={sending || !text.trim()}
+                title={language === "Bahasa Melayu" ? "Hantar mesej sokongan" : language === "中文" ? "发送支持留言" : "Send support message"}
+                aria-label={language === "Bahasa Melayu" ? "Hantar mesej sokongan" : language === "中文" ? "发送支持留言" : "Send support message"}
+              >
+                <Icon name="send" />
+              </button>
+            </div>
           </form>
         )}
       </div>

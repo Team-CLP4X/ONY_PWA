@@ -1570,7 +1570,7 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
 .support-bubble.me .voice-note small { color: rgba(255,255,255,.92); font-weight: 700; }
 .support-bubble-sub { display: flex; align-items: center; gap: 4px; font-size: 9.5px; color: var(--muted); margin: 4px 4px 0; }
 .support-bubble-sub .icon { width: 12px; height: 12px; color: var(--sage); }
-.node-chat-fixed { position: relative; flex: 0 0 auto; padding: 8px 12px 10px; background: color-mix(in srgb, var(--cream) 96%, white); border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent); box-shadow: 0 -6px 20px rgba(83,63,53,.06); z-index: 15; }
+.node-chat-fixed { position: relative; flex: 0 0 auto; width: 100%; padding: 6px 12px 10px; background: color-mix(in srgb, var(--cream) 96%, white); border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); box-shadow: 0 -3px 12px rgba(83,63,53,.04); z-index: 25; box-sizing: border-box; }
 .node-text-bar { display: flex; align-items: flex-end; gap: 7px; border: 1px solid var(--line); border-radius: 22px; background: var(--paper); padding: 6px 8px 6px 8px; box-shadow: var(--shadow); }
 .node-inline-mic-btn { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--peach-soft); color: var(--coral-dark); display: grid; place-items: center; cursor: pointer; flex-shrink: 0; margin-bottom: 1px; transition: background .15s, transform .15s; }
 .node-inline-mic-btn:hover { background: var(--peach); }
@@ -3129,7 +3129,673 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   height: 14px;
 }
 
+/* ==========================================================================
+   CALMING MUSIC & THERAPEUTIC SOUNDSCAPE PLAYER
+   ========================================================================== */
 
+/* Floating Calming Music Bar (Docked right above bottom navigation) */
+.calming-music-bar {
+  flex-shrink: 0;
+  width: calc(100% - 16px);
+  margin: 0 auto 6px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(230, 225, 220, 0.9);
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  z-index: 25;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
 
+.calming-music-bar.is-playing {
+  border-color: rgba(233, 111, 115, 0.35);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 6px 22px rgba(233, 111, 115, 0.12), 0 2px 5px rgba(0, 0, 0, 0.05);
+}
 
+.calming-bar-info-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
 
+.calming-disc-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--coral);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #fff;
+  transition: transform 0.2s ease;
+}
+
+.calming-disc-avatar.rotating {
+  animation: calmingDiscSpin 12s linear infinite;
+}
+
+@keyframes calmingDiscSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.calming-disc-core {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+/* Mini Equalizer Wave Bars */
+.calming-equalizer-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  height: 14px;
+}
+
+.calming-equalizer-bars .bar {
+  display: block;
+  width: 2.5px;
+  background: #ffffff;
+  border-radius: 2px;
+  height: 4px;
+}
+
+.calming-equalizer-bars .b1 {
+  animation: calmingEqBar 0.75s ease-in-out infinite alternate;
+}
+.calming-equalizer-bars .b2 {
+  animation: calmingEqBar 0.55s ease-in-out infinite alternate 0.2s;
+}
+.calming-equalizer-bars .b3 {
+  animation: calmingEqBar 0.9s ease-in-out infinite alternate 0.4s;
+}
+
+.calming-equalizer-bars.on-card .bar {
+  width: 3px;
+}
+
+@keyframes calmingEqBar {
+  0% { height: 3px; }
+  100% { height: 13px; }
+}
+
+.calming-bar-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.calming-bar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.calming-bar-track-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #2b2623;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 145px;
+}
+
+.calming-bar-badge {
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.calming-bar-status-hint {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.calming-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.calming-bar-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #645a53;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.calming-bar-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #2b2623;
+}
+
+.calming-bar-btn.play-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--coral-dark);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(202, 85, 95, 0.35);
+}
+
+.calming-bar-btn.play-btn:hover {
+  transform: scale(1.05);
+  background: #b54751;
+}
+
+.calming-bar-btn.close-btn {
+  color: #9a9089;
+  margin-left: 2px;
+}
+.calming-bar-btn.close-btn:hover {
+  color: #c9404d;
+}
+
+/* Calming Music Modal / Bottom Sheet */
+.calming-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(25, 20, 18, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: calmingFadeIn 0.2s ease-out;
+}
+
+@keyframes calmingFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.calming-modal-sheet {
+  width: 100%;
+  max-width: 430px;
+  max-height: 86dvh;
+  background: #ffffff;
+  border-radius: 26px 26px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
+  padding: 12px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  animation: calmingSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes calmingSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.calming-modal-handle {
+  width: 38px;
+  height: 4px;
+  background: #ded7ce;
+  border-radius: 9999px;
+  margin: 0 auto 12px;
+  flex-shrink: 0;
+}
+
+.calming-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.calming-modal-header-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--peach-soft);
+  color: var(--coral-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.calming-modal-title-wrap {
+  flex: 1;
+}
+
+.calming-modal-title-wrap h2 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #2b2623;
+  margin: 0 0 3px;
+  font-family: "Nunito", sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.calming-modal-title-wrap p {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.calming-modal-close {
+  background: transparent;
+  border: none;
+  color: #92877f;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.calming-modal-close:hover {
+  background: #f4eee7;
+  color: #2b2623;
+}
+
+/* Master Volume Strip in Modal */
+.calming-volume-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fbf8f5;
+  border: 1px solid #eee7df;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.calming-volume-mute-btn {
+  background: transparent;
+  border: none;
+  color: var(--coral-dark);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calming-volume-slider-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calming-volume-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #645a53;
+  font-weight: 600;
+}
+
+.calming-volume-label-row strong {
+  font-size: 11px;
+  color: var(--coral-dark);
+}
+
+.calming-volume-slider {
+  width: 100%;
+  height: 5px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #e2dbd2;
+  border-radius: 999px;
+  outline: none;
+}
+
+.calming-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--coral-dark);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Category Filter Pills */
+.calming-categories-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+
+.calming-categories-row::-webkit-scrollbar {
+  display: none;
+}
+
+.calming-category-pill {
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  border: 1px solid #e5ded6;
+  background: #ffffff;
+  color: #665b53;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.calming-category-pill.active {
+  background: #2b2623;
+  color: #ffffff;
+  border-color: #2b2623;
+}
+
+/* Tracks List */
+.calming-tracks-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-right: 2px;
+  margin-bottom: 12px;
+}
+
+.calming-track-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #ece4dc;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.calming-track-card:hover {
+  background: #fcf9f6;
+  border-color: #ded1c4;
+}
+
+.calming-track-card.active {
+  border-color: var(--coral);
+  background: #fff8f7;
+}
+
+.calming-track-card.playing {
+  border-color: var(--coral-dark);
+  background: #fff5f4;
+  box-shadow: 0 3px 12px rgba(202, 85, 95, 0.1);
+}
+
+.calming-track-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.calming-track-icon-bubble {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.calming-track-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.calming-track-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
+}
+
+.calming-track-title-row strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #241f1c;
+}
+
+.calming-category-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+.calming-track-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+  margin: 0 0 5px;
+}
+
+.calming-track-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.calming-science-tag {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #7b6f67;
+  background: #f1eae2;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.calming-track-action-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.calming-track-play-trigger {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: #f3ece4;
+  color: #4a413a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.calming-track-play-trigger:hover {
+  background: var(--coral-dark);
+  color: #ffffff;
+}
+
+.calming-track-play-trigger.is-playing {
+  background: var(--coral-dark);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(202, 85, 95, 0.35);
+}
+
+.calming-track-status-text {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #8c8178;
+}
+
+.calming-modal-footer {
+  flex-shrink: 0;
+  border-top: 1px solid #eee7df;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calming-modal-footer-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.calming-modal-footer-notice svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--sage);
+}
+
+.calming-modal-done-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  background: #2b2623;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.calming-modal-done-btn:hover {
+  opacity: 0.92;
+}
+
+/* Chat Hero Ambience Enhancements */
+.hero-ambience-browse-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: background 0.15s ease;
+}
+
+.hero-ambience-browse-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.hero-ambience-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.hero-ambience-text strong {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hero-ambience-text small {
+  font-size: 9.5px;
+  opacity: 0.85;
+}
+
+.hero-ambience-eq-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calming-mini-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.calming-mini-eq .eq-bar {
+  display: block;
+  width: 2px;
+  background: #2e7d32;
+  border-radius: 1px;
+}
+
+.calming-mini-eq .bar-1 {
+  height: 4px;
+  animation: calmingEqBar 0.6s infinite alternate;
+}
+.calming-mini-eq .bar-2 {
+  height: 10px;
+  animation: calmingEqBar 0.45s infinite alternate 0.15s;
+}
+.calming-mini-eq .bar-3 {
+  height: 6px;
+  animation: calmingEqBar 0.75s infinite alternate 0.3s;
+}
