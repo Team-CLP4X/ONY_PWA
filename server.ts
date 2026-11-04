@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import { existsSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,14 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// The custom Express server is not a framework dev server, so load local env files explicitly.
+for (const envFile of [".env.development.local", ".env.local", ".env"]) {
+  const envPath = path.join(__dirname, envFile);
+  if (existsSync(envPath)) {
+    process.loadEnvFile(envPath);
+  }
+}
 
 // Filter benign gRPC idle stream disconnection messages from logging as errors
 const origConsoleError = console.error;
