@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -140,6 +141,7 @@ function sendStructuredError(
 
 async function startServer() {
   const app = express();
+  const httpServer = createHttpServer(app);
 
   const portArgIdx = process.argv.indexOf("--port");
   const cliPort = portArgIdx !== -1 && process.argv[portArgIdx + 1] ? parseInt(process.argv[portArgIdx + 1], 10) : undefined;
@@ -440,7 +442,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: { server: httpServer } },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -452,7 +454,7 @@ async function startServer() {
     });
   }
 
-  app.listen(primaryPort, host, () => {
+  httpServer.listen(primaryPort, host, () => {
     console.log(`ONY server running on http://${host}:${primaryPort}`);
   });
 
