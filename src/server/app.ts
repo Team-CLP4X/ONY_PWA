@@ -159,9 +159,8 @@ export function createApiApp() {
   app.get("/api/health", (_req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     res.json({
-      status: "ok",
-      provider: geminiProvider.providerName,
-      configured: geminiProvider.isConfigured(),
+      ok: true,
+      geminiKeyConfigured: geminiProvider.isConfigured(),
       model: geminiProvider.getModel(),
     });
   });
@@ -361,6 +360,9 @@ export function createApiApp() {
 
       return res.json(responsePayload);
     } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorStack = err instanceof Error ? err.stack : undefined;
+      console.error("[ONY /api/chat] Gemini request failed:", errorMessage, errorStack || "");
       // For crisis / urgent safety messages, NEVER fail silently or withhold crisis resources
       if (safetyAction === "urgent_safety_flow") {
         console.warn("[ONY /api/chat] Crisis safety flow triggered during upstream interruption; returning protective crisis response.");

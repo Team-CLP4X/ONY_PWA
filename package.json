@@ -11,6 +11,11 @@
     "lint": "tsc --noEmit",
     "format": "oxfmt"
   },
+  "pnpm": {
+    "overrides": {
+      "jose": "^5.9.6"
+    }
+  },
   "dependencies": {
     "@google/genai": "^2.28.0",
     "express": "^5.3.0",

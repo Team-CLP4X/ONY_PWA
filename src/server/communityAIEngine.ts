@@ -121,19 +121,7 @@ function decodeHtmlEntities(str: string): string {
 
 function getApiKey(): string | undefined {
   const key = process.env.GEMINI_API_KEY?.trim();
-  if (key && key.length > 0 && !key.toLowerCase().startsWith("gemini-")) {
-    return key;
-  }
-  const modelCandidate = process.env.GEMINI_MODEL?.trim();
-  if (
-    modelCandidate &&
-    (modelCandidate.startsWith("AQ.") ||
-      modelCandidate.startsWith("AIzaSy") ||
-      (modelCandidate.length > 35 && !modelCandidate.toLowerCase().includes("gemini")))
-  ) {
-    return modelCandidate;
-  }
-  return undefined;
+  return key && !key.toLowerCase().startsWith("gemini-") ? key : undefined;
 }
 
 function getGeminiClient(): GoogleGenAI | null {

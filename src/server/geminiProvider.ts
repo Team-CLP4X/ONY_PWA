@@ -2,11 +2,11 @@ import { GoogleGenAI, ThinkingLevel, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
 import { generateDynamicOnyReply } from "./onyCompanionEngine.js";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
-export const STABLE_GEMINI_MODEL = "gemini-3.6-flash";
-export const BACKUP_GEMINI_MODEL = "gemini-3.5-flash";
-export const FAST_GEMINI_MODEL = "gemini-3.1-flash-lite";
-export const LITE_GEMINI_MODEL = "gemini-3.5-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
+export const STABLE_GEMINI_MODEL = "gemini-3.5-flash";
+export const BACKUP_GEMINI_MODEL = "gemini-2.5-flash";
+export const FAST_GEMINI_MODEL = "gemini-3.5-flash-lite";
+export const LITE_GEMINI_MODEL = "gemini-2.5-flash-lite";
 
 // In-memory blacklist for models that encountered quota exhaustion (429) or deprecation (404) or timeout
 export const exhaustedModels = new Set<string>([
@@ -213,23 +213,7 @@ export class GeminiChatProvider implements ServerChatProvider {
 
   private getApiKey(): string | undefined {
     const key = process.env.GEMINI_API_KEY?.trim();
-    if (key && key.length > 0 && !key.toLowerCase().startsWith("gemini-")) {
-      return key;
-    }
-    // Fallback: If GEMINI_MODEL appears to contain an API key
-    const modelCandidate = process.env.GEMINI_MODEL?.trim();
-    if (
-      modelCandidate &&
-      (modelCandidate.startsWith("AQ.") ||
-        modelCandidate.startsWith("AIzaSy") ||
-        (modelCandidate.length > 35 && !modelCandidate.toLowerCase().includes("gemini")))
-    ) {
-      console.warn(
-        "[ONY] Detected API key in GEMINI_MODEL environment variable; using it as API key.",
-      );
-      return modelCandidate;
-    }
-    return undefined;
+    return key && !key.toLowerCase().startsWith("gemini-") ? key : undefined;
   }
 
   isConfigured(): boolean {
