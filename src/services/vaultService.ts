@@ -208,9 +208,11 @@ class VaultService {
       q,
       (snapshot) => {
         const list: VaultShelf[] = [];
+        const seen = new Set<string>();
         snapshot.forEach((d) => {
           const data = d.data() as VaultShelf;
-          if (!data.deletedAt) {
+          if (!data.deletedAt && !seen.has(d.id)) {
+            seen.add(d.id);
             list.push({ ...data, id: d.id });
           }
         });
@@ -239,9 +241,11 @@ class VaultService {
       q,
       (snapshot) => {
         const list: VaultBook[] = [];
+        const seen = new Set<string>();
         snapshot.forEach((d) => {
           const data = d.data() as VaultBook;
-          if (!data.deletedAt) {
+          if (!data.deletedAt && !seen.has(d.id)) {
+            seen.add(d.id);
             list.push({ ...data, id: d.id });
           }
         });
@@ -271,9 +275,11 @@ class VaultService {
       q,
       (snapshot) => {
         const list: VaultPage[] = [];
+        const seen = new Set<string>();
         snapshot.forEach((d) => {
           const data = d.data() as VaultPage;
-          if (!data.deletedAt) {
+          if (!data.deletedAt && !seen.has(d.id)) {
+            seen.add(d.id);
             list.push({ ...data, id: d.id });
           }
         });

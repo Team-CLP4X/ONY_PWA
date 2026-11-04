@@ -133,6 +133,24 @@ function sortBooks(booksList: VaultBook[], sortOption: BookSortOption): VaultBoo
   });
 }
 
+export interface VaultFilterState {
+  searchQuery: string;
+  dateFilter: "all" | "today" | "week" | "month" | "custom";
+  customDateStart: string | null;
+  customDateEnd: string | null;
+  moodFilters: string[];
+  bookSort: BookSortOption;
+}
+
+export const DEFAULT_FILTERS: VaultFilterState = {
+  searchQuery: "",
+  dateFilter: "all",
+  customDateStart: null,
+  customDateEnd: null,
+  moodFilters: [],
+  bookSort: "last_edited",
+};
+
 export function DigitalJournal({
   journalEntries,
   setJournalEntries,
@@ -153,30 +171,75 @@ export function DigitalJournal({
   // Top Section Switcher: Personal Diary vs AI Recall Memories
   const [activeTab, setActiveTab] = useState<"diary" | "ai_memory">("diary");
 
-  // Bookshelf Data State
   // Bookshelf Data State (Connected exclusively to Firestore vaultService)
   const [shelves, setShelves] = useState<VaultShelf[]>([]);
   const [books, setBooks] = useState<VaultBook[]>([]);
   const [activeBookPages, setActiveBookPages] = useState<VaultPage[]>([]);
   const [searchIndexPages, setSearchIndexPages] = useState<VaultPage[]>([]);
-  const [bookSort, setBookSort] = useState<BookSortOption>("last_edited");
 
-  // Search & Filter State (Fix 3: Minimal Filtering)
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  // Guaranteed unique shelves & books to prevent duplicate key React errors
+  const uniqueShelves = useMemo(() => {
+    const seen = new Set<string>();
+    return shelves.filter((s) => {
+      if (!s.id || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  }, [shelves]);
 
-  // 300ms debounce for search query
+  const uniqueBooks = useMemo(() => {
+    const seen = new Set<string>();
+    return books.filter((b) => {
+      if (!b.id || seen.has(b.id)) return false;
+      seen.add(b.id);
+      return true;
+    });
+  }, [books]);
+
+  // Search & Filter State with unified DEFAULT_FILTERS constant
+  const [filters, setFilters] = useState<VaultFilterState>(DEFAULT_FILTERS);
+  const { searchQuery, dateFilter, customDateStart, customDateEnd, moodFilters, bookSort } = filters;
+
+  const setSearchQuery = useCallback((query: string) => {
+    setFilters((prev) => ({ ...prev, searchQuery: query }));
+  }, []);
+
+  const setDateFilter = useCallback((df: "all" | "today" | "week" | "month" | "custom") => {
+    setFilters((prev) => ({ ...prev, dateFilter: df }));
+  }, []);
+
+  const setCustomDateStart = useCallback((val: string | null) => {
+    setFilters((prev) => ({ ...prev, customDateStart: val }));
+  }, []);
+
+  const setCustomDateEnd = useCallback((val: string | null) => {
+    setFilters((prev) => ({ ...prev, customDateEnd: val }));
+  }, []);
+
+  const setMoodFilters = useCallback((val: string[] | ((prev: string[]) => string[])) => {
+    setFilters((prev) => ({
+      ...prev,
+      moodFilters: typeof val === "function" ? val(prev.moodFilters) : val,
+    }));
+  }, []);
+
+  const setBookSort = useCallback((sort: BookSortOption) => {
+    setFilters((prev) => ({ ...prev, bookSort: sort }));
+  }, []);
+
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(DEFAULT_FILTERS.searchQuery);
+
+  // 300ms debounce for search query, but immediate when search query is cleared
   useEffect(() => {
+    if (!searchQuery) {
+      setDebouncedSearchQuery("");
+      return;
+    }
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month" | "custom">("all");
-  const [customDateStart, setCustomDateStart] = useState<string | null>(null);
-  const [customDateEnd, setCustomDateEnd] = useState<string | null>(null);
-  const [moodFilters, setMoodFilters] = useState<string[]>([]);
 
   // Filter Bottom Sheet State (Fix 3)
   const [showFilterSheet, setShowFilterSheet] = useState(false);
@@ -322,13 +385,29 @@ export function DigitalJournal({
 
         unsubShelves = vaultService.subscribeShelves(
           uid,
-          (shelvesData) => setShelves(shelvesData),
+          (shelvesData) => {
+            const seen = new Set<string>();
+            const unique = shelvesData.filter((s) => {
+              if (!s.id || seen.has(s.id)) return false;
+              seen.add(s.id);
+              return true;
+            });
+            setShelves(unique);
+          },
           (err) => console.error("[Vault] Shelves sync error:", err)
         );
 
         unsubBooks = vaultService.subscribeBooks(
           uid,
-          (booksData) => setBooks(booksData),
+          (booksData) => {
+            const seen = new Set<string>();
+            const unique = booksData.filter((b) => {
+              if (!b.id || seen.has(b.id)) return false;
+              seen.add(b.id);
+              return true;
+            });
+            setBooks(unique);
+          },
           (err) => console.error("[Vault] Books sync error:", err)
         );
 
@@ -375,8 +454,8 @@ export function DigitalJournal({
 
   // Compute active book and current page
   const activeBook = useMemo(() => {
-    return books.find((b) => b.id === activeBookId) || null;
-  }, [books, activeBookId]);
+    return uniqueBooks.find((b) => b.id === activeBookId) || null;
+  }, [uniqueBooks, activeBookId]);
 
   const currentPage = useMemo(() => {
     if (activeBookPages.length === 0) return null;
@@ -385,7 +464,7 @@ export function DigitalJournal({
   }, [activeBookPages, currentPageIndex]);
 
   // Total pages and books count for header subtitle
-  const totalBooksCount = books.length;
+  const totalBooksCount = uniqueBooks.length;
   const totalPagesCount = searchIndexPages.length > 0 ? searchIndexPages.length : activeBookPages.length;
 
   // Set of dates that have at least one journal page (for calendar dots)
@@ -522,11 +601,11 @@ export function DigitalJournal({
         matchesFilter: boolean;
       }[]
     >();
-    for (const shelf of shelves) {
+    for (const shelf of uniqueShelves) {
       map.set(shelf.id, []);
     }
 
-    const sortedAllBooks = sortBooks(books as any, bookSort) as unknown as VaultBook[];
+    const sortedAllBooks = sortBooks(uniqueBooks as any, bookSort) as unknown as VaultBook[];
     const pagesPool = searchIndexPages.length > 0 ? searchIndexPages : activeBookPages;
 
     for (const book of sortedAllBooks) {
@@ -545,7 +624,7 @@ export function DigitalJournal({
         }
       }
 
-      const targetShelfId = map.has(book.shelfId) ? book.shelfId : shelves[0]?.id;
+      const targetShelfId = map.has(book.shelfId) ? book.shelfId : uniqueShelves[0]?.id;
       if (targetShelfId) {
         const currentList = map.get(targetShelfId) || [];
         currentList.push({
@@ -560,16 +639,18 @@ export function DigitalJournal({
 
     return map;
   }, [
-    shelves,
-    books,
+    uniqueShelves,
+    uniqueBooks,
     searchIndexPages,
     activeBookPages,
     bookSort,
     isPageMatchingFilter,
     isFilterActive,
     debouncedSearchQuery,
-    moodFilters.length,
+    moodFilters,
     dateFilter,
+    customDateStart,
+    customDateEnd,
   ]);
 
   // Grouped search results for quick access with context snippets
@@ -591,7 +672,7 @@ export function DigitalJournal({
     const groupMap = new Map<string, (typeof groups)[0]>();
 
     for (const page of matchingPages) {
-      const book = books.find((b) => b.id === page.bookId);
+      const book = uniqueBooks.find((b) => b.id === page.bookId);
       if (!book) continue;
 
       if (!groupMap.has(book.id)) {
@@ -610,7 +691,7 @@ export function DigitalJournal({
     }
 
     return groups;
-  }, [debouncedSearchQuery, searchIndexPages, activeBookPages, isPageMatchingFilter, books]);
+  }, [debouncedSearchQuery, searchIndexPages, activeBookPages, isPageMatchingFilter, uniqueBooks]);
 
   // Open Book with Tactile Sliding Spine Animation & 0.6s Cover Opening
   const handleTapBookSpine = (bookId: string) => {
@@ -654,8 +735,8 @@ export function DigitalJournal({
           content: "",
           order: 1,
         });
-        setActiveBookPages([initialPage]);
-        setSearchIndexPages((prev) => [...prev, initialPage]);
+        setActiveBookPages((prev) => (prev.some((p) => p.id === initialPage.id) ? prev : [...prev, initialPage]));
+        setSearchIndexPages((prev) => (prev.some((p) => p.id === initialPage.id) ? prev : [...prev, initialPage]));
         setCurrentPageIndex(0);
       } catch (err) {
         console.error("[Vault] Error auto-creating blank page 1:", err);
@@ -680,8 +761,8 @@ export function DigitalJournal({
         order: activeBookPages.length + 1,
       });
 
-      setActiveBookPages((prev) => [...prev, newPage]);
-      setSearchIndexPages((prev) => [...prev, newPage]);
+      setActiveBookPages((prev) => (prev.some((p) => p.id === newPage.id) ? prev : [...prev, newPage]));
+      setSearchIndexPages((prev) => (prev.some((p) => p.id === newPage.id) ? prev : [...prev, newPage]));
       setCurrentPageIndex(activeBookPages.length);
       setShowPageIndexDrawer(false);
 
@@ -997,9 +1078,9 @@ export function DigitalJournal({
           }
         );
 
-        setBooks((prev) => [...prev, newBook]);
-        setActiveBookPages([firstPage]);
-        setSearchIndexPages((prev) => [...prev, firstPage]);
+        setBooks((prev) => (prev.some((b) => b.id === newBook.id) ? prev : [...prev, newBook]));
+        setActiveBookPages((prev) => (prev.some((p) => p.id === firstPage.id) ? prev : [...prev, firstPage]));
+        setSearchIndexPages((prev) => (prev.some((p) => p.id === firstPage.id) ? prev : [...prev, firstPage]));
         setShowCreateBookSheet(false);
         setEditingBook(null);
 
@@ -1093,9 +1174,9 @@ export function DigitalJournal({
       } else {
         const newShelf = await vaultService.createShelf(currentUser.uid, {
           name: cleanName,
-          order: shelves.length + 1,
+          order: uniqueShelves.length + 1,
         });
-        setShelves((prev) => [...prev, newShelf]);
+        setShelves((prev) => (prev.some((s) => s.id === newShelf.id) ? prev : [...prev, newShelf]));
         notify(
           language === "Bahasa Melayu"
             ? "Rak baharu ditambah"
@@ -1115,7 +1196,7 @@ export function DigitalJournal({
   const handleConfirmDeleteShelf = async () => {
     if (!shelfToDelete || !currentUser?.uid) return;
     const targetShelfId = shelfToDelete.id;
-    if (shelves.length <= 1) {
+    if (uniqueShelves.length <= 1) {
       notify(
         language === "Bahasa Melayu"
           ? "Sekurang-kurangnya satu rak mesti dikekalkan"
@@ -1127,7 +1208,7 @@ export function DigitalJournal({
       return;
     }
 
-    const fallbackShelf = shelves.find((s) => s.id !== targetShelfId) || shelves[0];
+    const fallbackShelf = uniqueShelves.find((s) => s.id !== targetShelfId) || uniqueShelves[0];
 
     try {
       await vaultService.deleteShelf(currentUser.uid, targetShelfId, fallbackShelf.id);
@@ -1151,7 +1232,7 @@ export function DigitalJournal({
 
   // Helper to open a blank page in a chosen book (from hero "Write a Journal Entry" button)
   const handleWriteJournalEntryPrompt = () => {
-    if (books.length === 0) {
+    if (uniqueBooks.length === 0) {
       handleOpenCreateBook();
       return;
     }
@@ -1168,8 +1249,8 @@ export function DigitalJournal({
         content: "",
         order: bookPages.length + 1,
       });
-      setActiveBookPages((prev) => [...prev, newPage]);
-      setSearchIndexPages((prev) => [...prev, newPage]);
+      setActiveBookPages((prev) => (prev.some((p) => p.id === newPage.id) ? prev : [...prev, newPage]));
+      setSearchIndexPages((prev) => (prev.some((p) => p.id === newPage.id) ? prev : [...prev, newPage]));
       void openBookToPage(bookId, bookPages.length, true);
       setTimeout(() => {
         pageTextareaRef.current?.focus();
@@ -1337,11 +1418,20 @@ export function DigitalJournal({
     setShowFilterSheet(true);
   };
 
+  const resetAllFilters = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+    setDebouncedSearchQuery(DEFAULT_FILTERS.searchQuery);
+    setDraftDateFilter(DEFAULT_FILTERS.dateFilter);
+    setDraftCustomDateStart(DEFAULT_FILTERS.customDateStart);
+    setDraftCustomDateEnd(DEFAULT_FILTERS.customDateEnd);
+    setDraftMoodFilters([...DEFAULT_FILTERS.moodFilters]);
+    setCalendarDraftStart(null);
+    setCalendarDraftEnd(null);
+  }, []);
+
   const handleResetDraftFilters = () => {
-    setDraftDateFilter("all");
-    setDraftCustomDateStart(null);
-    setDraftCustomDateEnd(null);
-    setDraftMoodFilters([]);
+    resetAllFilters();
+    setShowFilterSheet(false);
   };
 
   const handleApplyFilterSheet = () => {
@@ -1353,11 +1443,7 @@ export function DigitalJournal({
   };
 
   const handleClearAllFilters = () => {
-    setSearchQuery("");
-    setDateFilter("all");
-    setCustomDateStart(null);
-    setCustomDateEnd(null);
-    setMoodFilters([]);
+    resetAllFilters();
   };
 
   const handleRemoveMoodFilter = (moodKey: string) => {
@@ -1365,9 +1451,14 @@ export function DigitalJournal({
   };
 
   const handleClearDateFilter = () => {
-    setDateFilter("all");
-    setCustomDateStart(null);
-    setCustomDateEnd(null);
+    setDateFilter(DEFAULT_FILTERS.dateFilter);
+    setCustomDateStart(DEFAULT_FILTERS.customDateStart);
+    setCustomDateEnd(DEFAULT_FILTERS.customDateEnd);
+    setDraftDateFilter(DEFAULT_FILTERS.dateFilter);
+    setDraftCustomDateStart(DEFAULT_FILTERS.customDateStart);
+    setDraftCustomDateEnd(DEFAULT_FILTERS.customDateEnd);
+    setCalendarDraftStart(null);
+    setCalendarDraftEnd(null);
   };
 
   const handleToggleDraftMood = (moodKey: string) => {
@@ -2135,7 +2226,10 @@ export function DigitalJournal({
                     type="button"
                     className="diary-search-clear-btn"
                     style={{ right: "42px" }}
-                    onClick={() => setSearchQuery("")}
+                    onClick={() => {
+                      setSearchQuery(DEFAULT_FILTERS.searchQuery);
+                      setDebouncedSearchQuery(DEFAULT_FILTERS.searchQuery);
+                    }}
                     aria-label="Clear search"
                   >
                     <JournalIcon name="close" size={13} />
@@ -2341,7 +2435,7 @@ export function DigitalJournal({
 
             {/* Interactive Shelves Rendering */}
             <div className="bookshelf-shelves-container">
-              {shelves.map((shelf) => {
+              {uniqueShelves.map((shelf) => {
                 const shelfEntries = shelfBooksMap.get(shelf.id) || [];
                 const allBooksOnShelf = shelfEntries.map((e) => e.book);
                 const matchingBooksOnShelf = shelfEntries.filter((e) =>
@@ -3911,7 +4005,7 @@ export function DigitalJournal({
                   <div>
                     <strong style={{ fontSize: "14px" }}>{selectedBookForInfo.title}</strong>
                     <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
-                      {shelves.find((s) => s.id === selectedBookForInfo.shelfId)?.name || "Shelf"} •{" "}
+                      {uniqueShelves.find((s) => s.id === selectedBookForInfo.shelfId)?.name || "Shelf"} •{" "}
                       {journalEntries.filter((e) => (e as any).bookId === selectedBookForInfo.id).length} pages
                     </small>
                   </div>
@@ -4272,25 +4366,13 @@ export function DigitalJournal({
                 )}
               </div>
 
-              {/* Cover Color Swatches & Custom Picker (Global Rule 3: Single language, no parentheses) */}
-              <div className="diary-writer-form-group">
-                <label className="diary-writer-inline-label">
-                  <JournalIcon name="palette" size={15} decorative />
-                  <span>
-                    {language === "Bahasa Melayu"
-                      ? "Warna Kulit & Tulang Buku"
-                      : language === "中文"
-                      ? "书脊色彩"
-                      : "Cover & Spine Color"}
-                  </span>
-                </label>
-                {renderColorPickerControl(
-                  bookColorInput,
-                  setBookColorInput,
-                  showCustomPickerCreate,
-                  setShowCustomPickerCreate
-                )}
-              </div>
+              {/* Cover Color Swatches & Custom Picker */}
+              {renderColorPickerControl(
+                bookColorInput,
+                setBookColorInput,
+                showCustomPickerCreate,
+                setShowCustomPickerCreate
+              )}
 
               {/* Shelf Selection (Global Rule 3: Single language, no parentheses) */}
               <div className="diary-writer-form-group">
@@ -4309,7 +4391,7 @@ export function DigitalJournal({
                   value={bookShelfIdInput}
                   onChange={(e) => setBookShelfIdInput(e.target.value)}
                 >
-                  {shelves.map((s) => (
+                  {uniqueShelves.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
@@ -4552,9 +4634,9 @@ export function DigitalJournal({
 
             <div className="diary-writer-scrollable-body">
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {books.map((b) => {
+                {uniqueBooks.map((b) => {
                   const bPages = journalEntries.filter((e) => (e as any).bookId === b.id);
-                  const shelf = shelves.find((s) => s.id === b.shelfId);
+                  const shelf = uniqueShelves.find((s) => s.id === b.shelfId);
 
                   return (
                     <div
@@ -4687,7 +4769,7 @@ export function DigitalJournal({
                   : "Create Shelf"}
               </button>
 
-              {editingShelf && shelves.length > 1 && (
+              {editingShelf && uniqueShelves.length > 1 && (
                 <button
                   type="button"
                   className="btn btn-danger full"
