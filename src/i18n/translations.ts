@@ -644,7 +644,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
   English: {
     // Navigation
     nav_chat: "Chatbot",
-    nav_memory: "Memory Vault",
+    nav_memory: "Journal",
     nav_community: "Community",
     nav_market: "Marketplace",
     nav_profile: "Profile",
@@ -1281,7 +1281,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
   "Bahasa Melayu": {
     // Navigation
     nav_chat: "Pembantu",
-    nav_memory: "Kubah Memori",
+    nav_memory: "Jurnal",
     nav_community: "Komuniti",
     nav_market: "Pasaran",
     nav_profile: "Profil",
@@ -1918,7 +1918,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
   "中文": {
     // Navigation
     nav_chat: "倾诉伙伴",
-    nav_memory: "记忆宝库",
+    nav_memory: "日记",
     nav_community: "互助社区",
     nav_market: "精选好物",
     nav_profile: "个人中心",

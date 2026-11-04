@@ -76,6 +76,14 @@ import {
   listSystemLogs,
   formatLogsAsTextFile,
   downloadLogFile,
+  listJournalEntries,
+  saveJournalEntry,
+  updateJournalEntry,
+  deleteJournalEntry,
+  loadCachedJournalEntries,
+  saveCachedJournalEntries,
+  DEFAULT_JOURNAL_ENTRIES,
+  type FirestoreJournalEntry,
   type SystemLogEntry,
   type SystemLogLevel,
   type PostLikeRecord,
@@ -123,6 +131,7 @@ import {
 } from "./components/CalmingMusicPlayer";
 import { SupportiveMessageBubble } from "./components/SupportiveMessageBubble";
 import { CommunityPostCard } from "./components/CommunityPostCard";
+import { DigitalJournal } from "./components/DigitalJournal";
 import {
   translateCommunityPost,
   getCachedPostTranslation,
@@ -874,6 +883,9 @@ function AppInner() {
     { id: 3, text: "I enjoy listening to music when stressed.", reason: "You said music helps you feel grounded.", active: true, category: "Wellbeing" },
   ]);
   const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
+  const [journalEntries, setJournalEntries] = useState<FirestoreJournalEntry[]>(() =>
+    loadCachedJournalEntries(),
+  );
   const [tab, setTab] = useState<Tab>("chat");
   const [screen, setScreen] = useState<Screen>("main");
   const [history, setHistory] = useState<Screen[]>([]);
@@ -1102,6 +1114,11 @@ function AppInner() {
                 kind: m.kind,
               })),
             );
+          }
+          const loadedJournals = await listJournalEntries(user.uid);
+          if (loadedJournals.length > 0) {
+            setJournalEntries(loadedJournals);
+            saveCachedJournalEntries(loadedJournals);
           }
           const loadedChats = await listConversations(user.uid);
           if (loadedChats.length > 0) {
@@ -1763,11 +1780,11 @@ function AppInner() {
                   if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
                 }} notify={notify} onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
                 {tab === "memory" && (
-                  <MemoryVault
+                  <DigitalJournal
+                    journalEntries={journalEntries}
+                    setJournalEntries={setJournalEntries}
                     memories={memories}
                     setMemories={handleSetMemories}
-                    navigate={navigate}
-                    setEditingMemory={setEditingMemory}
                     companion={companion}
                     notify={notify}
                     memoryConsent={memoryConsent}
@@ -1775,6 +1792,7 @@ function AppInner() {
                     useActiveMemories={useActiveMemories}
                     setUseActiveMemories={setUseActiveMemories}
                     currentUser={currentUser}
+                    onNavigateToPrivacy={() => navigate("privacy")}
                   />
                 )}
                 {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}

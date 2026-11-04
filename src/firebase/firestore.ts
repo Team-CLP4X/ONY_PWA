@@ -111,6 +111,20 @@ export interface FirestoreMemory {
   updatedAt: string;
 }
 
+export interface FirestoreJournalEntry {
+  id: string;
+  title: string;
+  content: string;
+  dateKey: string;
+  entryDate: string;
+  moodEmoji?: string;
+  moodLabel?: string;
+  photoUrl?: string;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FirestoreConversation {
   id: string;
   title: string;
@@ -522,6 +536,133 @@ export async function clearAllMemories(uid: string): Promise<void> {
     for (const d of snap.docs) {
       await deleteDoc(d.ref);
     }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// ==========================================
+// Digital Journal & Diary Operations
+// ==========================================
+
+const LOCAL_STORAGE_JOURNAL_KEY = "ony_cached_journal_entries";
+
+export function loadCachedJournalEntries(): FirestoreJournalEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_JOURNAL_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCachedJournalEntries(entries: FirestoreJournalEntry[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_JOURNAL_KEY, JSON.stringify(entries));
+  } catch {}
+}
+
+export const DEFAULT_JOURNAL_ENTRIES: Omit<FirestoreJournalEntry, "id" | "createdAt" | "updatedAt">[] = [
+  {
+    title: "Evening walk around Tasik Titiwangsa 🌿",
+    content:
+      "The evening breeze after the rain felt so grounding today. I took 30 minutes away from my laptop to just walk without earphones. Reminded myself that progress doesn't always have to be loud. One step at a time.",
+    dateKey: getLocalDateKey(),
+    entryDate: new Date().toISOString(),
+    moodEmoji: "🌿",
+    moodLabel: "Reflective",
+    tags: ["Mindfulness", "Nature", "Evening"],
+  },
+  {
+    title: "Small win: Finished my project pitch slides ☕",
+    content:
+      "Finally wrapped up the slides for Friday's presentation. Felt the familiar imposter syndrome creeping in during lunch, but taking five slow breaths and chatting with ONY helped me reset. Rewarded myself with a warm hazelnut latte.",
+    dateKey: getLocalDateKey(new Date(Date.now() - 86400000)),
+    entryDate: new Date(Date.now() - 86400000).toISOString(),
+    moodEmoji: "☀️",
+    moodLabel: "Grateful",
+    tags: ["Study & Work", "Gratitude", "Self-Care"],
+  },
+  {
+    title: "Letting go of things outside my control 🌧️",
+    content:
+      "Felt a wave of heaviness this afternoon when unexpected news shifted the timeline. Writing it down helps untangle the knot in my chest. It is okay to feel disappointed, and it is okay to rest tonight without forcing positivity.",
+    dateKey: getLocalDateKey(new Date(Date.now() - 3 * 86400000)),
+    entryDate: new Date(Date.now() - 3 * 86400000).toISOString(),
+    moodEmoji: "🌧️",
+    moodLabel: "Tender",
+    tags: ["Venting", "Acceptance", "Rest"],
+  },
+];
+
+export async function listJournalEntries(uid: string): Promise<FirestoreJournalEntry[]> {
+  const path = `users/${uid}/journalEntries`;
+  try {
+    const colRef = collection(db, "users", uid, "journalEntries");
+    const q = query(colRef, orderBy("entryDate", "desc"));
+    const snap = await getDocs(q);
+    const loaded = snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<FirestoreJournalEntry, "id">),
+    }));
+    if (loaded.length > 0) {
+      saveCachedJournalEntries(loaded);
+      return loaded;
+    }
+    const cached = loadCachedJournalEntries();
+    return cached;
+  } catch (error) {
+    console.warn("[ONY Journal] List notice, using local cache:", error);
+    return loadCachedJournalEntries();
+  }
+}
+
+export async function saveJournalEntry(
+  uid: string,
+  entry: Omit<FirestoreJournalEntry, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const path = `users/${uid}/journalEntries`;
+  try {
+    const colRef = collection(db, "users", uid, "journalEntries");
+    const newDocRef = doc(colRef);
+    const now = new Date().toISOString();
+    await setDoc(newDocRef, {
+      ...entry,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function updateJournalEntry(
+  uid: string,
+  entryId: string,
+  updates: Partial<FirestoreJournalEntry>,
+): Promise<void> {
+  const path = `users/${uid}/journalEntries/${entryId}`;
+  try {
+    const docRef = doc(db, "users", uid, "journalEntries", entryId);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteJournalEntry(uid: string, entryId: string): Promise<void> {
+  const path = `users/${uid}/journalEntries/${entryId}`;
+  try {
+    const docRef = doc(db, "users", uid, "journalEntries", entryId);
+    await deleteDoc(docRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -2013,6 +2154,13 @@ export async function seedInitialUserData(uid: string): Promise<void> {
       for (let i = 0; i < DEFAULT_USER_CONVERSATIONS.length; i++) {
         const chat = DEFAULT_USER_CONVERSATIONS[i];
         await saveConversation(uid, `chat_${101 + i}`, chat);
+      }
+    }
+
+    const existingJournal = await listJournalEntries(uid);
+    if (existingJournal.length === 0) {
+      for (const entry of DEFAULT_JOURNAL_ENTRIES) {
+        await saveJournalEntry(uid, entry);
       }
     }
   } catch (err) {
