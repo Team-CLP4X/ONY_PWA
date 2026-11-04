@@ -1762,7 +1762,21 @@ function AppInner() {
                   setFreeUsage(next);
                   if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
                 }} notify={notify} onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
-                {tab === "memory" && <MemoryVault memories={memories} setMemories={handleSetMemories} navigate={navigate} setEditingMemory={setEditingMemory} companion={companion} notify={notify} />}
+                {tab === "memory" && (
+                  <MemoryVault
+                    memories={memories}
+                    setMemories={handleSetMemories}
+                    navigate={navigate}
+                    setEditingMemory={setEditingMemory}
+                    companion={companion}
+                    notify={notify}
+                    memoryConsent={memoryConsent}
+                    setMemoryConsent={setMemoryConsent}
+                    useActiveMemories={useActiveMemories}
+                    setUseActiveMemories={setUseActiveMemories}
+                    currentUser={currentUser}
+                  />
+                )}
                 {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
                 {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
                 {tab === "profile" && (
@@ -3825,7 +3839,7 @@ function MemoryVault({
   currentUser,
 }: {
   memories: Memory[];
-  setMemories: (v: Memory[]) => void;
+  setMemories: (action: Memory[] | ((prev: Memory[]) => Memory[])) => void;
   navigate: (s: Screen) => void;
   setEditingMemory: (v: Memory | null) => void;
   companion: Companion;
@@ -3847,9 +3861,10 @@ function MemoryVault({
 
   const update = async (id: number, patch: Partial<Memory>) => {
     const target = items.find((x) => x.id === id);
-    setItems(items.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
     if (currentUser && target?.firestoreId) {
-      await updateMemory(currentUser.uid, target.firestoreId, patch).catch((e) =>
+      const { id: _ignoreId, firestoreId: _ignoreFsId, ...cleanPatch } = patch;
+      await updateMemory(currentUser.uid, target.firestoreId, cleanPatch).catch((e) =>
         console.warn("[ONY] Memory item update notice:", e)
       );
     }
