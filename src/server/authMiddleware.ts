@@ -2,8 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { initializeApp, getApps, type App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import type { App } from "firebase-admin/app";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,9 +12,10 @@ const appConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
 // Initialize Firebase Admin once
 let adminApp: App | null = null;
 
-function ensureAdminInitialized(): App | null {
+async function ensureAdminInitialized(): Promise<App | null> {
   if (adminApp) return adminApp;
   try {
+    const [{ initializeApp, getApps }] = await Promise.all([import("firebase-admin/app")]);
     const existing = getApps();
     if (existing.length > 0) {
       adminApp = existing[0];
@@ -56,13 +56,14 @@ export async function verifyAuthToken(
     return next();
   }
 
-  const app = ensureAdminInitialized();
+  const app = await ensureAdminInitialized();
   if (!app) {
     req.user = undefined;
     return next();
   }
 
   try {
+    const { getAuth } = await import("firebase-admin/auth");
     const auth = getAuth(app);
     const decodedToken = await auth.verifyIdToken(token);
     req.user = {
