@@ -248,7 +248,17 @@ p { line-height: 1.55; }
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.bottom-nav button span { font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+.bottom-nav button span {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  max-width: 100%;
+  display: block;
+  white-space: normal;
+  word-break: normal;
+}
 .bottom-nav button.active { color: var(--coral-dark); }
 .bottom-nav button.active .icon { fill: var(--peach); stroke-width: 2.1; }
 .checkin-card { margin: 5px 18px 9px; background: linear-gradient(125deg, #e5eee0, #f5f0df); border-radius: 22px; padding: 16px; display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; }
@@ -5633,3 +5643,1121 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   place-items: center;
   color: #2b2623;
 }
+
+/* ============================================================== */
+/* BOOKSHELF & DIARY BOOK / PAGE UI STYLES                        */
+/* ============================================================== */
+
+/* Bookshelf Sort Bar */
+.bookshelf-sort-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 4px 2px;
+  gap: 8px;
+}
+
+.bookshelf-sort-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bookshelf-sort-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 3px;
+  border-radius: 100px;
+}
+
+.bookshelf-sort-btn {
+  border: none;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bookshelf-sort-btn.active {
+  background: var(--peach-soft);
+  color: var(--coral-dark);
+  font-weight: 700;
+}
+
+/* Individual Shelf Section */
+.bookshelf-shelf-row {
+  margin-bottom: 24px;
+}
+
+.bookshelf-shelf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.bookshelf-shelf-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bookshelf-shelf-title-group h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.bookshelf-shelf-count-badge {
+  font-size: 11px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--paper) 80%, var(--cream));
+  border: 1px solid var(--line);
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-weight: 600;
+}
+
+.bookshelf-shelf-menu-btn {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.bookshelf-shelf-menu-btn:hover {
+  background: var(--peach-soft);
+  color: var(--ink);
+}
+
+/* Scrollable Spines Stage */
+.bookshelf-stage {
+  position: relative;
+  width: 100%;
+}
+
+.bookshelf-scroll-track {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 18px 12px 0 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  min-height: 185px;
+}
+
+.bookshelf-scroll-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* Shelf Plank */
+.bookshelf-plank {
+  height: 12px;
+  background: linear-gradient(180deg, #d2ede9 0%, #bde1dc 50%, #abc4c0 100%);
+  border-radius: 4px;
+  box-shadow: 0 4px 10px rgba(78, 159, 172, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  margin-top: -2px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Book Spine Element */
+.book-spine-card {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 4px 8px;
+  border-radius: 4px 6px 6px 4px;
+  cursor: pointer;
+  box-shadow: 2px 4px 10px rgba(48, 44, 43, 0.12), inset -2px 0 3px rgba(0, 0, 0, 0.08), inset 2px 0 3px rgba(255, 255, 255, 0.4);
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+  user-select: none;
+  border-left: 2px solid rgba(0, 0, 0, 0.07);
+}
+
+.book-spine-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 3px 8px 16px rgba(48, 44, 43, 0.18), inset -2px 0 3px rgba(0, 0, 0, 0.08);
+}
+
+.book-spine-card.sliding-out {
+  transform: translateY(-18px) scale(1.03);
+  box-shadow: 4px 14px 24px rgba(48, 44, 43, 0.22);
+}
+
+.book-spine-card:active {
+  transform: translateY(-4px);
+}
+
+/* Spine Embossed Bands */
+.spine-top-band,
+.spine-bottom-band {
+  width: 82%;
+  height: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.55);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 1px 0;
+  flex-shrink: 0;
+}
+
+/* Bookmark Ribbon */
+.spine-ribbon {
+  position: absolute;
+  top: -6px;
+  right: 8px;
+  width: 7px;
+  height: 14px;
+  border-radius: 0 0 2px 2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  z-index: 2;
+}
+
+/* Vertical Title on Spine */
+.spine-title-vertical {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: "Nunito", "DM Sans", sans-serif;
+  font-weight: 700;
+  font-size: 11.5px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 105px;
+  text-align: center;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0;
+}
+
+/* Spine Base Page Count */
+.spine-base-meta {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.82;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Search Match Badge on Spine */
+.spine-match-badge {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--coral);
+  color: white;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 100px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(233, 111, 115, 0.35);
+  z-index: 3;
+}
+
+/* Dashed "+" Book Spine */
+.book-spine-add-dashed {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 155px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(78, 159, 172, 0.45);
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  border-radius: 4px 6px 6px 4px;
+  cursor: pointer;
+  color: var(--coral-dark);
+  transition: all 0.18s ease;
+  padding: 8px 2px;
+}
+
+.book-spine-add-dashed:hover {
+  background: var(--peach-soft);
+  border-color: var(--coral);
+  transform: translateY(-4px);
+}
+
+.book-spine-add-dashed span.plus-symbol {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.book-spine-add-dashed span.plus-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+/* Empty Shelf Text */
+.bookshelf-empty-shelf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* "+ New Shelf" Pill Button */
+.bookshelf-bottom-actions {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0 24px;
+}
+
+.new-shelf-pill-btn {
+  border-radius: 100px;
+  min-height: 40px;
+  padding: 8px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1.5px dashed color-mix(in srgb, var(--coral) 50%, var(--line));
+  background: var(--paper);
+  color: var(--coral-dark);
+  box-shadow: 0 4px 12px rgba(91, 60, 49, 0.05);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.new-shelf-pill-btn:hover {
+  background: var(--peach-soft);
+  border-color: var(--coral);
+}
+
+.new-shelf-pill-btn:active {
+  transform: scale(0.97);
+}
+/* ============================================================== */
+/* FULLSCREEN DEDICATED OPEN BOOK (REALISTIC PAGE UI)             */
+/* ============================================================== */
+.open-book-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: radial-gradient(circle at 50% 25%, #fefcf9 0%, #ebe4d8 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: text;
+}
+
+.open-book-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: max(env(safe-area-inset-top, 0px), 10px) 16px 10px;
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 10%, #ffffff);
+  border-bottom: 1px solid color-mix(in srgb, var(--book-accent, #94d2bd) 24%, #e2d7cc);
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(50, 40, 30, 0.04);
+}
+
+.open-book-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.open-book-back-btn:hover {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 15%, #ffffff);
+  border-color: var(--book-accent, var(--coral));
+}
+
+.open-book-title-group {
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.open-book-title-group h2 {
+  font-size: 14.5px;
+  font-weight: 800;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.open-book-page-counter {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 1px 0 0;
+}
+
+.open-book-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.open-book-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--ink);
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.open-book-icon-btn:hover {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 15%, #ffffff);
+  border-color: var(--book-accent, var(--coral));
+  color: var(--coral-dark);
+}
+
+/* 0.6s Opening Moment 3D Cover Animation */
+.book-opening-stage {
+  position: absolute;
+  inset: 56px 0 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1600px;
+  background: radial-gradient(circle at 50% 30%, #fdfbf7 0%, #ebe4d8 100%);
+  pointer-events: none;
+}
+
+.book-opening-cover {
+  width: min(84vw, 360px);
+  aspect-ratio: 3 / 4;
+  border-radius: 8px 18px 18px 8px;
+  box-shadow: 0 24px 50px rgba(45, 30, 20, 0.28), -6px 0 16px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 32px 28px;
+  position: relative;
+  transform-origin: left center;
+  animation: bookCoverOpenTurn 0.6s cubic-bezier(0.2, 0.85, 0.3, 1) forwards;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.book-opening-cover::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 28px;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.22) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(0, 0, 0, 0.1) 100%);
+  border-radius: 8px 0 0 8px;
+}
+
+.book-opening-cover-title {
+  font-family: Georgia, serif;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-top: 40px;
+  letter-spacing: -0.02em;
+}
+
+.book-opening-cover-seal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+@keyframes bookCoverOpenTurn {
+  0% {
+    transform: perspective(1600px) rotateY(0deg);
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: perspective(1600px) rotateY(-130deg);
+    opacity: 0;
+  }
+}
+
+/* Stage Area Containing the Paper Page */
+.open-book-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  position: relative;
+}
+
+/* Real Book Page Container (roughly 3:4 portrait) */
+.open-book-spread-container {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  max-width: 960px;
+  gap: 0;
+  margin: 0 auto;
+}
+
+.open-book-page-paper {
+  width: 100%;
+  max-width: 440px;
+  min-height: 520px;
+  background-color: #fdfbf7;
+  border-radius: 6px 16px 16px 6px;
+  padding: 30px 26px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s ease;
+  box-sizing: border-box;
+
+  /* Realistic Stacked Paper Edges on side and bottom */
+  box-shadow:
+    -1px 0 0 rgba(220, 208, 196, 0.8),
+    1px 1px 0 #ede2d5,
+    2px 2px 0 #e6dacb,
+    3px 3px 0 #dfd1c1,
+    4px 4px 0 #d8c7b6,
+    0 16px 40px -6px rgba(55, 40, 28, 0.15);
+}
+
+/* Spine gutter shadow: vertical gradient along binding edge */
+.open-book-page-paper.gutter-left {
+  border-left: 2px solid rgba(210, 195, 180, 0.4);
+  box-shadow:
+    inset 16px 0 20px -10px rgba(50, 35, 25, 0.08),
+    1px 1px 0 #ede2d5,
+    2px 2px 0 #e6dacb,
+    3px 3px 0 #dfd1c1,
+    4px 4px 0 #d8c7b6,
+    0 16px 40px -6px rgba(55, 40, 28, 0.15);
+}
+
+.open-book-page-paper.gutter-right {
+  border-radius: 16px 6px 6px 16px;
+  border-right: 2px solid rgba(210, 195, 180, 0.4);
+  box-shadow:
+    inset -16px 0 20px -10px rgba(50, 35, 25, 0.08),
+    -1px 1px 0 #ede2d5,
+    -2px 2px 0 #e6dacb,
+    -3px 3px 0 #dfd1c1,
+    -4px 4px 0 #d8c7b6,
+    0 16px 40px -6px rgba(55, 40, 28, 0.15);
+}
+
+/* Page Styles: Ruled, Dotted, Plain */
+.open-book-page-paper.page-style-lined {
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 31px,
+    rgba(148, 180, 170, 0.22) 31px,
+    rgba(148, 180, 170, 0.22) 32px
+  );
+}
+
+.open-book-page-paper.page-style-dotted {
+  background-image: radial-gradient(rgba(148, 180, 170, 0.32) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.open-book-page-paper.page-style-plain {
+  background-image: radial-gradient(#efe8dd 0.75px, transparent 0.75px);
+  background-size: 18px 18px;
+}
+
+/* Page-turn animations */
+.open-book-page-paper.turning-next {
+  transform: translateX(-32px) rotateY(-8deg) scale(0.96);
+  opacity: 0.6;
+}
+
+.open-book-page-paper.turning-prev {
+  transform: translateX(32px) rotateY(8deg) scale(0.96);
+  opacity: 0.6;
+}
+
+/* Ribbon Bookmark hanging from top edge */
+.book-ribbon-bookmark {
+  position: absolute;
+  top: -4px;
+  right: 32px;
+  width: 18px;
+  height: 52px;
+  z-index: 10;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.16);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%);
+  transition: transform 0.2s ease;
+}
+
+.book-ribbon-bookmark:hover {
+  transform: translateY(2px);
+}
+
+/* Bottom Outer Page Curl */
+.page-curl-corner {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 38px;
+  height: 38px;
+  cursor: pointer;
+  z-index: 15;
+  border-radius: 0 0 16px 0;
+}
+
+.page-curl-triangle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 32px 32px;
+  border-color: transparent transparent #ede3d4 transparent;
+  filter: drop-shadow(-2px -2px 3px rgba(60, 45, 35, 0.16));
+  transition: transform 0.2s ease, border-width 0.2s ease;
+}
+
+.page-curl-corner:hover .page-curl-triangle {
+  border-width: 0 0 38px 38px;
+}
+
+/* Page Top Meta Row */
+.page-top-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+  padding-right: 28px; /* space for ribbon */
+}
+
+.page-date-indicator {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #8c827a;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: Georgia, serif;
+}
+
+.page-save-indicator {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 100px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.page-save-indicator.saved {
+  color: #276749;
+  background: #e6f4ea;
+}
+
+.page-save-indicator.saving {
+  color: #b7791f;
+  background: #fefcbf;
+}
+
+.page-save-indicator.error {
+  color: #9b2c2c;
+  background: #fed7d7;
+  cursor: pointer;
+}
+
+/* Optional Title Field on Page */
+.page-title-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: Georgia, serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: #2b231f;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid rgba(220, 205, 190, 0.5);
+  margin-bottom: 12px;
+  outline: none;
+  letter-spacing: -0.01em;
+}
+
+.page-title-input::placeholder {
+  color: #b0a397;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Mood Stamp Badge in Page Top Corner */
+.page-mood-stamp {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  border: 1px dashed color-mix(in srgb, var(--book-accent, #2b7a78) 45%, #b5a596);
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 12%, #fffaf3);
+  color: #2c2520;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.page-mood-stamp:hover {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 22%, #fffaf3);
+  transform: translateY(-1px);
+}
+
+/* Large Writing Area with Soft Serif / Handwriting Style */
+.page-writing-textarea {
+  width: 100%;
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: Georgia, "Playfair Display", serif;
+  font-size: 16px;
+  line-height: 1.8;
+  color: #2b2420;
+  min-height: 220px;
+  resize: none;
+  outline: none;
+  padding: 4px 0;
+  box-sizing: border-box;
+}
+
+.page-writing-textarea::placeholder {
+  color: #b5aaa0;
+  font-style: italic;
+}
+
+/* Polaroid-Style Photo Cards with Tape */
+.page-photos-section {
+  margin: 10px 0 14px;
+}
+
+.page-photo-thumbnails-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.polaroid-card {
+  position: relative;
+  background: #ffffff;
+  padding: 7px 7px 18px 7px;
+  border-radius: 3px;
+  box-shadow: 0 4px 12px rgba(45, 30, 20, 0.14);
+  transform: rotate(-1.5deg);
+  transition: transform 0.2s ease;
+  max-width: 140px;
+}
+
+.polaroid-card:nth-child(even) {
+  transform: rotate(2deg);
+}
+
+.polaroid-card:hover {
+  transform: scale(1.04) rotate(0deg);
+  z-index: 5;
+}
+
+.polaroid-tape {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 38px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed rgba(200, 185, 170, 0.7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.polaroid-card img {
+  width: 126px;
+  height: 105px;
+  object-fit: cover;
+  display: block;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.polaroid-remove-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #ffffff;
+  border: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.page-photo-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.page-photo-attach-btn:hover {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 15%, #ffffff);
+  border-color: var(--book-accent, var(--coral));
+}
+
+/* Page Number Printed at Bottom Center */
+.page-number-printed {
+  text-align: center;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  color: #9c9187;
+  letter-spacing: 0.15em;
+  margin: 10px 0 6px;
+}
+
+/* Footer Timestamps on Every Page (Always Visible) */
+.page-footer-timestamps {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(215, 200, 185, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.page-footer-timestamp-line {
+  font-size: 10.5px;
+  color: #8c827a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-footer-timestamp-line strong {
+  font-weight: 700;
+  color: #6b6159;
+}
+
+/* Slim Floating Formatting Toolbar */
+.page-floating-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--book-accent, #94d2bd) 35%, var(--line));
+  box-shadow: 0 6px 20px rgba(50, 40, 30, 0.1);
+  padding: 5px 8px;
+  border-radius: 100px;
+  margin: 0 auto 10px;
+  width: fit-content;
+  max-width: 92vw;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.page-floating-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.toolbar-btn {
+  border: none;
+  background: transparent;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #4a3e36;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s ease;
+}
+
+.toolbar-btn:hover {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 20%, #f7f3ee);
+  color: #1a1614;
+}
+
+.toolbar-btn.active {
+  background: var(--book-accent, var(--coral));
+  color: #ffffff;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 18px;
+  background: rgba(200, 185, 170, 0.6);
+  margin: 0 3px;
+}
+
+/* Dedicated Bottom Bar for Page Navigation */
+.open-book-bottom-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px max(env(safe-area-inset-bottom, 0px), 12px);
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 10%, #ffffff);
+  border-top: 1px solid color-mix(in srgb, var(--book-accent, #94d2bd) 24%, #e2d7cc);
+  flex-shrink: 0;
+  box-shadow: 0 -2px 10px rgba(50, 40, 30, 0.04);
+}
+
+.book-turn-page-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.book-turn-page-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 15%, #ffffff);
+  border-color: var(--book-accent, var(--coral));
+}
+
+.book-turn-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.book-page-index-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--book-accent, var(--coral));
+  color: #1a3832;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.book-page-index-pill-btn:hover {
+  filter: brightness(0.96);
+}
+
+.book-page-index-pill-btn:active {
+  transform: scale(0.97);
+}
+
+/* Page Index Drawer */
+.page-index-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(30, 24, 20, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.page-index-panel {
+  width: min(85vw, 380px);
+  background: #ffffff;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.15);
+  padding: max(env(safe-area-inset-top, 0px), 16px) 16px 20px;
+}
+
+.page-index-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.page-index-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page-index-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #faf8f5;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.page-index-item:hover {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 12%, #faf8f5);
+  border-color: var(--book-accent, var(--coral));
+}
+
+.page-index-item.current {
+  background: color-mix(in srgb, var(--book-accent, #94d2bd) 20%, #faf8f5);
+  border-color: var(--book-accent, var(--coral));
+  font-weight: 700;
+}
+
+/* Two-Page Spread on Tablets / Laptops */
+@media (min-width: 768px) {
+  .open-book-spread-container {
+    max-width: 900px;
+    gap: 0;
+  }
+
+  .open-book-page-paper {
+    max-width: 420px;
+    min-height: 580px;
+  }
+
+  .book-center-spine-crease {
+    width: 20px;
+    background: linear-gradient(
+      to right,
+      rgba(40, 30, 20, 0.1) 0%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(40, 30, 20, 0.1) 100%
+    );
+    box-shadow: inset 0 0 10px rgba(40, 30, 20, 0.15);
+  }
+}
+
+/* Live Spine Preview in Create/Edit Book Sheet */
+.spine-preview-container {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0;
+  background: linear-gradient(180deg, #f7f3ec 0%, #ebe4d8 100%);
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+
+/* Color Swatches Grid */
+.color-swatches-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+
+.color-swatch-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.color-swatch-btn:hover {
+  transform: scale(1.08);
+}
+
+.color-swatch-btn.active {
+  box-shadow: 0 0 0 3px var(--coral);
+  transform: scale(1.08);
+}
+
+

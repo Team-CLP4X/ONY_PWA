@@ -147,7 +147,7 @@ async function startServer() {
   const host = hostArgIdx !== -1 && process.argv[hostArgIdx + 1] ? process.argv[hostArgIdx + 1] : "0.0.0.0";
 
   const isDev = process.env.NODE_ENV !== "production";
-  const primaryPort = cliPort || (isDev ? 3000 : parseInt(process.env.PORT || "8080", 10));
+  const primaryPort = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
   app.disable("x-powered-by");
 

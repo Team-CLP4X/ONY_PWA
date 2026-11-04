@@ -888,12 +888,13 @@ function AppInner() {
   );
   const [tab, setTab] = useState<Tab>("chat");
   const [screen, setScreen] = useState<Screen>("main");
+  const [isWritingJournalBook, setIsWritingJournalBook] = useState(false);
   const [history, setHistory] = useState<Screen[]>([]);
   const [toast, setToast] = useState("");
   const navigate = (next: Screen) => { setHistory((h) => [...h, screen]); setScreen(next); };
   const back = () => { const prev = history[history.length - 1] || "main"; setHistory((h) => h.slice(0, -1)); setScreen(prev); };
   const notify = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
-  const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); };
+  const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); setIsWritingJournalBook(false); };
 
   useEffect(() => {
     const unsub = ambientMusicEngine.subscribe((state) => {
@@ -1793,6 +1794,7 @@ function AppInner() {
                     setUseActiveMemories={setUseActiveMemories}
                     currentUser={currentUser}
                     onNavigateToPrivacy={() => navigate("privacy")}
+                    onOpenBookChange={setIsWritingJournalBook}
                   />
                 )}
                 {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
@@ -1961,7 +1963,9 @@ function AppInner() {
             language={language}
           />
         )}
-        <BottomNav tab={tab} setTab={goTab} />
+        {(!isWritingJournalBook || tab !== "memory") && (
+          <BottomNav tab={tab} setTab={goTab} />
+        )}
         {toast && <div className="toast"><Icon name="check" />{toast}</div>}
         <CalmingMusicModal
           isOpen={showMusicModal}

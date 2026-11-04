@@ -123,6 +123,8 @@ export interface FirestoreJournalEntry {
   tags?: string[];
   createdAt: string;
   updatedAt: string;
+  bookId?: string;
+  pageNumber?: number;
 }
 
 export interface FirestoreConversation {
@@ -602,6 +604,22 @@ export const DEFAULT_JOURNAL_ENTRIES: Omit<FirestoreJournalEntry, "id" | "create
 export async function listJournalEntries(uid: string): Promise<FirestoreJournalEntry[]> {
   const path = `users/${uid}/journalEntries`;
   try {
+    // 1. Try reading journalEntries directly from user profile document first
+    const userDocRef = doc(db, "users", uid);
+    const userSnap = await getDoc(userDocRef);
+    if (userSnap.exists()) {
+      const uData = userSnap.data();
+      if (Array.isArray(uData.journalEntries) && uData.journalEntries.length > 0) {
+        saveCachedJournalEntries(uData.journalEntries);
+        return uData.journalEntries;
+      }
+    }
+  } catch (err) {
+    console.warn("[ONY Journal] User document read notice:", err);
+  }
+
+  // 2. Try reading from subcollection if permitted
+  try {
     const colRef = collection(db, "users", uid, "journalEntries");
     const q = query(colRef, orderBy("entryDate", "desc"));
     const snap = await getDocs(q);
@@ -613,32 +631,57 @@ export async function listJournalEntries(uid: string): Promise<FirestoreJournalE
       saveCachedJournalEntries(loaded);
       return loaded;
     }
-    const cached = loadCachedJournalEntries();
-    return cached;
   } catch (error) {
-    console.warn("[ONY Journal] List notice, using local cache:", error);
-    return loadCachedJournalEntries();
+    console.warn("[ONY Journal] Subcollection read notice, falling back to cache:", error);
   }
+
+  return loadCachedJournalEntries();
 }
 
 export async function saveJournalEntry(
   uid: string,
-  entry: Omit<FirestoreJournalEntry, "id" | "createdAt" | "updatedAt">,
+  entry: Omit<FirestoreJournalEntry, "id" | "createdAt" | "updatedAt"> & { id?: string },
 ): Promise<string> {
-  const path = `users/${uid}/journalEntries`;
+  const entryId = entry.id || `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const now = new Date().toISOString();
+  const fullEntry: FirestoreJournalEntry = {
+    id: entryId,
+    title: entry.title || "",
+    content: entry.content || "",
+    dateKey: entry.dateKey || getLocalDateKey(),
+    entryDate: entry.entryDate || now,
+    createdAt: now,
+    updatedAt: now,
+    ...(entry.moodEmoji ? { moodEmoji: entry.moodEmoji } : {}),
+    ...(entry.moodLabel ? { moodLabel: entry.moodLabel } : {}),
+    ...(entry.photoUrl ? { photoUrl: entry.photoUrl } : {}),
+    ...(entry.tags ? { tags: entry.tags } : {}),
+    ...(entry.bookId ? { bookId: entry.bookId } : {}),
+    ...(typeof entry.pageNumber === "number" ? { pageNumber: entry.pageNumber } : {}),
+  };
+
+  // 1. Immediately update local cache for instant zero-lag response
+  const cached = loadCachedJournalEntries();
+  const nextCached = [fullEntry, ...cached.filter((e) => e.id !== entryId)];
+  saveCachedJournalEntries(nextCached);
+
+  // 2. Persist to users/{uid} document (which is guaranteed accessible by security rules)
   try {
-    const colRef = collection(db, "users", uid, "journalEntries");
-    const newDocRef = doc(colRef);
-    const now = new Date().toISOString();
-    await setDoc(newDocRef, {
-      ...entry,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return newDocRef.id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    const userRef = doc(db, "users", uid);
+    await setDoc(userRef, { journalEntries: nextCached, updatedAt: now }, { merge: true });
+  } catch (err) {
+    console.warn("[ONY Journal] Syncing entry to user profile notice:", err);
   }
+
+  // 3. Best-effort write to subcollection without crashing if subcollection rules are restricted
+  try {
+    const docRef = doc(db, "users", uid, "journalEntries", entryId);
+    await setDoc(docRef, fullEntry);
+  } catch (err) {
+    console.warn("[ONY Journal] Subcollection write fallback notice:", err);
+  }
+
+  return entryId;
 }
 
 export async function updateJournalEntry(
@@ -646,25 +689,101 @@ export async function updateJournalEntry(
   entryId: string,
   updates: Partial<FirestoreJournalEntry>,
 ): Promise<void> {
-  const path = `users/${uid}/journalEntries/${entryId}`;
+  const now = new Date().toISOString();
+
+  // 1. Update in local cache
+  const cached = loadCachedJournalEntries();
+  const nextCached = cached.map((e) =>
+    e.id === entryId
+      ? {
+          ...e,
+          ...updates,
+          updatedAt: now,
+        }
+      : e,
+  );
+  saveCachedJournalEntries(nextCached);
+
+  // 2. Persist to users/{uid} document
+  try {
+    const userRef = doc(db, "users", uid);
+    await setDoc(userRef, { journalEntries: nextCached, updatedAt: now }, { merge: true });
+  } catch (err) {
+    console.warn("[ONY Journal] Syncing updated entry to user profile notice:", err);
+  }
+
+  // 3. Best-effort update to subcollection
   try {
     const docRef = doc(db, "users", uid, "journalEntries", entryId);
-    await updateDoc(docRef, {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    await setDoc(docRef, { ...updates, updatedAt: now }, { merge: true });
+  } catch (err) {
+    console.warn("[ONY Journal] Subcollection update fallback notice:", err);
   }
 }
 
 export async function deleteJournalEntry(uid: string, entryId: string): Promise<void> {
-  const path = `users/${uid}/journalEntries/${entryId}`;
+  const now = new Date().toISOString();
+
+  // 1. Update in local cache
+  const cached = loadCachedJournalEntries();
+  const nextCached = cached.filter((e) => e.id !== entryId);
+  saveCachedJournalEntries(nextCached);
+
+  // 2. Persist to users/{uid} document
+  try {
+    const userRef = doc(db, "users", uid);
+    await setDoc(userRef, { journalEntries: nextCached, updatedAt: now }, { merge: true });
+  } catch (err) {
+    console.warn("[ONY Journal] Syncing deleted entry to user profile notice:", err);
+  }
+
+  // 3. Best-effort delete from subcollection
   try {
     const docRef = doc(db, "users", uid, "journalEntries", entryId);
     await deleteDoc(docRef);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+  } catch (err) {
+    console.warn("[ONY Journal] Subcollection delete fallback notice:", err);
+  }
+}
+
+export async function syncUserBookshelfData(
+  uid: string,
+  shelves: any[],
+  books: any[],
+): Promise<void> {
+  try {
+    const userRef = doc(db, "users", uid);
+    await setDoc(
+      userRef,
+      {
+        journalShelves: shelves,
+        journalBooks: books,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.warn("[ONY Journal] Bookshelf sync notice:", err);
+  }
+}
+
+export async function loadUserBookshelfData(
+  uid: string,
+): Promise<{ shelves?: any[]; books?: any[] } | null> {
+  try {
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      return {
+        shelves: Array.isArray(data.journalShelves) ? data.journalShelves : undefined,
+        books: Array.isArray(data.journalBooks) ? data.journalBooks : undefined,
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn("[ONY Journal] Bookshelf load notice:", err);
+    return null;
   }
 }
 
