@@ -1918,7 +1918,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
   "中文": {
     // Navigation
     nav_chat: "倾诉伙伴",
-    nav_memory: "Memory Vault",
+    nav_memory: "记忆库",
     nav_community: "互助社区",
     nav_market: "精选好物",
     nav_profile: "个人中心",
@@ -1982,8 +1982,8 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     mood_trends_subtitle: "您的每周心情波动与陪伴洞察",
 
     // Memory Vault
-    memory_title: "记忆宝库",
-    memory_subtitle: "经授权保留的心灵记忆与锚点",
+    memory_title: "记忆库",
+    memory_subtitle: "私密手帐书架与经授权的 AI 专属记忆",
     memory_add_btn: "添加记忆",
     memory_empty_title: "宝库正静候您的心声",
     memory_empty_desc: "保存个人边界、放松锚点或难忘时刻，让 ONY 在对话中更加懂你。",

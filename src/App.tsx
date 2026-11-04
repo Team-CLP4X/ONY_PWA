@@ -889,12 +889,13 @@ function AppInner() {
   const [tab, setTab] = useState<Tab>("chat");
   const [screen, setScreen] = useState<Screen>("main");
   const [isWritingJournalBook, setIsWritingJournalBook] = useState(false);
+  const [isJournalSheetOpen, setIsJournalSheetOpen] = useState(false);
   const [history, setHistory] = useState<Screen[]>([]);
   const [toast, setToast] = useState("");
   const navigate = (next: Screen) => { setHistory((h) => [...h, screen]); setScreen(next); };
   const back = () => { const prev = history[history.length - 1] || "main"; setHistory((h) => h.slice(0, -1)); setScreen(prev); };
   const notify = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
-  const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); setIsWritingJournalBook(false); };
+  const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); setIsWritingJournalBook(false); setIsJournalSheetOpen(false); };
 
   useEffect(() => {
     const unsub = ambientMusicEngine.subscribe((state) => {
@@ -1795,6 +1796,7 @@ function AppInner() {
                     currentUser={currentUser}
                     onNavigateToPrivacy={() => navigate("privacy")}
                     onOpenBookChange={setIsWritingJournalBook}
+                    onSheetOpenChange={setIsJournalSheetOpen}
                   />
                 )}
                 {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
@@ -1963,7 +1965,7 @@ function AppInner() {
             language={language}
           />
         )}
-        {(!isWritingJournalBook || tab !== "memory") && (
+        {((!isWritingJournalBook && !isJournalSheetOpen) || tab !== "memory") && (
           <BottomNav tab={tab} setTab={goTab} />
         )}
         {toast && <div className="toast"><Icon name="check" />{toast}</div>}
@@ -4210,7 +4212,7 @@ function MemoryVault({
 
         {items.length > 0 && filteredItems.length === 0 && (
           <div className="empty">
-            <span className="empty-emoji">🔍</span>
+            <Icon name="search" />
             <h3>
               {language === "Bahasa Melayu"
                 ? "Tiada memori sepadan"
@@ -4250,15 +4252,15 @@ function MemoryVault({
             </div>
             {!useActiveMemories ? (
               <span className="vault-privacy-status-pill paused">
-                🔒 {language === "Bahasa Melayu" ? "Mod Sementara" : language === "中文" ? "纯净即时模式" : "Ephemeral Mode"}
+                <Icon name="lock" /> {language === "Bahasa Melayu" ? "Mod Sementara" : language === "中文" ? "纯净即时模式" : "Ephemeral Mode"}
               </span>
             ) : isAskBeforeSaving ? (
               <span className="vault-privacy-status-pill control">
-                🛡️ {t.memory_ask_saving_on_badge}
+                <Icon name="shield" /> {t.memory_ask_saving_on_badge}
               </span>
             ) : (
               <span className="vault-privacy-status-pill active">
-                🌱 {t.memory_ask_saving_off_badge}
+                <Icon name="check" /> {t.memory_ask_saving_off_badge}
               </span>
             )}
           </div>

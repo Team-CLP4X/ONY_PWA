@@ -456,11 +456,10 @@ async function startServer() {
     console.log(`ONY server running on http://${host}:${primaryPort}`);
   });
 
-  const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : undefined;
-  if (envPort && envPort !== primaryPort && !isNaN(envPort)) {
+  if (primaryPort !== 3000) {
     try {
-      app.listen(envPort, host, () => {
-        console.log(`ONY server also listening on http://${host}:${envPort}`);
+      app.listen(3000, host, () => {
+        console.log(`ONY server also listening on http://${host}:3000`);
       });
     } catch {
       // Graceful fallback if port already in use

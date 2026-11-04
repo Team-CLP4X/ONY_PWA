@@ -38,6 +38,17 @@ export type JournalIconName =
   | "plain"
   | "clock"
   | "bookmark"
+  | "bot"
+  | "play"
+  | "pause"
+  | "messageCircleHeart"
+  | "user"
+  | "users"
+  | "target"
+  | "shield"
+  | "heart"
+  | "move"
+  | "refresh"
   // Moods
   | "reflective"
   | "peaceful"
@@ -50,7 +61,14 @@ export type JournalIconName =
   | "angry"
   | "joyful"
   | "loved"
-  | "thoughtful";
+  | "thoughtful"
+  | "cloudRain"
+  | "waves"
+  | "flame"
+  | "heartHandshake"
+  | "moon"
+  | "sun"
+  | "smile";
 
 interface JournalIconProps {
   name: JournalIconName;
@@ -335,6 +353,75 @@ export function JournalIcon({
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
       </>
     ),
+    bot: (
+      <>
+        <rect width="18" height="12" x="3" y="6" rx="2" />
+        <path d="M9 11v.01" />
+        <path d="M15 11v.01" />
+        <path d="M12 2v4" />
+      </>
+    ),
+    play: (
+      <polygon points="5 3 19 12 5 21 5 3" />
+    ),
+    pause: (
+      <>
+        <line x1="6" y1="4" x2="6" y2="20" />
+        <line x1="18" y1="4" x2="18" y2="20" />
+      </>
+    ),
+    messageCircleHeart: (
+      <>
+        <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+        <path d="M12 8c1.5-1.5 3-1.5 4 0s.5 3-4 5.5c-4.5-2.5-5-4-4-5.5s2.5-1.5 4 0Z" />
+      </>
+    ),
+    user: (
+      <>
+        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </>
+    ),
+    users: (
+      <>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </>
+    ),
+    target: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <circle cx="12" cy="12" r="6" />
+        <circle cx="12" cy="12" r="2" />
+      </>
+    ),
+    shield: (
+      <>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+      </>
+    ),
+    heart: (
+      <>
+        <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+      </>
+    ),
+    move: (
+      <>
+        <polyline points="5 9 2 12 5 15" />
+        <polyline points="9 5 12 2 15 5" />
+        <polyline points="15 19 12 22 9 19" />
+        <polyline points="19 9 22 12 19 15" />
+        <line x1="2" x2="22" y1="12" y2="12" />
+        <line x1="12" x2="12" y1="2" y2="22" />
+      </>
+    ),
+    refresh: (
+      <>
+        <path d="M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5" />
+      </>
+    ),
 
     // Moods
     reflective: (
@@ -387,9 +474,9 @@ export function JournalIcon({
     ),
     overwhelmed: (
       <>
-        <path d="M2 12c2.5-3 5-3 7.5 0s5 3 7.5 0 5-3 5-3" />
-        <path d="M2 17c2.5-3 5-3 7.5 0s5 3 7.5 0 5-3 5-3" />
-        <path d="M2 7c2.5-3 5-3 7.5 0s5 3 7.5 0 5-3 5-3" />
+        <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+        <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+        <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
       </>
     ),
     angry: (
@@ -412,8 +499,53 @@ export function JournalIcon({
     ),
     thoughtful: (
       <>
+        <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+        <line x1="16" y1="8" x2="2" y2="22" />
+        <line x1="17.5" y1="15" x2="9" y2="15" />
+      </>
+    ),
+    cloudRain: (
+      <>
+        <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+        <path d="M16 14v6" />
+        <path d="M8 14v6" />
+        <path d="M12 16v6" />
+      </>
+    ),
+    waves: (
+      <>
+        <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+        <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+        <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+      </>
+    ),
+    flame: (
+      <>
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+      </>
+    ),
+    heartHandshake: (
+      <>
+        <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+      </>
+    ),
+    moon: (
+      <>
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+      </>
+    ),
+    sun: (
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+      </>
+    ),
+    smile: (
+      <>
         <circle cx="12" cy="12" r="10" />
-        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+        <line x1="9" y1="9" x2="9.01" y2="9" />
+        <line x1="15" y1="9" x2="15.01" y2="9" />
       </>
     ),
   };
@@ -440,20 +572,29 @@ export function JournalIcon({
 }
 
 /**
- * Maps mood labels (or legacy mood emojis) to our clean vector icon name
+ * Maps mood labels (or legacy mood emojis) to clean vector outline icon names
+ * strictly following the required mapping:
+ * Reflective = moon / feather
+ * Peaceful = leaf
+ * Grateful = sun / heart
+ * Sad / Tender = cloudRain
+ * Anxious / Overwhelmed = waves
+ * Angry = flame
+ * Joyful = smile
+ * Loved = heartHandshake
  */
 export function getMoodIconName(moodLabelOrEmoji?: string): JournalIconName {
-  if (!moodLabelOrEmoji) return "reflective";
+  if (!moodLabelOrEmoji) return "moon";
   const str = moodLabelOrEmoji.toLowerCase().trim();
 
   if (str.includes("reflect") || str.includes("merenung") || str.includes("沉思") || str.includes("🌿")) {
-    return "reflective";
+    return "moon";
   }
   if (str.includes("peace") || str.includes("damai") || str.includes("平静") || str.includes("🌸")) {
-    return "peaceful";
+    return "leaf";
   }
   if (str.includes("grate") || str.includes("syukur") || str.includes("感恩") || str.includes("☀️")) {
-    return "grateful";
+    return "sun";
   }
   if (str.includes("cozy") || str.includes("selesa") || str.includes("惬意") || str.includes("☕")) {
     return "cozy";
@@ -464,24 +605,56 @@ export function getMoodIconName(moodLabelOrEmoji?: string): JournalIconName {
   if (str.includes("ground") || str.includes("tenang") || str.includes("踏实") || str.includes("🍃")) {
     return "grounded";
   }
-  if (str.includes("sad") || str.includes("sayu") || str.includes("sedih") || str.includes("低落") || str.includes("tender") || str.includes("🌧")) {
-    return "sad";
+  if (
+    str.includes("sad") ||
+    str.includes("sayu") ||
+    str.includes("sedih") ||
+    str.includes("低落") ||
+    str.includes("tender") ||
+    str.includes("脆弱") ||
+    str.includes("🌧")
+  ) {
+    return "cloudRain";
   }
-  if (str.includes("overwhelm") || str.includes("terbeban") || str.includes("压抑") || str.includes("anxious") || str.includes("⚡")) {
-    return "overwhelmed";
+  if (
+    str.includes("overwhelm") ||
+    str.includes("terbeban") ||
+    str.includes("压抑") ||
+    str.includes("anxious") ||
+    str.includes("gelisah") ||
+    str.includes("焦虑") ||
+    str.includes("疲惫") ||
+    str.includes("⚡")
+  ) {
+    return "waves";
   }
   if (str.includes("angry") || str.includes("marah") || str.includes("愤怒") || str.includes("🔥")) {
-    return "angry";
+    return "flame";
   }
   if (str.includes("joy") || str.includes("gembira") || str.includes("喜悦") || str.includes("😊")) {
-    return "joyful";
+    return "smile";
   }
   if (str.includes("love") || str.includes("sayang") || str.includes("被爱") || str.includes("❤️")) {
-    return "loved";
+    return "heartHandshake";
   }
   if (str.includes("thought") || str.includes("fikir") || str.includes("若有所思") || str.includes("💭")) {
-    return "thoughtful";
+    return "feather";
   }
 
-  return "reflective";
+  return "moon";
+}
+
+/**
+ * Maps memory categories to small outline line icons for category chips
+ */
+export function getCategoryIconName(category: string): JournalIconName {
+  const c = category.toLowerCase().trim();
+  if (c === "all" || c === "semua" || c === "全部") return "list";
+  if (c.includes("about") || c.includes("tentang") || c.includes("关于")) return "user";
+  if (c.includes("pref") || c.includes("keutamaan") || c.includes("偏好")) return "heart";
+  if (c.includes("people") || c.includes("orang") || c.includes("重要的人") || c.includes("重要人员")) return "users";
+  if (c.includes("goal") || c.includes("matlamat") || c.includes("目标") || c.includes("愿望")) return "target";
+  if (c.includes("help") || c.includes("bantu") || c.includes("能帮助") || c.includes("锚点")) return "shield";
+  if (c.includes("special") || c.includes("khas") || c.includes("特别") || c.includes("闪光")) return "sparkles";
+  return "sparkles";
 }

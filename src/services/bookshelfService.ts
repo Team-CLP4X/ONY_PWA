@@ -183,15 +183,27 @@ export function ensureEntriesLinkedToBooks(
   return { updatedEntries, didChange };
 }
 
-/**
- * Format timestamp for footer: e.g. "4 Nov 2026, 9:42 PM"
- */
-export function formatPageFooterTimestamp(isoString?: string): string {
-  if (!isoString) return "Just now";
+export function formatPageFooterTimestamp(
+  isoString?: string,
+  lang: "English" | "Bahasa Melayu" | "中文" = "English",
+): string {
+  if (!isoString) return lang === "中文" ? "刚刚" : lang === "Bahasa Melayu" ? "Sebentar tadi" : "Just now";
   const d = new Date(isoString);
   if (isNaN(d.getTime())) return isoString;
+
+  if (lang === "中文") {
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const date = d.getDate();
+    const hours = d.getHours().toString().padStart(2, "0");
+    const minutes = d.getMinutes().toString().padStart(2, "0");
+    return `${year}年${month}月${date}日 ${hours}:${minutes}`;
+  }
+
   const day = d.getDate();
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthsEn = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthsBm = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+  const months = lang === "Bahasa Melayu" ? monthsBm : monthsEn;
   const month = months[d.getMonth()];
   const year = d.getFullYear();
   let hours = d.getHours();
@@ -202,7 +214,7 @@ export function formatPageFooterTimestamp(isoString?: string): string {
   return `${day} ${month} ${year}, ${hours}:${minutes} ${ampm}`;
 }
 
-export type BookSortOption = "last_edited" | "created" | "title";
+export type BookSortOption = "last_edited" | "created" | "page_count" | "title";
 
 export function sortBooks(books: JournalBook[], sortOption: BookSortOption): JournalBook[] {
   const list = [...books];
@@ -211,6 +223,8 @@ export function sortBooks(books: JournalBook[], sortOption: BookSortOption): Jou
       return list.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
     case "created":
       return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    case "page_count":
+      return list.sort((a, b) => (b.spineHeight || 160) - (a.spineHeight || 160));
     case "title":
       return list.sort((a, b) => a.title.localeCompare(b.title));
     default:
