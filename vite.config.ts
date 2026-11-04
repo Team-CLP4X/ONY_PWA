@@ -85,7 +85,6 @@ export default defineConfig(({ mode }) => {
       port: parseInt(process.env.PORT || "3000", 10),
       strictPort: true,
       allowedHosts: true,
-      hmr: false,
       watch: {
         ignored: ["**/.figma/**"],
       },
