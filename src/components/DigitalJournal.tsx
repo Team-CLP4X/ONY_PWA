@@ -46,6 +46,20 @@ import {
   getCategoryIconName,
   type JournalIconName,
 } from "./JournalIcon";
+import {
+  getAccessibleTextColor,
+  getDerivedRibbonColor,
+  getDerivedAccentColor,
+  isColorSaturatedOrDark,
+  getSpineDepthStyles,
+  getSpineFontSize,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  hsvToHex,
+  normalizeHex,
+} from "../utils/bookColorUtils";
 
 type Companion = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
 
@@ -133,14 +147,21 @@ export function DigitalJournal({
   const [books, setBooks] = useState<JournalBook[]>(() => loadSavedBooks());
   const [bookSort, setBookSort] = useState<BookSortOption>("last_edited");
 
-  // Search & Filter State
+  // Search & Filter State (Fix 3: Minimal Filtering)
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month" | "custom">("all");
   const [customDateStart, setCustomDateStart] = useState<string | null>(null);
   const [customDateEnd, setCustomDateEnd] = useState<string | null>(null);
-  const [moodFilter, setMoodFilter] = useState<string | null>(null);
+  const [moodFilters, setMoodFilters] = useState<string[]>([]);
 
-  // Custom Calendar Bottom Sheet State (Fix A)
+  // Filter Bottom Sheet State (Fix 3)
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [draftDateFilter, setDraftDateFilter] = useState<"all" | "today" | "week" | "month" | "custom">("all");
+  const [draftCustomDateStart, setDraftCustomDateStart] = useState<string | null>(null);
+  const [draftCustomDateEnd, setDraftCustomDateEnd] = useState<string | null>(null);
+  const [draftMoodFilters, setDraftMoodFilters] = useState<string[]>([]);
+
+  // Custom Calendar Bottom Sheet State
   const [showCalendarSheet, setShowCalendarSheet] = useState(false);
   const [calendarViewYear, setCalendarViewYear] = useState(() => new Date().getFullYear());
   const [calendarViewMonth, setCalendarViewMonth] = useState(() => new Date().getMonth());
@@ -150,14 +171,41 @@ export function DigitalJournal({
   // Bookshelf Animation State
   const [slidingSpineId, setSlidingSpineId] = useState<string | null>(null);
 
-  // Open Book Fullscreen View State
+  // Open Book Fullscreen View State (Fix 2)
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [isOpeningCover, setIsOpeningCover] = useState(false);
   const [pageStyle, setPageStyle] = useState<"lined" | "dotted" | "plain">("lined");
-  const [showPageStyleMenu, setShowPageStyleMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showPageTextureSheet, setShowPageTextureSheet] = useState(false);
   const [currentPageIndex, setCurrentPageIndex] = useState<number>(0);
   const [pageTurnDirection, setPageTurnDirection] = useState<"none" | "turning-next" | "turning-prev">("none");
   const [showPageIndexDrawer, setShowPageIndexDrawer] = useState(false);
+
+  // Rename Book Modal State (from "..." menu)
+  const [showRenameBookModal, setShowRenameBookModal] = useState(false);
+  const [renameBookTitleInput, setRenameBookTitleInput] = useState("");
+
+  // Change Cover Color Bottom Sheet State (Fix 4 from "..." menu)
+  const [showChangeCoverSheet, setShowChangeCoverSheet] = useState(false);
+  const [changeCoverColorInput, setChangeCoverColorInput] = useState("#94D2BD");
+  const [showCustomPickerCover, setShowCustomPickerCover] = useState(false);
+
+  // Custom Color Picker State (Fix 4: 2D area, hue slider, recent colors, hex)
+  const [showCustomPickerCreate, setShowCustomPickerCreate] = useState(false);
+  const [pickerHue, setPickerHue] = useState(180);
+  const [pickerSat, setPickerSat] = useState(0.42);
+  const [pickerVal, setPickerVal] = useState(0.82);
+  const [pickerHexInput, setPickerHexInput] = useState("94D2BD");
+  const [recentCustomColors, setRecentCustomColors] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("ony_recent_colors");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 5);
+      }
+    } catch {}
+    return ["#8EA8C3", "#A8DADC", "#E9C46A", "#F4A261", "#E76F51"];
+  });
 
   // Notify parent of open book state to hide bottom nav when reading/writing a book
   useEffect(() => {
@@ -211,6 +259,10 @@ export function DigitalJournal({
   const isAnySheetOpen = Boolean(
     showCreateBookSheet ||
       showCalendarSheet ||
+      showFilterSheet ||
+      showPageTextureSheet ||
+      showChangeCoverSheet ||
+      showRenameBookModal ||
       showPageIndexDrawer ||
       showBookInfoModal ||
       showShelfModal ||
@@ -309,13 +361,29 @@ export function DigitalJournal({
     return set;
   }, [journalEntries]);
 
-  // Filter journal pages based on active controls (Search, Date, Mood)
+  // Sync page texture from book preferences when opening a book (Fix 2)
+  useEffect(() => {
+    if (activeBook) {
+      if (activeBook.pageTexture === "dots") setPageStyle("dotted");
+      else if (activeBook.pageTexture === "blank") setPageStyle("plain");
+      else setPageStyle("lined");
+    }
+  }, [activeBookId, activeBook?.pageTexture]);
+
+  // Filter journal pages based on active controls (Search, Date, Multi-select Moods)
   const isFilterActive = Boolean(
     searchQuery.trim() ||
-      moodFilter ||
+      moodFilters.length > 0 ||
       dateFilter !== "all" ||
       customDateStart
   );
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (dateFilter !== "all") count += 1;
+    count += moodFilters.length;
+    return count;
+  }, [dateFilter, moodFilters]);
 
   const isPageMatchingFilter = useCallback(
     (page: FirestoreJournalEntry): boolean => {
@@ -330,8 +398,10 @@ export function DigitalJournal({
         }
       }
 
-      if (moodFilter && page.moodLabel !== moodFilter) {
-        return false;
+      if (moodFilters.length > 0) {
+        if (!page.moodLabel || !moodFilters.includes(page.moodLabel)) {
+          return false;
+        }
       }
 
       const pageDate = page.dateKey || page.entryDate?.slice(0, 10) || page.createdAt?.slice(0, 10) || "";
@@ -359,8 +429,58 @@ export function DigitalJournal({
 
       return true;
     },
-    [searchQuery, moodFilter, dateFilter, customDateStart, customDateEnd, todayKey]
+    [searchQuery, moodFilters, dateFilter, customDateStart, customDateEnd, todayKey]
   );
+
+  // Result count for draft filters inside the Filter Bottom Sheet (Fix 3)
+  const draftFilterResultCount = useMemo(() => {
+    return journalEntries.filter((page) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchesTitle = (page.title || "").toLowerCase().includes(q);
+        const matchesContent = (page.content || "").toLowerCase().includes(q);
+        const matchesMood = (page.moodLabel || "").toLowerCase().includes(q);
+        const matchesTag = page.tags?.some((t) => t.toLowerCase().includes(q));
+        if (!matchesTitle && !matchesContent && !matchesMood && !matchesTag) {
+          return false;
+        }
+      }
+
+      if (draftMoodFilters.length > 0) {
+        if (!page.moodLabel || !draftMoodFilters.includes(page.moodLabel)) {
+          return false;
+        }
+      }
+
+      const pageDate = page.dateKey || page.entryDate?.slice(0, 10) || page.createdAt?.slice(0, 10) || "";
+      if (draftDateFilter === "custom" && draftCustomDateStart) {
+        if (draftCustomDateEnd) {
+          if (pageDate < draftCustomDateStart || pageDate > draftCustomDateEnd) return false;
+        } else {
+          if (pageDate !== draftCustomDateStart) return false;
+        }
+      }
+      if (draftDateFilter === "today" && pageDate !== todayKey) return false;
+      if (draftDateFilter === "week") {
+        const entryTs = new Date(page.entryDate || page.createdAt).getTime();
+        if (entryTs < Date.now() - 7 * 24 * 60 * 60 * 1000) return false;
+      }
+      if (draftDateFilter === "month") {
+        const entryTs = new Date(page.entryDate || page.createdAt).getTime();
+        if (entryTs < Date.now() - 30 * 24 * 60 * 60 * 1000) return false;
+      }
+
+      return true;
+    }).length;
+  }, [
+    journalEntries,
+    searchQuery,
+    draftMoodFilters,
+    draftDateFilter,
+    draftCustomDateStart,
+    draftCustomDateEnd,
+    todayKey,
+  ]);
 
   // Group books by shelf and compute match counts
   const shelfBooksMap = useMemo(() => {
@@ -1098,6 +1218,242 @@ export function DigitalJournal({
     return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   }, [language]);
 
+  // Active Filter Chip Helpers (Fix 3)
+  const getActiveDateFilterLabel = () => {
+    if (dateFilter === "today") return language === "中文" ? "今天" : language === "Bahasa Melayu" ? "Hari Ini" : "Today";
+    if (dateFilter === "week") return language === "中文" ? "本周" : language === "Bahasa Melayu" ? "Minggu Ini" : "This Week";
+    if (dateFilter === "month") return language === "中文" ? "本月" : language === "Bahasa Melayu" ? "Bulan Ini" : "This Month";
+    if (dateFilter === "custom" && customDateStart) return formatPickedDateLabel();
+    return "";
+  };
+
+  const handleOpenFilterSheet = () => {
+    setDraftDateFilter(dateFilter);
+    setDraftCustomDateStart(customDateStart);
+    setDraftCustomDateEnd(customDateEnd);
+    setDraftMoodFilters([...moodFilters]);
+    setShowFilterSheet(true);
+  };
+
+  const handleResetDraftFilters = () => {
+    setDraftDateFilter("all");
+    setDraftCustomDateStart(null);
+    setDraftCustomDateEnd(null);
+    setDraftMoodFilters([]);
+  };
+
+  const handleApplyFilterSheet = () => {
+    setDateFilter(draftDateFilter);
+    setCustomDateStart(draftCustomDateStart);
+    setCustomDateEnd(draftCustomDateEnd);
+    setMoodFilters(draftMoodFilters);
+    setShowFilterSheet(false);
+  };
+
+  const handleClearAllFilters = () => {
+    setSearchQuery("");
+    setDateFilter("all");
+    setCustomDateStart(null);
+    setCustomDateEnd(null);
+    setMoodFilters([]);
+  };
+
+  const handleRemoveMoodFilter = (moodKey: string) => {
+    setMoodFilters((prev) => prev.filter((m) => m !== moodKey));
+  };
+
+  const handleClearDateFilter = () => {
+    setDateFilter("all");
+    setCustomDateStart(null);
+    setCustomDateEnd(null);
+  };
+
+  const handleToggleDraftMood = (moodKey: string) => {
+    setDraftMoodFilters((prev) =>
+      prev.includes(moodKey) ? prev.filter((m) => m !== moodKey) : [...prev, moodKey]
+    );
+  };
+
+  const handleSelectDraftDate = (dFilter: "all" | "today" | "week" | "month" | "custom") => {
+    setDraftDateFilter(dFilter);
+    if (dFilter !== "custom") {
+      setDraftCustomDateStart(null);
+      setDraftCustomDateEnd(null);
+    }
+  };
+
+  // Fix 2: Texture Selection Handler
+  const handleSelectPageTexture = (style: "lined" | "dotted" | "plain") => {
+    setPageStyle(style);
+    if (activeBook) {
+      const textureKey: "ruled" | "dots" | "blank" = style === "dotted" ? "dots" : style === "plain" ? "blank" : "ruled";
+      const updatedBooks: JournalBook[] = books.map((b) => (b.id === activeBook.id ? { ...b, pageTexture: textureKey } : b));
+      updateBooksState(updatedBooks);
+    }
+  };
+
+  // Rename Book Handlers (from "..." menu)
+  const handleOpenRenameBook = () => {
+    if (!activeBook) return;
+    setRenameBookTitleInput(activeBook.title);
+    setShowRenameBookModal(true);
+    setShowMoreMenu(false);
+  };
+
+  const handleSaveRenameBook = () => {
+    const trimmed = renameBookTitleInput.trim();
+    if (!trimmed || !activeBook) return;
+    const updatedBooks = books.map((b) => (b.id === activeBook.id ? { ...b, title: trimmed } : b));
+    updateBooksState(updatedBooks);
+    setShowRenameBookModal(false);
+    notify(language === "中文" ? "手帐名称已更新" : "Book renamed");
+  };
+
+  // Change Cover Color Handlers (from "..." menu)
+  const handleOpenChangeCover = () => {
+    if (!activeBook) return;
+    setChangeCoverColorInput(activeBook.coverColor);
+    const rgb = hexToRgb(activeBook.coverColor);
+    if (rgb) {
+      const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+      setPickerHue(hsv.h);
+      setPickerSat(hsv.s);
+      setPickerVal(hsv.v);
+      setPickerHexInput(activeBook.coverColor.replace("#", ""));
+    }
+    setShowChangeCoverSheet(true);
+    setShowCustomPickerCover(false);
+    setShowMoreMenu(false);
+  };
+
+  const handleSaveChangeCover = () => {
+    if (!activeBook) return;
+    const norm = normalizeHex(changeCoverColorInput) || activeBook.coverColor;
+    const updatedBooks = books.map((b) => (b.id === activeBook.id ? { ...b, coverColor: norm } : b));
+    updateBooksState(updatedBooks);
+    addRecentColor(norm);
+    setShowChangeCoverSheet(false);
+    notify(language === "中文" ? "手帐封面色彩已更新" : "Cover color updated");
+  };
+
+  // Custom Color Picker Helpers (Fix 4 & 5)
+  const addRecentColor = (hex: string) => {
+    const norm = normalizeHex(hex);
+    if (!norm) return;
+    setRecentCustomColors((prev) => {
+      const filtered = prev.filter((c) => c.toUpperCase() !== norm.toUpperCase());
+      const next = [norm, ...filtered].slice(0, 5);
+      try {
+        localStorage.setItem("ony_recent_colors", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const applyCustomColor = (hex: string, setColorFn: (h: string) => void) => {
+    const norm = normalizeHex(hex);
+    if (!norm) return;
+    setColorFn(norm);
+    const rgb = hexToRgb(norm);
+    if (rgb) {
+      const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+      setPickerHue(hsv.h);
+      setPickerSat(hsv.s);
+      setPickerVal(hsv.v);
+      setPickerHexInput(norm.replace("#", ""));
+    }
+    addRecentColor(norm);
+  };
+
+  const handleSatValPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    setColorFn: (hex: string) => void,
+    currentHue: number
+  ) => {
+    const area = e.currentTarget;
+    area.setPointerCapture(e.pointerId);
+
+    const update = (clientX: number, clientY: number) => {
+      const rect = area.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+      const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
+      const s = Math.round((x / rect.width) * 100) / 100;
+      const v = Math.round((1 - y / rect.height) * 100) / 100;
+      setPickerSat(s);
+      setPickerVal(v);
+      const newHex = hsvToHex(currentHue, s, v);
+      setColorFn(newHex);
+      setPickerHexInput(newHex.replace("#", ""));
+    };
+
+    update(e.clientX, e.clientY);
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      update(moveEv.clientX, moveEv.clientY);
+    };
+
+    const onPointerUp = (upEv: PointerEvent) => {
+      try {
+        area.releasePointerCapture(e.pointerId);
+      } catch {}
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
+  const handleHuePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    setColorFn: (hex: string) => void,
+    currentSat: number,
+    currentVal: number
+  ) => {
+    const slider = e.currentTarget;
+    slider.setPointerCapture(e.pointerId);
+
+    const update = (clientX: number) => {
+      const rect = slider.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+      const h = Math.round((x / rect.width) * 360);
+      setPickerHue(h);
+      const newHex = hsvToHex(h, currentSat, currentVal);
+      setColorFn(newHex);
+      setPickerHexInput(newHex.replace("#", ""));
+    };
+
+    update(e.clientX);
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      update(moveEv.clientX);
+    };
+
+    const onPointerUp = (upEv: PointerEvent) => {
+      try {
+        slider.releasePointerCapture(e.pointerId);
+      } catch {}
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
+  const handlePickFromScreen = async (setColorFn: (hex: string) => void) => {
+    if (typeof window !== "undefined" && "EyeDropper" in window) {
+      try {
+        const EyeDropperClass = (window as any).EyeDropper;
+        const eyeDropper = new EyeDropperClass();
+        const result = await eyeDropper.open();
+        if (result && result.sRGBHex) {
+          applyCustomColor(result.sRGBHex, setColorFn);
+        }
+      } catch {}
+    }
+  };
+
   // AI Memory Handlers (Preserved with strict no-emoji requirement)
   const activeAiMemoriesCount = memories.filter((m) => m.active).length;
   const allAiMemoriesPaused = memories.length > 0 && memories.every((m) => !m.active);
@@ -1285,6 +1641,215 @@ export function DigitalJournal({
     );
   };
 
+  // Reusable Custom Cover Color Swatches & Inline Picker (Fix 4 & 5)
+  const renderColorPickerControl = (
+    currentColor: string,
+    setColorFn: (hex: string) => void,
+    isExpanded: boolean,
+    setIsExpanded: (val: boolean | ((prev: boolean) => boolean)) => void
+  ) => {
+    const isPreset = BOOK_COLOR_PALETTE.some((c) => c.hex.toUpperCase() === currentColor.toUpperCase());
+    const isCustomActive = !isPreset;
+
+    return (
+      <div className="diary-writer-form-group">
+        <label className="diary-writer-inline-label">
+          <JournalIcon name="palette" size={15} decorative />
+          <span>
+            {language === "Bahasa Melayu"
+              ? "Warna Kulit & Tulang Buku"
+              : language === "中文"
+              ? "书脊色彩"
+              : "Cover & Spine Color"}
+          </span>
+        </label>
+
+        {/* 10 Preset Swatches + 11th Custom Swatch */}
+        <div className="color-swatches-grid">
+          {BOOK_COLOR_PALETTE.map((swatch) => {
+            const isSelected = currentColor.toUpperCase() === swatch.hex.toUpperCase();
+            return (
+              <button
+                key={swatch.id}
+                type="button"
+                className={`color-swatch-btn ${isSelected ? "active" : ""}`}
+                style={{ backgroundColor: swatch.hex }}
+                onClick={() => {
+                  setColorFn(swatch.hex);
+                  setIsExpanded(false);
+                }}
+                title={swatch.name}
+                aria-label={swatch.name}
+              >
+                {isSelected && (
+                  <JournalIcon name="check" size={14} color="#ffffff" decorative />
+                )}
+              </button>
+            );
+          })}
+
+          {/* 11th Custom Swatch */}
+          <button
+            type="button"
+            className={`color-swatch-custom ${isCustomActive ? "active has-color" : ""}`}
+            style={
+              isCustomActive
+                ? ({ "--custom-swatch-color": currentColor } as any)
+                : undefined
+            }
+            onClick={() => setIsExpanded((prev) => !prev)}
+            title={language === "中文" ? "自定义色彩" : "Custom Color"}
+            aria-label={language === "中文" ? "自定义色彩" : "Custom Color"}
+          >
+            <div className="color-swatch-custom-inner">
+              <JournalIcon
+                name="pipette"
+                size={14}
+                decorative
+                color={isCustomActive ? getAccessibleTextColor(currentColor) : "#2b7a78"}
+              />
+            </div>
+            <span className="custom-swatch-sublabel">
+              {language === "中文" ? "自定义" : language === "Bahasa Melayu" ? "Tersuai" : "Custom"}
+            </span>
+          </button>
+        </div>
+
+        {/* Inline Custom Color Picker Panel */}
+        {isExpanded && (
+          <div className="custom-color-picker-panel">
+            {/* 1. 2D Saturation / Value Area with draggable handle (touch target >= 44px) */}
+            <div
+              className="color-sat-val-area"
+              style={{
+                backgroundColor: `hsl(${pickerHue}, 100%, 50%)`,
+                backgroundImage:
+                  "linear-gradient(to top, #000000, transparent), linear-gradient(to right, #ffffff, transparent)",
+              }}
+              onPointerDown={(e) => handleSatValPointerDown(e, setColorFn, pickerHue)}
+            >
+              <div
+                className="color-sat-val-handle"
+                style={{
+                  left: `${pickerSat * 100}%`,
+                  top: `${(1 - pickerVal) * 100}%`,
+                  backgroundColor: currentColor,
+                }}
+              />
+            </div>
+
+            {/* 2. Hue Slider with draggable thumb */}
+            <div
+              className="color-hue-slider-wrap"
+              onPointerDown={(e) => handleHuePointerDown(e, setColorFn, pickerSat, pickerVal)}
+            >
+              <div
+                className="color-hue-slider-thumb"
+                style={{
+                  left: `${(pickerHue / 360) * 100}%`,
+                  backgroundColor: `hsl(${pickerHue}, 100%, 50%)`,
+                }}
+              />
+            </div>
+
+            {/* 3. Recent Custom Colors (up to 5 swatches) */}
+            {recentCustomColors.length > 0 && (
+              <div className="recent-colors-section">
+                <span className="recent-colors-label">
+                  {language === "中文" ? "最近使用" : language === "Bahasa Melayu" ? "Terkini" : "Recent"}
+                </span>
+                <div className="recent-colors-swatches">
+                  {recentCustomColors.map((rHex, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="recent-color-chip"
+                      style={{ backgroundColor: rHex }}
+                      onClick={() => applyCustomColor(rHex, setColorFn)}
+                      title={rHex}
+                      aria-label={`Recent color ${rHex}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 4. Hex Input & Eyedropper */}
+            <div className="color-hex-controls-row">
+              <div
+                className="color-preview-circle"
+                style={{ backgroundColor: currentColor }}
+              />
+              <div className="color-hex-input-wrap">
+                <span className="color-hex-prefix">#</span>
+                <input
+                  type="text"
+                  className="color-hex-input"
+                  value={pickerHexInput}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+                    setPickerHexInput(raw);
+                    if (raw.length === 3 || raw.length === 6) {
+                      const norm = normalizeHex("#" + raw);
+                      if (norm) {
+                        setColorFn(norm);
+                        const rgb = hexToRgb(norm);
+                        if (rgb) {
+                          const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+                          setPickerHue(hsv.h);
+                          setPickerSat(hsv.s);
+                          setPickerVal(hsv.v);
+                        }
+                        addRecentColor(norm);
+                      }
+                    }
+                  }}
+                  placeholder="RRGGBB"
+                  maxLength={6}
+                />
+              </div>
+
+              {typeof window !== "undefined" && "EyeDropper" in window && (
+                <button
+                  type="button"
+                  className="color-eyedropper-btn"
+                  onClick={() => handlePickFromScreen(setColorFn)}
+                  title={language === "中文" ? "吸取屏幕颜色" : "Pick from screen"}
+                >
+                  <JournalIcon name="pipette" size={14} decorative />
+                  <span>{language === "中文" ? "吸色" : "Pipette"}</span>
+                </button>
+              )}
+            </div>
+
+            {/* 5. Readability Tip (Fix 5: gentle, non-blocking) */}
+            {isColorSaturatedOrDark(currentColor) && (
+              <div className="color-readability-hint">
+                <JournalIcon name="info" size={14} decorative />
+                <span>
+                  {language === "中文"
+                    ? "提示：柔和的色彩在手帐中阅读体验更佳。"
+                    : language === "Bahasa Melayu"
+                    ? "Tip: Warna lembut lebih mudah dibaca dalam buku diari."
+                    : "Tip: softer colors are easier to read."}
+                </span>
+              </div>
+            )}
+
+            {/* 6. Done button to collapse */}
+            <button
+              type="button"
+              className="custom-picker-done-btn"
+              onClick={() => setIsExpanded(false)}
+            >
+              {language === "中文" ? "完成" : language === "Bahasa Melayu" ? "Selesai" : "Done"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="digital-journal-container">
       {/* Top Header with Bookshelf and Pages Counter */}
@@ -1431,8 +1996,8 @@ export function DigitalJournal({
               </button>
             </div>
 
-            {/* Search & Filter Bar */}
-            <div className="diary-filters-section">
+            {/* Fix 3: Search Bar with "Sliders" Filter Button inside right end */}
+            <div className="diary-filters-section" style={{ marginBottom: "8px" }}>
               <div className="search diary-search-input-wrap">
                 <span className="search-icon">
                   <JournalIcon name="search" size={16} decorative />
@@ -1448,153 +2013,98 @@ export function DigitalJournal({
                       ? "搜索书名、日记内容或标签..."
                       : "Search books, page thoughts, or tags..."
                   }
+                  style={{ paddingRight: searchQuery ? "76px" : "44px" }}
                 />
-                {searchQuery && (
+                {searchQuery ? (
                   <button
                     type="button"
                     className="diary-search-clear-btn"
+                    style={{ right: "42px" }}
                     onClick={() => setSearchQuery("")}
                     aria-label="Clear search"
                   >
-                    <JournalIcon name="close" size={14} />
+                    <JournalIcon name="close" size={13} />
                   </button>
-                )}
+                ) : null}
+
+                {/* Filter sliders button inside right end of search bar */}
+                <button
+                  type="button"
+                  className={`diary-search-filter-btn ${activeFilterCount > 0 ? "active" : ""}`}
+                  onClick={handleOpenFilterSheet}
+                  aria-label={
+                    language === "中文"
+                      ? `筛选日记 (${activeFilterCount})`
+                      : `Filter journal (${activeFilterCount})`
+                  }
+                  title={
+                    language === "中文"
+                      ? "筛选日期与心情"
+                      : "Filter by date and mood"
+                  }
+                >
+                  <JournalIcon name="sliders" size={16} />
+                  {activeFilterCount > 0 && (
+                    <span className="filter-badge-dot" aria-label="Filters active" />
+                  )}
+                </button>
               </div>
 
-              {/* Fix A: Wrapping Date Filter Chips (No dd/mm/yyyy input) */}
-              <div className="diary-date-chips-wrap">
-                <button
-                  type="button"
-                  className={`diary-filter-chip ${dateFilter === "all" ? "active" : ""}`}
-                  onClick={() => {
-                    setDateFilter("all");
-                    setCustomDateStart(null);
-                    setCustomDateEnd(null);
-                  }}
-                >
-                  {language === "Bahasa Melayu"
-                    ? "Semua Tarikh"
-                    : language === "中文"
-                    ? "全部日期"
-                    : "All Dates"}
-                </button>
-                <button
-                  type="button"
-                  className={`diary-filter-chip ${dateFilter === "today" ? "active" : ""}`}
-                  onClick={() => {
-                    setDateFilter("today");
-                    setCustomDateStart(null);
-                    setCustomDateEnd(null);
-                  }}
-                >
-                  {language === "Bahasa Melayu"
-                    ? "Hari Ini"
-                    : language === "中文"
-                    ? "今天"
-                    : "Today"}
-                </button>
-                <button
-                  type="button"
-                  className={`diary-filter-chip ${dateFilter === "week" ? "active" : ""}`}
-                  onClick={() => {
-                    setDateFilter("week");
-                    setCustomDateStart(null);
-                    setCustomDateEnd(null);
-                  }}
-                >
-                  {language === "Bahasa Melayu"
-                    ? "Minggu Ini"
-                    : language === "中文"
-                    ? "本周"
-                    : "This Week"}
-                </button>
-                <button
-                  type="button"
-                  className={`diary-filter-chip ${dateFilter === "month" ? "active" : ""}`}
-                  onClick={() => {
-                    setDateFilter("month");
-                    setCustomDateStart(null);
-                    setCustomDateEnd(null);
-                  }}
-                >
-                  {language === "Bahasa Melayu"
-                    ? "Bulan Ini"
-                    : language === "中文"
-                    ? "本月"
-                    : "This Month"}
-                </button>
+              {/* Fix 3: Active Filters Row (Only shown when filter active, single row with Clear all) */}
+              {(dateFilter !== "all" || moodFilters.length > 0) && (
+                <div className="diary-active-filters-row">
+                  {dateFilter !== "all" && (
+                    <span className="diary-active-removable-chip">
+                      <JournalIcon name="calendar" size={12} decorative />
+                      <span>{getActiveDateFilterLabel()}</span>
+                      <button
+                        type="button"
+                        className="diary-active-chip-remove"
+                        onClick={handleClearDateFilter}
+                        aria-label="Remove date filter"
+                      >
+                        <JournalIcon name="close" size={10} decorative />
+                      </button>
+                    </span>
+                  )}
 
-                {/* Fix A: Last Chip opens Custom Calendar Bottom Sheet */}
-                {customDateStart && dateFilter === "custom" ? (
-                  <div className="diary-custom-applied-chip active" onClick={handleOpenCalendarSheet}>
-                    <JournalIcon name="calendar" size={14} decorative />
-                    <span>{formatPickedDateLabel()}</span>
-                    <button
-                      type="button"
-                      className="chip-clear-btn"
-                      onClick={handleClearAppliedCustomDate}
-                      aria-label="Clear picked date"
-                    >
-                      <JournalIcon name="close" size={12} decorative />
-                    </button>
-                  </div>
-                ) : (
+                  {moodFilters.map((moodKey) => {
+                    const opt = DIARY_MOOD_OPTIONS.find((m) => m.key === moodKey);
+                    const label =
+                      language === "中文"
+                        ? opt?.labelZh
+                        : language === "Bahasa Melayu"
+                        ? opt?.labelBm
+                        : opt?.label;
+                    return (
+                      <span key={moodKey} className="diary-active-removable-chip">
+                        {opt?.icon && <JournalIcon name={opt.icon} size={12} decorative />}
+                        <span>{label || moodKey}</span>
+                        <button
+                          type="button"
+                          className="diary-active-chip-remove"
+                          onClick={() => handleRemoveMoodFilter(moodKey)}
+                          aria-label={`Remove ${label} filter`}
+                        >
+                          <JournalIcon name="close" size={10} decorative />
+                        </button>
+                      </span>
+                    );
+                  })}
+
                   <button
                     type="button"
-                    className="diary-filter-chip"
-                    onClick={handleOpenCalendarSheet}
+                    className="diary-clear-all-filters-btn"
+                    onClick={handleClearAllFilters}
                   >
-                    <JournalIcon name="calendar" size={14} decorative />
-                    <span>
-                      {language === "Bahasa Melayu"
-                        ? "Pilih tarikh"
-                        : language === "中文"
-                        ? "选择日期"
-                        : "Pick date"}
-                    </span>
+                    {language === "中文"
+                      ? "清除全部"
+                      : language === "Bahasa Melayu"
+                      ? "Kosongkan semua"
+                      : "Clear all"}
                   </button>
-                )}
-              </div>
-
-              {/* Global Rule 2 & 4: Wrapping Mood Filter Chips with Inline Icons */}
-              <div className="diary-mood-wrapping-chips">
-                <button
-                  type="button"
-                  className={`diary-mood-chip ${moodFilter === null ? "active" : ""}`}
-                  onClick={() => setMoodFilter(null)}
-                >
-                  <JournalIcon name="sparkles" size={15} decorative />
-                  <span>
-                    {language === "Bahasa Melayu"
-                      ? "Semua Mood"
-                      : language === "中文"
-                      ? "全部心情"
-                      : "All Moods"}
-                  </span>
-                </button>
-
-                {DIARY_MOOD_OPTIONS.map((mood) => {
-                  const isSelected = moodFilter === mood.key;
-                  const label =
-                    language === "Bahasa Melayu"
-                      ? mood.labelBm
-                      : language === "中文"
-                      ? mood.labelZh
-                      : mood.label;
-
-                  return (
-                    <button
-                      key={mood.key}
-                      type="button"
-                      className={`diary-mood-chip ${isSelected ? "active" : ""}`}
-                      onClick={() => setMoodFilter(isSelected ? null : mood.key)}
-                    >
-                      <JournalIcon name={mood.icon} size={15} decorative />
-                      <span>{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Bookshelf Sort Bar */}
@@ -1666,9 +2176,8 @@ export function DigitalJournal({
                       <div className="bookshelf-scroll-track">
                         {booksOnShelf.map(({ book, matchCount, pages }) => {
                           const isSliding = slidingSpineId === book.id;
-                          const colorOption = BOOK_COLOR_PALETTE.find((c) => c.hex === book.coverColor);
-                          const textColor = colorOption?.textColor || "#1d3557";
-                          const ribbonColor = colorOption?.ribbonColor || "#e76f51";
+                          const textColor = getAccessibleTextColor(book.coverColor);
+                          const ribbonColor = getDerivedRibbonColor(book.coverColor);
                           const spineH = book.spineHeight || 160;
                           const spineW = book.spineWidth || 42;
 
@@ -1694,7 +2203,12 @@ export function DigitalJournal({
                                 <span className="spine-match-badge">{matchCount}</span>
                               )}
 
-                              <span className="spine-title-vertical">{book.title}</span>
+                              <span
+                                className="spine-title-vertical"
+                                style={{ fontSize: `${getSpineFontSize(book.title)}px` }}
+                              >
+                                {book.title}
+                              </span>
 
                               <div className="spine-base-meta">
                                 <JournalIcon name="bookOpen" size={11} decorative />
@@ -2100,22 +2614,28 @@ export function DigitalJournal({
       {/* ============================================================== */}
       {activeBook && (
         <div className="open-book-overlay" style={{ "--book-accent": activeBook.coverColor } as any}>
-          {/* Header */}
+          {/* Header (Fix 2: Arrow icon only, 2-line centered title, ONE "..." button) */}
           <div className="open-book-header">
             <button
               type="button"
               className="open-book-back-btn"
               onClick={closeOpenBook}
-              aria-label="Back to bookshelf"
-            >
-              <JournalIcon name="arrowLeft" size={15} decorative />
-              <span>
-                {language === "Bahasa Melayu"
-                  ? "Rak Buku"
+              aria-label={
+                language === "Bahasa Melayu"
+                  ? "Kembali ke rak buku"
                   : language === "中文"
                   ? "返回书架"
-                  : "Bookshelf"}
-              </span>
+                  : "Back to bookshelf"
+              }
+              title={
+                language === "Bahasa Melayu"
+                  ? "Kembali ke rak buku"
+                  : language === "中文"
+                  ? "返回书架"
+                  : "Back to bookshelf"
+              }
+            >
+              <JournalIcon name="arrowLeft" size={17} decorative />
             </button>
 
             <div className="open-book-title-group">
@@ -2134,79 +2654,120 @@ export function DigitalJournal({
             </div>
 
             <div className="open-book-right-actions">
-              {/* Paper Texture Menu Toggle */}
               <button
                 type="button"
-                className="open-book-icon-btn"
-                onClick={() => setShowPageStyleMenu((prev) => !prev)}
-                title="Paper texture"
-                aria-label="Change paper texture"
+                className="open-book-more-btn"
+                onClick={() => setShowMoreMenu((prev) => !prev)}
+                aria-label="More options"
+                title="More options"
               >
-                <JournalIcon name={pageStyle === "lined" ? "lines" : pageStyle === "dotted" ? "dotted" : "plain"} size={16} />
+                <JournalIcon name="more" size={18} />
               </button>
 
-              {/* Page Index Drawer Toggle */}
-              <button
-                type="button"
-                className="open-book-icon-btn"
-                onClick={() => setShowPageIndexDrawer(true)}
-                title="Page directory"
-                aria-label="Open page index directory"
-              >
-                <JournalIcon name="pageIndex" size={16} />
-              </button>
+              {/* Fix 2: "..." Dropdown Menu */}
+              {showMoreMenu && (
+                <>
+                  <div
+                    className="book-more-dropdown-backdrop"
+                    onClick={() => setShowMoreMenu(false)}
+                  />
+                  <div className="book-more-dropdown-menu" role="menu">
+                    <button
+                      type="button"
+                      className="book-more-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowPageTextureSheet(true);
+                      }}
+                    >
+                      <JournalIcon name="lines" size={16} decorative />
+                      <span>
+                        {language === "中文"
+                          ? "信纸底纹"
+                          : language === "Bahasa Melayu"
+                          ? "Tekstur Kertas"
+                          : "Page Texture"}
+                      </span>
+                    </button>
 
-              {/* Delete Page */}
-              <button
-                type="button"
-                className="open-book-icon-btn"
-                onClick={() => currentPage && setPageToDelete(currentPage)}
-                title="Delete current page"
-                aria-label="Delete current page"
-              >
-                <JournalIcon name="trash" size={15} />
-              </button>
+                    <button
+                      type="button"
+                      className="book-more-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setSelectedBookForInfo(activeBook);
+                        setShowBookInfoModal(true);
+                      }}
+                    >
+                      <JournalIcon name="info" size={16} decorative />
+                      <span>
+                        {language === "中文"
+                          ? "手帐信息"
+                          : language === "Bahasa Melayu"
+                          ? "Maklumat Buku"
+                          : "Book Info"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="book-more-dropdown-item"
+                      role="menuitem"
+                      onClick={handleOpenRenameBook}
+                    >
+                      <JournalIcon name="pen" size={16} decorative />
+                      <span>
+                        {language === "中文"
+                          ? "重命名手帐"
+                          : language === "Bahasa Melayu"
+                          ? "Namakan Semula"
+                          : "Rename Book"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="book-more-dropdown-item"
+                      role="menuitem"
+                      onClick={handleOpenChangeCover}
+                    >
+                      <JournalIcon name="palette" size={16} decorative />
+                      <span>
+                        {language === "中文"
+                          ? "更改封面色彩"
+                          : language === "Bahasa Melayu"
+                          ? "Tukar Warna Kulit"
+                          : "Change Cover Color"}
+                      </span>
+                    </button>
+
+                    <div className="book-more-dropdown-divider" />
+
+                    <button
+                      type="button"
+                      className="book-more-dropdown-item danger"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setBookToDelete(activeBook);
+                      }}
+                    >
+                      <JournalIcon name="trash" size={16} decorative />
+                      <span>
+                        {language === "中文"
+                          ? "删除手帐"
+                          : language === "Bahasa Melayu"
+                          ? "Padam Buku"
+                          : "Delete Book"}
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
-
-          {/* Paper Texture Selection Dropdown */}
-          {showPageStyleMenu && (
-            <div className="page-style-dropdown-menu">
-              <button
-                type="button"
-                className={pageStyle === "lined" ? "active" : ""}
-                onClick={() => {
-                  setPageStyle("lined");
-                  setShowPageStyleMenu(false);
-                }}
-              >
-                <JournalIcon name="lines" size={15} decorative />
-                <span>{language === "中文" ? "横线信纸" : "Ruled Lines"}</span>
-              </button>
-              <button
-                type="button"
-                className={pageStyle === "dotted" ? "active" : ""}
-                onClick={() => {
-                  setPageStyle("dotted");
-                  setShowPageStyleMenu(false);
-                }}
-              >
-                <JournalIcon name="dotted" size={15} decorative />
-                <span>{language === "中文" ? "点阵纸" : "Dot Grid"}</span>
-              </button>
-              <button
-                type="button"
-                className={pageStyle === "plain" ? "active" : ""}
-                onClick={() => {
-                  setPageStyle("plain");
-                  setShowPageStyleMenu(false);
-                }}
-              >
-                <JournalIcon name="plain" size={15} decorative />
-                <span>{language === "中文" ? "空白宣纸" : "Blank Vellum"}</span>
-              </button>
-            </div>
-          )}
 
           {/* 0.6s 3D Cover Opening Moment Animation */}
           {isOpeningCover && (
@@ -2215,9 +2776,7 @@ export function DigitalJournal({
                 className="book-opening-cover"
                 style={{
                   backgroundColor: activeBook.coverColor,
-                  color:
-                    BOOK_COLOR_PALETTE.find((c) => c.hex === activeBook.coverColor)?.textColor ||
-                    "#1d3557",
+                  color: getAccessibleTextColor(activeBook.coverColor),
                 }}
               >
                 <div className="book-opening-cover-seal">
@@ -2251,13 +2810,11 @@ export function DigitalJournal({
                   pageTurnDirection !== "none" ? pageTurnDirection : ""
                 }`}
               >
-                {/* Ribbon Bookmark */}
+                {/* Ribbon Bookmark (Fix 2 & 5: soft, desaturated tone) */}
                 <div
                   className="book-ribbon-bookmark"
                   style={{
-                    backgroundColor:
-                      BOOK_COLOR_PALETTE.find((c) => c.hex === activeBook.coverColor)?.ribbonColor ||
-                      "#e76f51",
+                    backgroundColor: getDerivedRibbonColor(activeBook.coverColor),
                   }}
                   title="Bookmark"
                 />
@@ -2513,6 +3070,625 @@ export function DigitalJournal({
       )}
 
       {/* ============================================================== */}
+      {/* FIX 2: PAGE TEXTURE BOTTOM SHEET (EQUAL-WIDTH CARDS, 1 ROW)   */}
+      {/* ============================================================== */}
+      {showPageTextureSheet && (
+        <div
+          className="diary-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowPageTextureSheet(false);
+          }}
+        >
+          <div className="diary-writer-sheet" role="dialog" aria-modal="true">
+            <div className="diary-sheet-handle" />
+            <div className="diary-writer-header">
+              <div className="diary-writer-title-group">
+                <span className="diary-writer-icon">
+                  <JournalIcon name="lines" size={20} decorative />
+                </span>
+                <div>
+                  <h3>
+                    {language === "Bahasa Melayu"
+                      ? "Tekstur Kertas Diari"
+                      : language === "中文"
+                      ? "手帐信纸底纹"
+                      : "Page Paper Texture"}
+                  </h3>
+                  <p>
+                    {language === "Bahasa Melayu"
+                      ? "Pilih gaya garisan atau titik yang selesa untuk menulis"
+                      : language === "中文"
+                      ? "挑选令您心静的底纹，应用于此手帐的所有页面"
+                      : "Choose a soothing paper texture for this book"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="diary-sheet-close-btn"
+                onClick={() => setShowPageTextureSheet(false)}
+                aria-label="Close"
+              >
+                <JournalIcon name="close" size={16} />
+              </button>
+            </div>
+
+            <div className="diary-writer-scrollable-body">
+              <div className="page-texture-cards-row">
+                {/* 1. Ruled Lines */}
+                <button
+                  type="button"
+                  className={`page-texture-card ${pageStyle === "lined" ? "active" : ""}`}
+                  onClick={() => handleSelectPageTexture("lined")}
+                >
+                  {pageStyle === "lined" && (
+                    <span className="page-texture-check-badge">
+                      <JournalIcon name="check" size={12} color="#ffffff" decorative />
+                    </span>
+                  )}
+                  <div className="page-texture-mini-paper lined" />
+                  <div className="page-texture-card-meta">
+                    <span className="page-texture-card-icon">
+                      <JournalIcon name="lines" size={15} decorative />
+                    </span>
+                    <span className="page-texture-card-name">
+                      {language === "Bahasa Melayu"
+                        ? "Kertas Garis"
+                        : language === "中文"
+                        ? "横线信纸"
+                        : "Ruled Lines"}
+                    </span>
+                  </div>
+                </button>
+
+                {/* 2. Dot Grid */}
+                <button
+                  type="button"
+                  className={`page-texture-card ${pageStyle === "dotted" ? "active" : ""}`}
+                  onClick={() => handleSelectPageTexture("dotted")}
+                >
+                  {pageStyle === "dotted" && (
+                    <span className="page-texture-check-badge">
+                      <JournalIcon name="check" size={12} color="#ffffff" decorative />
+                    </span>
+                  )}
+                  <div className="page-texture-mini-paper dotted" />
+                  <div className="page-texture-card-meta">
+                    <span className="page-texture-card-icon">
+                      <JournalIcon name="dotted" size={15} decorative />
+                    </span>
+                    <span className="page-texture-card-name">
+                      {language === "Bahasa Melayu"
+                        ? "Kertas Titik"
+                        : language === "中文"
+                        ? "点阵纸"
+                        : "Dot Grid"}
+                    </span>
+                  </div>
+                </button>
+
+                {/* 3. Blank Vellum */}
+                <button
+                  type="button"
+                  className={`page-texture-card ${pageStyle === "plain" ? "active" : ""}`}
+                  onClick={() => handleSelectPageTexture("plain")}
+                >
+                  {pageStyle === "plain" && (
+                    <span className="page-texture-check-badge">
+                      <JournalIcon name="check" size={12} color="#ffffff" decorative />
+                    </span>
+                  )}
+                  <div className="page-texture-mini-paper plain" />
+                  <div className="page-texture-card-meta">
+                    <span className="page-texture-card-icon">
+                      <JournalIcon name="plain" size={15} decorative />
+                    </span>
+                    <span className="page-texture-card-name">
+                      {language === "Bahasa Melayu"
+                        ? "Kertas Kosong"
+                        : language === "中文"
+                        ? "空白宣纸"
+                        : "Blank Vellum"}
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="diary-sheet-sticky-footer">
+              <button
+                type="button"
+                className="btn btn-primary full"
+                onClick={() => setShowPageTextureSheet(false)}
+              >
+                {language === "Bahasa Melayu" ? "Selesai" : language === "中文" ? "完成" : "Done"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* FIX 3: MINIMAL FILTER BOTTOM SHEET                             */}
+      {/* ============================================================== */}
+      {showFilterSheet && (
+        <div
+          className="diary-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowFilterSheet(false);
+          }}
+        >
+          <div className="diary-writer-sheet" role="dialog" aria-modal="true">
+            <div className="diary-sheet-handle" />
+            <div className="diary-writer-header">
+              <div className="diary-writer-title-group">
+                <span className="diary-writer-icon">
+                  <JournalIcon name="sliders" size={20} decorative />
+                </span>
+                <div>
+                  <h3>
+                    {language === "Bahasa Melayu"
+                      ? "Tapis Refleksi"
+                      : language === "中文"
+                      ? "筛选手帐与日记"
+                      : "Filter Reflections"}
+                  </h3>
+                  <p>
+                    {language === "Bahasa Melayu"
+                      ? "Tapis mengikut tarikh dan suasana perasaan"
+                      : language === "中文"
+                      ? "按日期区间与情绪分类检索回忆"
+                      : "Narrow down by date and emotional tone"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="diary-sheet-close-btn"
+                onClick={() => setShowFilterSheet(false)}
+                aria-label="Close"
+              >
+                <JournalIcon name="close" size={16} />
+              </button>
+            </div>
+
+            <div className="diary-writer-scrollable-body">
+              {/* 1. Date Section: Single Row of Chips */}
+              <div className="diary-filter-section-title">
+                <JournalIcon name="calendar" size={15} decorative />
+                <span>
+                  {language === "Bahasa Melayu"
+                    ? "Tarikh"
+                    : language === "中文"
+                    ? "日期范围"
+                    : "Date"}
+                </span>
+              </div>
+              <div className="diary-date-chips-single-row">
+                <button
+                  type="button"
+                  className={`diary-filter-chip ${draftDateFilter === "all" ? "active" : ""}`}
+                  onClick={() => handleSelectDraftDate("all")}
+                >
+                  {language === "Bahasa Melayu" ? "Semua Tarikh" : language === "中文" ? "全部日期" : "All Dates"}
+                </button>
+                <button
+                  type="button"
+                  className={`diary-filter-chip ${draftDateFilter === "today" ? "active" : ""}`}
+                  onClick={() => handleSelectDraftDate("today")}
+                >
+                  {language === "Bahasa Melayu" ? "Hari Ini" : language === "中文" ? "今天" : "Today"}
+                </button>
+                <button
+                  type="button"
+                  className={`diary-filter-chip ${draftDateFilter === "week" ? "active" : ""}`}
+                  onClick={() => handleSelectDraftDate("week")}
+                >
+                  {language === "Bahasa Melayu" ? "Minggu Ini" : language === "中文" ? "本周" : "This Week"}
+                </button>
+                <button
+                  type="button"
+                  className={`diary-filter-chip ${draftDateFilter === "month" ? "active" : ""}`}
+                  onClick={() => handleSelectDraftDate("month")}
+                >
+                  {language === "Bahasa Melayu" ? "Bulan Ini" : language === "中文" ? "本月" : "This Month"}
+                </button>
+                <button
+                  type="button"
+                  className={`diary-filter-chip ${draftDateFilter === "custom" ? "active" : ""}`}
+                  onClick={() => {
+                    handleOpenCalendarSheet();
+                  }}
+                >
+                  <JournalIcon name="calendar" size={13} decorative />
+                  <span>
+                    {draftCustomDateStart
+                      ? formatPickedDateLabel()
+                      : language === "Bahasa Melayu"
+                      ? "Pilih tarikh"
+                      : language === "中文"
+                      ? "选择日期"
+                      : "Pick date"}
+                  </span>
+                </button>
+              </div>
+
+              {/* 2. Mood Section: Compact Wrapping Grid, Multi-Select */}
+              <div className="diary-filter-section-title">
+                <JournalIcon name="sparkles" size={15} decorative />
+                <span>
+                  {language === "Bahasa Melayu"
+                    ? "Suasana Hati (Boleh Pilih Banyak)"
+                    : language === "中文"
+                    ? "心绪感受（可多选）"
+                    : "Mood (Multi-Select)"}
+                </span>
+              </div>
+              <div className="diary-mood-wrapping-chips">
+                <button
+                  type="button"
+                  className={`diary-mood-chip ${draftMoodFilters.length === 0 ? "active" : ""}`}
+                  onClick={() => setDraftMoodFilters([])}
+                >
+                  <JournalIcon name="sparkles" size={14} decorative />
+                  <span>
+                    {language === "Bahasa Melayu" ? "Semua Mood" : language === "中文" ? "全部心情" : "All Moods"}
+                  </span>
+                </button>
+
+                {DIARY_MOOD_OPTIONS.map((mood) => {
+                  const isSelected = draftMoodFilters.includes(mood.key);
+                  const label =
+                    language === "Bahasa Melayu"
+                      ? mood.labelBm
+                      : language === "中文"
+                      ? mood.labelZh
+                      : mood.label;
+                  return (
+                    <button
+                      key={mood.key}
+                      type="button"
+                      className={`diary-mood-chip ${isSelected ? "active" : ""}`}
+                      onClick={() => handleToggleDraftMood(mood.key)}
+                    >
+                      <JournalIcon name={mood.icon} size={14} decorative />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Sticky Footer: Reset (text) & Show results (teal pill with count) */}
+            <div className="diary-sheet-sticky-footer">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleResetDraftFilters}
+              >
+                {language === "Bahasa Melayu" ? "Set Semula" : language === "中文" ? "重置" : "Reset"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary grow"
+                onClick={handleApplyFilterSheet}
+              >
+                <JournalIcon name="check" size={15} decorative />
+                <span>
+                  {language === "Bahasa Melayu"
+                    ? `Papar Hasil (${draftFilterResultCount})`
+                    : language === "中文"
+                    ? `显示结果 (${draftFilterResultCount})`
+                    : `Show results (${draftFilterResultCount})`}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* FIX 4: CHANGE COVER COLOR BOTTOM SHEET (FROM "..." MENU)       */}
+      {/* ============================================================== */}
+      {showChangeCoverSheet && activeBook && (
+        <div
+          className="diary-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowChangeCoverSheet(false);
+          }}
+        >
+          <div className="diary-writer-sheet" role="dialog" aria-modal="true">
+            <div className="diary-sheet-handle" />
+            <div className="diary-writer-header">
+              <div className="diary-writer-title-group">
+                <span className="diary-writer-icon">
+                  <JournalIcon name="palette" size={20} decorative />
+                </span>
+                <div>
+                  <h3>
+                    {language === "Bahasa Melayu"
+                      ? "Tukar Warna Kulit Buku"
+                      : language === "中文"
+                      ? "更改封面色彩"
+                      : "Change Cover Color"}
+                  </h3>
+                  <p>
+                    {language === "Bahasa Melayu"
+                      ? "Pilih palet pratetap atau sesuaikan warna anda sendiri"
+                      : language === "中文"
+                      ? "挑选预设治愈色调，或自定义专属书脊色彩"
+                      : "Choose a preset swatch or mix your custom palette"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="diary-sheet-close-btn"
+                onClick={() => setShowChangeCoverSheet(false)}
+                aria-label="Close"
+              >
+                <JournalIcon name="close" size={16} />
+              </button>
+            </div>
+
+            <div className="diary-writer-scrollable-body">
+              {/* Live Spine Preview */}
+              <div className="spine-preview-container">
+                <div
+                  className="book-spine-card"
+                  style={{
+                    height: "165px",
+                    width: "42px",
+                    backgroundColor: changeCoverColorInput,
+                    color: getAccessibleTextColor(changeCoverColorInput),
+                  }}
+                >
+                  <div className="spine-top-band" />
+                  <div
+                    className="spine-ribbon"
+                    style={{
+                      backgroundColor: getDerivedRibbonColor(changeCoverColorInput),
+                    }}
+                  />
+                  <span
+                    className="spine-title-vertical"
+                    style={{ fontSize: getSpineFontSize(activeBook.title) }}
+                  >
+                    {activeBook.title}
+                  </span>
+                  <div className="spine-base-meta">
+                    <JournalIcon name="bookOpen" size={11} decorative />
+                    <span>{activeBookPages.length || 1}</span>
+                  </div>
+                  <div className="spine-bottom-band" />
+                </div>
+              </div>
+
+              {/* Color Picker Swatches & Inline Picker Panel */}
+              {renderColorPickerControl(
+                changeCoverColorInput,
+                setChangeCoverColorInput,
+                showCustomPickerCover,
+                setShowCustomPickerCover
+              )}
+            </div>
+
+            <div className="diary-sheet-sticky-footer">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowChangeCoverSheet(false)}
+              >
+                {language === "Bahasa Melayu" ? "Batal" : language === "中文" ? "取消" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary grow"
+                onClick={handleSaveChangeCover}
+              >
+                <JournalIcon name="check" size={15} decorative />
+                <span>
+                  {language === "Bahasa Melayu"
+                    ? "Gunakan Warna"
+                    : language === "中文"
+                    ? "保存色彩修改"
+                    : "Apply Color"}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* RENAME BOOK MODAL (FROM "..." MENU)                            */}
+      {/* ============================================================== */}
+      {showRenameBookModal && activeBook && (
+        <div
+          className="diary-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowRenameBookModal(false);
+          }}
+        >
+          <div className="diary-confirm-modal-box" role="dialog" aria-modal="true">
+            <span className="diary-confirm-icon">
+              <JournalIcon name="pen" size={26} decorative />
+            </span>
+            <h4>
+              {language === "Bahasa Melayu"
+                ? "Namakan Semula Buku"
+                : language === "中文"
+                ? "重命名手帐"
+                : "Rename Book"}
+            </h4>
+
+            <input
+              type="text"
+              className="diary-writer-input"
+              style={{ margin: "14px 0", textAlign: "center", fontWeight: 700 }}
+              value={renameBookTitleInput}
+              onChange={(e) => setRenameBookTitleInput(e.target.value)}
+              placeholder={language === "中文" ? "手帐书名..." : "Book title..."}
+              maxLength={60}
+              autoFocus
+            />
+
+            <div className="diary-confirm-btn-row">
+              <button
+                type="button"
+                className="btn btn-ghost grow"
+                onClick={() => setShowRenameBookModal(false)}
+              >
+                {language === "Bahasa Melayu" ? "Batal" : language === "中文" ? "取消" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary grow"
+                onClick={handleSaveRenameBook}
+                disabled={!renameBookTitleInput.trim()}
+              >
+                {language === "Bahasa Melayu" ? "Simpan" : language === "中文" ? "确认重命名" : "Rename"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* BOOK INFO BOTTOM SHEET (FROM "..." MENU OR SHELF)              */}
+      {/* ============================================================== */}
+      {showBookInfoModal && selectedBookForInfo && (
+        <div
+          className="diary-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowBookInfoModal(false);
+          }}
+        >
+          <div className="diary-writer-sheet" role="dialog" aria-modal="true">
+            <div className="diary-sheet-handle" />
+            <div className="diary-writer-header">
+              <div className="diary-writer-title-group">
+                <span className="diary-writer-icon">
+                  <JournalIcon name="info" size={20} decorative />
+                </span>
+                <div>
+                  <h3>
+                    {language === "Bahasa Melayu"
+                      ? "Maklumat Buku"
+                      : language === "中文"
+                      ? "手帐详细信息"
+                      : "Book Information"}
+                  </h3>
+                  <p>
+                    {language === "Bahasa Melayu"
+                      ? "Butiran dan statistik halaman buku ini"
+                      : language === "中文"
+                      ? "手帐归属分类、页数与创建记录"
+                      : "Overview, shelf category, and reflection pages"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="diary-sheet-close-btn"
+                onClick={() => setShowBookInfoModal(false)}
+                aria-label="Close"
+              >
+                <JournalIcon name="close" size={16} />
+              </button>
+            </div>
+
+            <div className="diary-writer-scrollable-body">
+              {/* Spine Preview in Info */}
+              <div className="spine-preview-container">
+                <div
+                  className="book-spine-card"
+                  style={{
+                    height: "165px",
+                    width: "42px",
+                    backgroundColor: selectedBookForInfo.coverColor,
+                    color: getAccessibleTextColor(selectedBookForInfo.coverColor),
+                  }}
+                >
+                  <div className="spine-top-band" />
+                  <div
+                    className="spine-ribbon"
+                    style={{
+                      backgroundColor: getDerivedRibbonColor(selectedBookForInfo.coverColor),
+                    }}
+                  />
+                  <span
+                    className="spine-title-vertical"
+                    style={{ fontSize: getSpineFontSize(selectedBookForInfo.title) }}
+                  >
+                    {selectedBookForInfo.title}
+                  </span>
+                  <div className="spine-base-meta">
+                    <JournalIcon name="bookOpen" size={11} decorative />
+                    <span>
+                      {journalEntries.filter((e) => (e as any).bookId === selectedBookForInfo.id).length}
+                    </span>
+                  </div>
+                  <div className="spine-bottom-band" />
+                </div>
+              </div>
+
+              {/* Information Cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div className="page-index-item" style={{ cursor: "default" }}>
+                  <div>
+                    <strong style={{ fontSize: "14px" }}>{selectedBookForInfo.title}</strong>
+                    <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
+                      {shelves.find((s) => s.id === selectedBookForInfo.shelfId)?.name || "Shelf"} •{" "}
+                      {journalEntries.filter((e) => (e as any).bookId === selectedBookForInfo.id).length} pages
+                    </small>
+                  </div>
+                </div>
+
+                {selectedBookForInfo.description && (
+                  <div
+                    style={{
+                      background: "#faf8f5",
+                      border: "1px solid var(--line)",
+                      borderRadius: "12px",
+                      padding: "12px 14px",
+                      fontSize: "12.5px",
+                      color: "var(--muted)",
+                      lineHeight: "1.5",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    "{selectedBookForInfo.description}"
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="diary-sheet-sticky-footer">
+              <button
+                type="button"
+                className="btn btn-secondary grow"
+                onClick={() => {
+                  setShowBookInfoModal(false);
+                  handleOpenEditBook(selectedBookForInfo);
+                }}
+              >
+                <JournalIcon name="pen" size={14} decorative />
+                <span>{language === "中文" ? "编辑手帐详情" : "Edit Details"}</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary grow"
+                onClick={() => setShowBookInfoModal(false)}
+              >
+                {language === "中文" ? "关闭" : "Close"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
       {/* FIX A: CUSTOM CALENDAR BOTTOM SHEET (APP STYLE, NOT NATIVE)    */}
       {/* ============================================================== */}
       {showCalendarSheet && (
@@ -2740,21 +3916,29 @@ export function DigitalJournal({
                     height: "165px",
                     width: "42px",
                     backgroundColor: bookColorInput,
-                    color:
-                      BOOK_COLOR_PALETTE.find((c) => c.hex === bookColorInput)?.textColor ||
-                      "#1d3557",
+                    color: getAccessibleTextColor(bookColorInput),
                   }}
                 >
                   <div className="spine-top-band" />
                   <div
                     className="spine-ribbon"
                     style={{
-                      backgroundColor:
-                        BOOK_COLOR_PALETTE.find((c) => c.hex === bookColorInput)?.ribbonColor ||
-                        "#e76f51",
+                      backgroundColor: getDerivedRibbonColor(bookColorInput),
                     }}
                   />
-                  <span className="spine-title-vertical">
+                  <span
+                    className="spine-title-vertical"
+                    style={{
+                      fontSize: `${getSpineFontSize(
+                        bookTitleInput.trim() ||
+                          (language === "Bahasa Melayu"
+                            ? "Buku Baharu"
+                            : language === "中文"
+                            ? "新手帐"
+                            : "New Book")
+                      )}px`,
+                    }}
+                  >
                     {bookTitleInput.trim() ||
                       (language === "Bahasa Melayu"
                         ? "Buku Baharu"
@@ -2816,7 +4000,7 @@ export function DigitalJournal({
                 )}
               </div>
 
-              {/* Cover Color Swatches (Global Rule 3: Single language, no parentheses) */}
+              {/* Cover Color Swatches & Custom Picker (Global Rule 3: Single language, no parentheses) */}
               <div className="diary-writer-form-group">
                 <label className="diary-writer-inline-label">
                   <JournalIcon name="palette" size={15} decorative />
@@ -2828,23 +4012,12 @@ export function DigitalJournal({
                       : "Cover & Spine Color"}
                   </span>
                 </label>
-                <div className="color-swatches-grid">
-                  {BOOK_COLOR_PALETTE.map((swatch) => (
-                    <button
-                      key={swatch.id}
-                      type="button"
-                      className={`color-swatch-btn ${bookColorInput === swatch.hex ? "active" : ""}`}
-                      style={{ backgroundColor: swatch.hex }}
-                      onClick={() => setBookColorInput(swatch.hex)}
-                      title={swatch.name}
-                      aria-label={swatch.name}
-                    >
-                      {bookColorInput === swatch.hex && (
-                        <JournalIcon name="check" size={14} color="#ffffff" decorative />
-                      )}
-                    </button>
-                  ))}
-                </div>
+                {renderColorPickerControl(
+                  bookColorInput,
+                  setBookColorInput,
+                  showCustomPickerCreate,
+                  setShowCustomPickerCreate
+                )}
               </div>
 
               {/* Shelf Selection (Global Rule 3: Single language, no parentheses) */}

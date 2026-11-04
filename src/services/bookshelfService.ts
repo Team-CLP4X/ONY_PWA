@@ -13,6 +13,7 @@ export interface JournalBook {
   shelfId: string;
   title: string;
   coverColor: string;
+  pageTexture?: "ruled" | "dots" | "blank";
   description?: string;
   createdAt: string;
   updatedAt: string;
