@@ -8082,5 +8082,144 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
   }
 }
 
+/* Memory Vault Search & Filter Enhancements */
+.empty-shelf-filter-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 14px;
+  margin: 8px 12px 14px;
+  background: rgba(245, 243, 239, 0.6);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  text-align: center;
+}
+.empty-shelf-filter-notice span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.empty-shelf-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.empty-shelf-clear-btn:hover {
+  background: var(--peach-soft);
+  border-color: var(--coral);
+}
 
-
+.vault-search-results-panel {
+  margin: 14px 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vault-search-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.vault-search-results-header h4 {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vault-search-results-header span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.vault-search-book-group {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vault-search-book-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--line);
+}
+.vault-search-book-title-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vault-search-book-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.vault-search-book-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.vault-search-shelf-pill {
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+.vault-search-page-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+.vault-search-page-item:hover {
+  border-color: var(--coral);
+  background: var(--peach-soft);
+}
+.vault-search-page-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+.vault-search-page-num {
+  font-weight: 700;
+  color: var(--coral-dark);
+}
+.vault-search-page-snippet {
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.45;
+}
+.vault-search-page-snippet mark {
+  background-color: #fef08a;
+  color: #1c1917;
+  font-weight: 600;
+  padding: 0 2px;
+  border-radius: 3px;
+}

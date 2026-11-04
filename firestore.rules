@@ -14,35 +14,15 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == userId;
       allow delete: if request.auth != null && request.auth.uid == userId;
 
-      // Subcollection: Mood check-ins
-      match /moodCheckins/{checkinId} {
+      // All subcollections belonging to this user (vaultShelves, vaultBooks, pages, moodCheckins, memories, conversations, etc.)
+      match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+    }
 
-      // Subcollection: Memory Vault
-      match /memories/{memoryId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      // Subcollection: Private Digital Journal & Diary Entries
-      match /journalEntries/{entryId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      // Subcollection: Conversations
-      match /conversations/{conversationId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      // Subcollection: Notifications
-      match /notifications/{notificationId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      // Subcollection: User audit logs
-      match /auditLogs/{logId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
+    // Collection group query for pages owned by the authenticated user
+    match /{path=**}/pages/{pageId} {
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
     }
 
     // Community Globe nodes (Anonymous presence nodes)

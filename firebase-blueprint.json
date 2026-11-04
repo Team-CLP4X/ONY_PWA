@@ -273,12 +273,85 @@
         "metadata": { "type": "object" }
       },
       "required": ["timestamp", "level", "category", "action", "message"]
+    },
+    "VaultShelf": {
+      "title": "VaultShelf",
+      "description": "A shelf in the Memory Vault organizing books by topic.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "color": { "type": "string" },
+        "order": { "type": "number" },
+        "isLocked": { "type": "boolean" },
+        "aiRecallEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "order", "createdAt", "updatedAt"]
+    },
+    "VaultBook": {
+      "title": "VaultBook",
+      "description": "A journal book residing on a vault shelf containing personal pages.",
+      "type": "object",
+      "properties": {
+        "shelfId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 500 },
+        "coverColor": { "type": "string" },
+        "pageTexture": { "type": "string", "enum": ["ruled", "dots", "blank"] },
+        "pageCount": { "type": "number" },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["shelfId", "title", "coverColor", "createdAt", "updatedAt"]
+    },
+    "VaultPage": {
+      "title": "VaultPage",
+      "description": "An individual written page inside a vault book with rich/plain text, mood, tags, and photos.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "bookId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "content": { "type": "string", "maxLength": 10000 },
+        "plainText": { "type": "string", "maxLength": 10000 },
+        "searchText": { "type": "string", "maxLength": 10000 },
+        "mood": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "photos": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "bookId", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "Stores user profiles, preferences, and consent controls."
+    },
+    "/users/{userId}/vaultShelves/{shelfId}": {
+      "schema": "VaultShelf",
+      "description": "Stores user Memory Vault shelves."
+    },
+    "/users/{userId}/vaultBooks/{bookId}": {
+      "schema": "VaultBook",
+      "description": "Stores user Memory Vault books."
+    },
+    "/users/{userId}/vaultBooks/{bookId}/pages/{pageId}": {
+      "schema": "VaultPage",
+      "description": "Stores user Memory Vault pages inside books."
     },
     "/users/{userId}/moodCheckins/{checkinId}": {
       "schema": "MoodCheckin",

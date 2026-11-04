@@ -9,10 +9,6 @@ import {
 import type { User } from "firebase/auth";
 import {
   type FirestoreJournalEntry,
-  saveJournalEntry,
-  updateJournalEntry,
-  deleteJournalEntry,
-  saveCachedJournalEntries,
   saveMemory,
   updateMemory,
   deleteMemory,
@@ -20,9 +16,19 @@ import {
   updateUserProfile,
   writeSystemLog,
   getLocalDateKey,
-  syncUserBookshelfData,
-  loadUserBookshelfData,
 } from "../firebase/firestore";
+import {
+  vaultService,
+  type VaultShelf,
+  type VaultBook,
+  type VaultPage,
+} from "../services/vaultService";
+import {
+  getLocalDateBoundaries,
+  matchesSearchSubstring,
+  getSearchSnippet,
+  createCompressedPhotoThumbnail,
+} from "../utils/vaultSearchUtils";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getCategoryLabel } from "../i18n/translations";
 import {
@@ -31,14 +37,7 @@ import {
   type BookSortOption,
   BOOK_COLOR_PALETTE,
   DEFAULT_SHELVES,
-  DEFAULT_BOOKS,
-  loadSavedShelves,
-  saveShelves,
-  loadSavedBooks,
-  saveBooks,
-  ensureEntriesLinkedToBooks,
   formatPageFooterTimestamp,
-  sortBooks,
 } from "../services/bookshelfService";
 import {
   JournalIcon,
@@ -122,6 +121,18 @@ const AI_MEMORY_CATEGORIES = [
   "Special Memories",
 ];
 
+function sortBooks(booksList: VaultBook[], sortOption: BookSortOption): VaultBook[] {
+  return [...booksList].sort((a, b) => {
+    if (sortOption === "title") {
+      return (a.title || "").localeCompare(b.title || "");
+    }
+    if (sortOption === "page_count") {
+      return (b.pageCount || 0) - (a.pageCount || 0);
+    }
+    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+  });
+}
+
 export function DigitalJournal({
   journalEntries,
   setJournalEntries,
@@ -143,12 +154,25 @@ export function DigitalJournal({
   const [activeTab, setActiveTab] = useState<"diary" | "ai_memory">("diary");
 
   // Bookshelf Data State
-  const [shelves, setShelves] = useState<JournalShelf[]>(() => loadSavedShelves());
-  const [books, setBooks] = useState<JournalBook[]>(() => loadSavedBooks());
+  // Bookshelf Data State (Connected exclusively to Firestore vaultService)
+  const [shelves, setShelves] = useState<VaultShelf[]>([]);
+  const [books, setBooks] = useState<VaultBook[]>([]);
+  const [activeBookPages, setActiveBookPages] = useState<VaultPage[]>([]);
+  const [searchIndexPages, setSearchIndexPages] = useState<VaultPage[]>([]);
   const [bookSort, setBookSort] = useState<BookSortOption>("last_edited");
 
   // Search & Filter State (Fix 3: Minimal Filtering)
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+
+  // 300ms debounce for search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month" | "custom">("all");
   const [customDateStart, setCustomDateStart] = useState<string | null>(null);
   const [customDateEnd, setCustomDateEnd] = useState<string | null>(null);
@@ -218,10 +242,10 @@ export function DigitalJournal({
 
   // Modals & Bottom Sheets State
   const [showBookInfoModal, setShowBookInfoModal] = useState(false);
-  const [selectedBookForInfo, setSelectedBookForInfo] = useState<JournalBook | null>(null);
+  const [selectedBookForInfo, setSelectedBookForInfo] = useState<VaultBook | null>(null);
 
   const [showCreateBookSheet, setShowCreateBookSheet] = useState(false);
-  const [editingBook, setEditingBook] = useState<JournalBook | null>(null);
+  const [editingBook, setEditingBook] = useState<VaultBook | null>(null);
   const [bookTitleInput, setBookTitleInput] = useState("");
   const [bookDescInput, setBookDescInput] = useState("");
   const [bookColorInput, setBookColorInput] = useState(BOOK_COLOR_PALETTE[0].hex);
@@ -230,13 +254,13 @@ export function DigitalJournal({
   const bookTitleInputRef = useRef<HTMLInputElement>(null);
 
   const [showShelfModal, setShowShelfModal] = useState(false);
-  const [editingShelf, setEditingShelf] = useState<JournalShelf | null>(null);
+  const [editingShelf, setEditingShelf] = useState<VaultShelf | null>(null);
   const [shelfNameInput, setShelfNameInput] = useState("");
 
   const [showChooseBookModal, setShowChooseBookModal] = useState(false);
-  const [shelfToDelete, setShelfToDelete] = useState<JournalShelf | null>(null);
-  const [bookToDelete, setBookToDelete] = useState<JournalBook | null>(null);
-  const [pageToDelete, setPageToDelete] = useState<FirestoreJournalEntry | null>(null);
+  const [shelfToDelete, setShelfToDelete] = useState<VaultShelf | null>(null);
+  const [bookToDelete, setBookToDelete] = useState<VaultBook | null>(null);
+  const [pageToDelete, setPageToDelete] = useState<VaultPage | FirestoreJournalEntry | null>(null);
 
   // Photo Fullscreen Enlarged
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
@@ -282,64 +306,77 @@ export function DigitalJournal({
   // Helper date
   const todayKey = useMemo(() => getLocalDateKey(), []);
 
-  // Sync existing journal entries so they are linked to a default book
+  // Real-time Vault Sync from Firestore
   useEffect(() => {
-    if (journalEntries.length > 0 && books.length > 0) {
-      const { updatedEntries, didChange } = ensureEntriesLinkedToBooks(journalEntries, books);
-      if (didChange) {
-        setJournalEntries(updatedEntries);
-        saveCachedJournalEntries(updatedEntries);
+    if (!currentUser?.uid) return;
+    const uid = currentUser.uid;
+
+    let unsubShelves: (() => void) | undefined;
+    let unsubBooks: (() => void) | undefined;
+
+    const setupVault = async () => {
+      try {
+        await vaultService.ensureParentUserDoc(uid);
+        await vaultService.initDefaultShelves(uid);
+        await vaultService.migrateLegacyJournalEntries(uid);
+
+        unsubShelves = vaultService.subscribeShelves(
+          uid,
+          (shelvesData) => setShelves(shelvesData),
+          (err) => console.error("[Vault] Shelves sync error:", err)
+        );
+
+        unsubBooks = vaultService.subscribeBooks(
+          uid,
+          (booksData) => setBooks(booksData),
+          (err) => console.error("[Vault] Books sync error:", err)
+        );
+
+        const allIndexed = await vaultService.buildSessionSearchIndex(uid);
+        setSearchIndexPages(allIndexed);
+      } catch (err) {
+        console.error("[Vault] Setup error:", err);
       }
-    }
-  }, [journalEntries, books, setJournalEntries]);
+    };
 
-  // Cloud sync: Load saved shelves and books from user document if present
+    void setupVault();
+
+    return () => {
+      unsubShelves?.();
+      unsubBooks?.();
+    };
+  }, [currentUser?.uid]);
+
+  // Subscribe to open book's pages in real time
   useEffect(() => {
-    if (!currentUser) return;
-    loadUserBookshelfData(currentUser.uid)
-      .then((remoteData) => {
-        if (remoteData) {
-          if (Array.isArray(remoteData.shelves) && remoteData.shelves.length > 0) {
-            setShelves(remoteData.shelves);
-            saveShelves(remoteData.shelves);
-          }
-          if (Array.isArray(remoteData.books) && remoteData.books.length > 0) {
-            setBooks(remoteData.books);
-            saveBooks(remoteData.books);
-          }
-        }
-      })
-      .catch(() => {});
-  }, [currentUser]);
-
-  // Persist shelves and books
-  const updateShelvesState = (newShelves: JournalShelf[]) => {
-    setShelves(newShelves);
-    saveShelves(newShelves);
-    if (currentUser) {
-      syncUserBookshelfData(currentUser.uid, newShelves, books).catch(() => {});
+    if (!currentUser?.uid || !activeBookId) {
+      setActiveBookPages([]);
+      return;
     }
-  };
+    const uid = currentUser.uid;
 
-  const updateBooksState = (newBooks: JournalBook[]) => {
-    setBooks(newBooks);
-    saveBooks(newBooks);
-    if (currentUser) {
-      syncUserBookshelfData(currentUser.uid, shelves, newBooks).catch(() => {});
-    }
-  };
+    const unsubPages = vaultService.subscribeBookPages(
+      uid,
+      activeBookId,
+      (pages) => {
+        setActiveBookPages(pages);
+        setSearchIndexPages((prev) => {
+          const withoutBook = prev.filter((p) => p.bookId !== activeBookId);
+          return [...withoutBook, ...pages];
+        });
+      },
+      (err) => console.error(`[Vault] Pages sync error for book ${activeBookId}:`, err)
+    );
 
-  // Compute active book and its pages
+    return () => {
+      unsubPages();
+    };
+  }, [currentUser?.uid, activeBookId]);
+
+  // Compute active book and current page
   const activeBook = useMemo(() => {
     return books.find((b) => b.id === activeBookId) || null;
   }, [books, activeBookId]);
-
-  const activeBookPages = useMemo(() => {
-    if (!activeBookId) return [];
-    return journalEntries
-      .filter((e) => (e as any).bookId === activeBookId)
-      .sort((a, b) => new Date(a.entryDate || a.createdAt).getTime() - new Date(b.entryDate || b.createdAt).getTime());
-  }, [journalEntries, activeBookId]);
 
   const currentPage = useMemo(() => {
     if (activeBookPages.length === 0) return null;
@@ -349,19 +386,20 @@ export function DigitalJournal({
 
   // Total pages and books count for header subtitle
   const totalBooksCount = books.length;
-  const totalPagesCount = journalEntries.length;
+  const totalPagesCount = searchIndexPages.length > 0 ? searchIndexPages.length : activeBookPages.length;
 
   // Set of dates that have at least one journal page (for calendar dots)
   const daysWithPages = useMemo(() => {
     const set = new Set<string>();
-    journalEntries.forEach((entry) => {
-      const d = entry.dateKey || entry.entryDate?.slice(0, 10) || entry.createdAt?.slice(0, 10);
+    const pool = searchIndexPages.length > 0 ? searchIndexPages : activeBookPages;
+    pool.forEach((entry) => {
+      const d = entry.createdAt?.slice(0, 10);
       if (d) set.add(d);
     });
     return set;
-  }, [journalEntries]);
+  }, [searchIndexPages, activeBookPages]);
 
-  // Sync page texture from book preferences when opening a book (Fix 2)
+  // Sync page texture from book preferences when opening a book
   useEffect(() => {
     if (activeBook) {
       if (activeBook.pageTexture === "dots") setPageStyle("dotted");
@@ -372,7 +410,7 @@ export function DigitalJournal({
 
   // Filter journal pages based on active controls (Search, Date, Multi-select Moods)
   const isFilterActive = Boolean(
-    searchQuery.trim() ||
+    debouncedSearchQuery.trim() ||
       moodFilters.length > 0 ||
       dateFilter !== "all" ||
       customDateStart
@@ -386,114 +424,126 @@ export function DigitalJournal({
   }, [dateFilter, moodFilters]);
 
   const isPageMatchingFilter = useCallback(
-    (page: FirestoreJournalEntry): boolean => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesTitle = (page.title || "").toLowerCase().includes(q);
-        const matchesContent = (page.content || "").toLowerCase().includes(q);
-        const matchesMood = (page.moodLabel || "").toLowerCase().includes(q);
-        const matchesTag = page.tags?.some((t) => t.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesContent && !matchesMood && !matchesTag) {
+    (page: VaultPage | FirestoreJournalEntry): boolean => {
+      // 1. Substring matching in Chinese & English across title, plainText, content, tags, mood
+      if (debouncedSearchQuery.trim()) {
+        const pageTitle = page.title || "";
+        const pageContent = (page as VaultPage).plainText || (page as any).content || "";
+        const pageTags = page.tags || [];
+        const pageMood = (page as any).moodLabel || (page as VaultPage).mood || "";
+        const combinedText = `${pageTitle} ${pageContent} ${pageTags.join(" ")} ${pageMood}`;
+        if (!matchesSearchSubstring(combinedText, debouncedSearchQuery)) {
           return false;
         }
       }
 
+      // 2. Multi-select Moods (OR between selected moods, but AND with search & date)
       if (moodFilters.length > 0) {
-        if (!page.moodLabel || !moodFilters.includes(page.moodLabel)) {
+        const pageMood = (page as any).moodLabel || (page as VaultPage).mood || "";
+        if (!pageMood || !moodFilters.includes(pageMood)) {
           return false;
         }
       }
 
-      const pageDate = page.dateKey || page.entryDate?.slice(0, 10) || page.createdAt?.slice(0, 10) || "";
-
-      if (dateFilter === "custom" && customDateStart) {
-        if (customDateEnd) {
-          if (pageDate < customDateStart || pageDate > customDateEnd) return false;
-        } else {
-          if (pageDate !== customDateStart) return false;
+      // 3. Local-time calendar boundaries for today, week, month, custom
+      if (dateFilter !== "all") {
+        const pageCreated = (page as any).createdAt || (page as any).entryDate || "";
+        const bounds = getLocalDateBoundaries(
+          dateFilter,
+          dateFilter === "custom" ? customDateStart : null,
+          dateFilter === "custom" ? customDateEnd : null
+        );
+        if (bounds) {
+          if (bounds.startIso && pageCreated < bounds.startIso) return false;
+          if (bounds.endIso && pageCreated > bounds.endIso) return false;
         }
-      }
-      if (dateFilter === "today") {
-        if (pageDate !== todayKey) return false;
-      }
-      if (dateFilter === "week") {
-        const entryTs = new Date(page.entryDate || page.createdAt).getTime();
-        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-        if (entryTs < weekAgo) return false;
-      }
-      if (dateFilter === "month") {
-        const entryTs = new Date(page.entryDate || page.createdAt).getTime();
-        const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        if (entryTs < monthAgo) return false;
       }
 
       return true;
     },
-    [searchQuery, moodFilters, dateFilter, customDateStart, customDateEnd, todayKey]
+    [debouncedSearchQuery, moodFilters, dateFilter, customDateStart, customDateEnd]
   );
 
-  // Result count for draft filters inside the Filter Bottom Sheet (Fix 3)
+  // Result count for draft filters inside the Filter Bottom Sheet
   const draftFilterResultCount = useMemo(() => {
-    return journalEntries.filter((page) => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesTitle = (page.title || "").toLowerCase().includes(q);
-        const matchesContent = (page.content || "").toLowerCase().includes(q);
-        const matchesMood = (page.moodLabel || "").toLowerCase().includes(q);
-        const matchesTag = page.tags?.some((t) => t.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesContent && !matchesMood && !matchesTag) {
+    const pagesPool = searchIndexPages.length > 0 ? searchIndexPages : activeBookPages;
+    return pagesPool.filter((page) => {
+      if (debouncedSearchQuery.trim()) {
+        const pageTitle = page.title || "";
+        const pageContent = (page as VaultPage).plainText || (page as any).content || "";
+        const pageTags = page.tags || [];
+        const pageMood = (page as any).moodLabel || (page as VaultPage).mood || "";
+        const combinedText = `${pageTitle} ${pageContent} ${pageTags.join(" ")} ${pageMood}`;
+        if (!matchesSearchSubstring(combinedText, debouncedSearchQuery)) {
           return false;
         }
       }
 
       if (draftMoodFilters.length > 0) {
-        if (!page.moodLabel || !draftMoodFilters.includes(page.moodLabel)) {
+        const pageMood = (page as any).moodLabel || (page as VaultPage).mood || "";
+        if (!pageMood || !draftMoodFilters.includes(pageMood)) {
           return false;
         }
       }
 
-      const pageDate = page.dateKey || page.entryDate?.slice(0, 10) || page.createdAt?.slice(0, 10) || "";
-      if (draftDateFilter === "custom" && draftCustomDateStart) {
-        if (draftCustomDateEnd) {
-          if (pageDate < draftCustomDateStart || pageDate > draftCustomDateEnd) return false;
-        } else {
-          if (pageDate !== draftCustomDateStart) return false;
+      if (draftDateFilter !== "all") {
+        const pageCreated = (page as any).createdAt || (page as any).entryDate || "";
+        const bounds = getLocalDateBoundaries(
+          draftDateFilter,
+          draftDateFilter === "custom" ? draftCustomDateStart : null,
+          draftDateFilter === "custom" ? draftCustomDateEnd : null
+        );
+        if (bounds) {
+          if (bounds.startIso && pageCreated < bounds.startIso) return false;
+          if (bounds.endIso && pageCreated > bounds.endIso) return false;
         }
-      }
-      if (draftDateFilter === "today" && pageDate !== todayKey) return false;
-      if (draftDateFilter === "week") {
-        const entryTs = new Date(page.entryDate || page.createdAt).getTime();
-        if (entryTs < Date.now() - 7 * 24 * 60 * 60 * 1000) return false;
-      }
-      if (draftDateFilter === "month") {
-        const entryTs = new Date(page.entryDate || page.createdAt).getTime();
-        if (entryTs < Date.now() - 30 * 24 * 60 * 60 * 1000) return false;
       }
 
       return true;
     }).length;
   }, [
-    journalEntries,
-    searchQuery,
+    searchIndexPages,
+    activeBookPages,
+    debouncedSearchQuery,
     draftMoodFilters,
     draftDateFilter,
     draftCustomDateStart,
     draftCustomDateEnd,
-    todayKey,
   ]);
 
   // Group books by shelf and compute match counts
   const shelfBooksMap = useMemo(() => {
-    const map = new Map<string, { book: JournalBook; matchCount: number; pages: FirestoreJournalEntry[] }[]>();
+    const map = new Map<
+      string,
+      {
+        book: VaultBook;
+        matchCount: number;
+        pages: VaultPage[];
+        matchesFilter: boolean;
+      }[]
+    >();
     for (const shelf of shelves) {
       map.set(shelf.id, []);
     }
 
-    const sortedAllBooks = sortBooks(books, bookSort);
+    const sortedAllBooks = sortBooks(books as any, bookSort) as unknown as VaultBook[];
+    const pagesPool = searchIndexPages.length > 0 ? searchIndexPages : activeBookPages;
 
     for (const book of sortedAllBooks) {
-      const bookPages = journalEntries.filter((e) => (e as any).bookId === book.id);
+      const bookPages = pagesPool.filter((p) => p.bookId === book.id);
       const matches = bookPages.filter(isPageMatchingFilter);
+
+      let bookMatches = true;
+      if (isFilterActive) {
+        const titleMatch = debouncedSearchQuery.trim()
+          ? matchesSearchSubstring(book.title, debouncedSearchQuery)
+          : false;
+        if (debouncedSearchQuery.trim() && moodFilters.length === 0 && dateFilter === "all") {
+          bookMatches = titleMatch || matches.length > 0;
+        } else {
+          bookMatches = matches.length > 0;
+        }
+      }
 
       const targetShelfId = map.has(book.shelfId) ? book.shelfId : shelves[0]?.id;
       if (targetShelfId) {
@@ -502,13 +552,65 @@ export function DigitalJournal({
           book,
           matchCount: matches.length,
           pages: bookPages,
+          matchesFilter: bookMatches,
         });
         map.set(targetShelfId, currentList);
       }
     }
 
     return map;
-  }, [shelves, books, journalEntries, bookSort, isPageMatchingFilter]);
+  }, [
+    shelves,
+    books,
+    searchIndexPages,
+    activeBookPages,
+    bookSort,
+    isPageMatchingFilter,
+    isFilterActive,
+    debouncedSearchQuery,
+    moodFilters.length,
+    dateFilter,
+  ]);
+
+  // Grouped search results for quick access with context snippets
+  const groupedSearchResults = useMemo(() => {
+    const q = debouncedSearchQuery.trim();
+    if (!q) return [];
+
+    const pagesPool = searchIndexPages.length > 0 ? searchIndexPages : activeBookPages;
+    const matchingPages = pagesPool.filter(isPageMatchingFilter);
+
+    const groups: {
+      book: VaultBook;
+      pages: {
+        page: VaultPage;
+        snippet: { before: string; match: string; after: string };
+      }[];
+    }[] = [];
+
+    const groupMap = new Map<string, (typeof groups)[0]>();
+
+    for (const page of matchingPages) {
+      const book = books.find((b) => b.id === page.bookId);
+      if (!book) continue;
+
+      if (!groupMap.has(book.id)) {
+        const newGroup = { book, pages: [] };
+        groupMap.set(book.id, newGroup);
+        groups.push(newGroup);
+      }
+
+      const snippetSource = `${page.title ? page.title + " — " : ""}${page.plainText || page.content || ""}`;
+      const snippet = getSearchSnippet(snippetSource, q) || { before: "", match: q, after: "" };
+
+      groupMap.get(book.id)!.pages.push({
+        page,
+        snippet,
+      });
+    }
+
+    return groups;
+  }, [debouncedSearchQuery, searchIndexPages, activeBookPages, isPageMatchingFilter, books]);
 
   // Open Book with Tactile Sliding Spine Animation & 0.6s Cover Opening
   const handleTapBookSpine = (bookId: string) => {
@@ -519,7 +621,7 @@ export function DigitalJournal({
     }, 220);
   };
 
-  const openBookToPage = (bookId: string, pageIdx: number, triggerCoverAnim = false) => {
+  const openBookToPage = async (bookId: string, pageIdx: number, triggerCoverAnim = false) => {
     if (triggerCoverAnim) {
       setIsOpeningCover(true);
       setTimeout(() => {
@@ -527,38 +629,12 @@ export function DigitalJournal({
       }, 620);
     }
 
-    const bookPages = journalEntries
-      .filter((e) => (e as any).bookId === bookId)
-      .sort((a, b) => new Date(a.entryDate || a.createdAt).getTime() - new Date(b.entryDate || b.createdAt).getTime());
-
-    if (bookPages.length === 0) {
-      // Auto-create initial blank page 1 if empty
-      const newPageId = `page_${Date.now()}`;
-      const nowIso = new Date().toISOString();
-      const initialPage: FirestoreJournalEntry = {
-        id: newPageId,
-        title: "",
-        content: "",
-        dateKey: getLocalDateKey(),
-        entryDate: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        bookId,
-        pageNumber: 1,
-      };
-      const updatedEntries = [initialPage, ...journalEntries];
-      setJournalEntries(updatedEntries);
-      saveCachedJournalEntries(updatedEntries);
-      if (currentUser) {
-        saveJournalEntry(currentUser.uid, initialPage as any).catch(() => {});
-      }
-      setActiveBookId(bookId);
-      setCurrentPageIndex(0);
-      return;
-    }
+    const bookPages = searchIndexPages
+      .filter((p) => p.bookId === bookId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     // If filter is active, jump to the first matching page
-    if (isFilterActive) {
+    if (isFilterActive && bookPages.length > 0) {
       const matchIdx = bookPages.findIndex(isPageMatchingFilter);
       if (matchIdx !== -1) {
         setActiveBookId(bookId);
@@ -568,7 +644,23 @@ export function DigitalJournal({
     }
 
     setActiveBookId(bookId);
-    setCurrentPageIndex(Math.max(0, Math.min(pageIdx, bookPages.length - 1)));
+    setCurrentPageIndex(Math.max(0, Math.min(pageIdx, Math.max(0, bookPages.length - 1))));
+
+    // If book currently has no pages and user is authenticated, create Page 1
+    if (currentUser?.uid && bookPages.length === 0) {
+      try {
+        const initialPage = await vaultService.createPage(currentUser.uid, bookId, {
+          title: "",
+          content: "",
+          order: 1,
+        });
+        setActiveBookPages([initialPage]);
+        setSearchIndexPages((prev) => [...prev, initialPage]);
+        setCurrentPageIndex(0);
+      } catch (err) {
+        console.error("[Vault] Error auto-creating blank page 1:", err);
+      }
+    }
   };
 
   const closeOpenBook = () => {
@@ -578,43 +670,33 @@ export function DigitalJournal({
   };
 
   // Add new page to currently active book
-  const handleAddNewPageToActiveBook = (initialContent = "") => {
-    if (!activeBookId) return;
-    const newPageId = `page_${Date.now()}`;
-    const nowIso = new Date().toISOString();
-    const newPage: FirestoreJournalEntry = {
-      id: newPageId,
-      title: "",
-      content: initialContent,
-      dateKey: getLocalDateKey(),
-      entryDate: nowIso,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      bookId: activeBookId,
-      pageNumber: activeBookPages.length + 1,
-    };
+  const handleAddNewPageToActiveBook = async (initialContent = "") => {
+    if (!activeBookId || !currentUser?.uid) return;
+    try {
+      const newPage = await vaultService.createPage(currentUser.uid, activeBookId, {
+        title: "",
+        content: initialContent,
+        plainText: initialContent.replace(/<[^>]*>/g, ""),
+        order: activeBookPages.length + 1,
+      });
 
-    const nextList = [...journalEntries, newPage];
-    setJournalEntries(nextList);
-    saveCachedJournalEntries(nextList);
+      setActiveBookPages((prev) => [...prev, newPage]);
+      setSearchIndexPages((prev) => [...prev, newPage]);
+      setCurrentPageIndex(activeBookPages.length);
+      setShowPageIndexDrawer(false);
 
-    const updatedBooks = books.map((b) => (b.id === activeBookId ? { ...b, updatedAt: nowIso } : b));
-    updateBooksState(updatedBooks);
-
-    if (currentUser) {
-      saveJournalEntry(currentUser.uid, newPage as any).catch(() => {});
-    }
-
-    setCurrentPageIndex(activeBookPages.length);
-    setShowPageIndexDrawer(false);
-    if (!initialContent) {
-      notify(
-        language === "Bahasa Melayu"
-          ? "Halaman baharu ditambah"
-          : language === "中文"
-          ? "已添加新的一页"
-          : "New page added"
-      );
+      if (!initialContent) {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Halaman baharu ditambah"
+            : language === "中文"
+            ? "已添加新的一页"
+            : "New page added"
+        );
+      }
+    } catch (err) {
+      console.error("[Vault] Error adding page:", err);
+      notify(language === "中文" ? "添加页面失败" : "Failed to add page");
     }
   };
 
@@ -630,16 +712,9 @@ export function DigitalJournal({
         if (currentPageIndex < activeBookPages.length - 1) {
           const nextPage = activeBookPages[currentPageIndex + 1];
           const combined = (nextPage.content ? nextPage.content + "\n" : "") + overflow;
-          const nextList = journalEntries.map((e) =>
-            e.id === nextPage.id ? { ...e, content: combined, updatedAt: new Date().toISOString() } : e
-          );
-          setJournalEntries(nextList);
-          saveCachedJournalEntries(nextList);
-          if (currentUser) {
-            updateJournalEntry(currentUser.uid, nextPage.id, { content: combined } as any).catch(() => {});
-          }
+          handleMutateCurrentPage({ content: combined });
         } else {
-          handleAddNewPageToActiveBook(overflow);
+          void handleAddNewPageToActiveBook(overflow);
         }
         return;
       }
@@ -647,32 +722,73 @@ export function DigitalJournal({
     handleMutateCurrentPage({ content: newContent });
   };
 
-  // Auto-Save open page changes with subtle status indicator
-  const handleMutateCurrentPage = (patch: Partial<FirestoreJournalEntry>) => {
+  // Ref to preserve drafted text in memory on error & support manual retry
+  const pendingPatchRef = useRef<Partial<VaultPage>>({});
+
+  const executeSaveCurrentPage = useCallback(
+    async (patch: Partial<VaultPage>) => {
+      if (!currentUser?.uid || !activeBookId || !currentPage) return;
+      setPageSaveStatus("saving");
+      pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+
+      try {
+        await vaultService.updatePage(
+          currentUser.uid,
+          activeBookId,
+          currentPage.id,
+          pendingPatchRef.current
+        );
+        pendingPatchRef.current = {};
+        setPageSaveStatus("saved");
+      } catch (err) {
+        console.error("[Vault] Error saving page:", err);
+        setPageSaveStatus("error");
+      }
+    },
+    [currentUser?.uid, activeBookId, currentPage]
+  );
+
+  const handleRetrySaveCurrentPage = useCallback(() => {
+    if (Object.keys(pendingPatchRef.current).length > 0) {
+      void executeSaveCurrentPage({});
+    } else if (currentPage) {
+      void executeSaveCurrentPage({
+        title: currentPage.title,
+        content: currentPage.content,
+        plainText: currentPage.plainText,
+        mood: currentPage.mood,
+      });
+    }
+  }, [executeSaveCurrentPage, currentPage]);
+
+  // Auto-Save open page changes with 1.5s debounce and server acknowledgment requirement
+  const handleMutateCurrentPage = (patch: Partial<VaultPage> & Record<string, any>) => {
     if (!currentPage) return;
     setPageSaveStatus("saving");
 
-    const nowIso = new Date().toISOString();
     const updated = {
       ...currentPage,
       ...patch,
-      updatedAt: nowIso,
+      plainText:
+        patch.content !== undefined
+          ? patch.content.replace(/<[^>]*>/g, "")
+          : currentPage.plainText,
+      updatedAt: new Date().toISOString(),
     };
 
-    const nextList = journalEntries.map((e) => (e.id === currentPage.id ? updated : e));
-    setJournalEntries(nextList);
+    setActiveBookPages((prev) =>
+      prev.map((p) => (p.id === currentPage.id ? (updated as VaultPage) : p))
+    );
+    setSearchIndexPages((prev) =>
+      prev.map((p) => (p.id === currentPage.id ? (updated as VaultPage) : p))
+    );
+
+    pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveCachedJournalEntries(nextList);
-      if (currentUser && currentPage.id && !currentPage.id.startsWith("seed_")) {
-        updateJournalEntry(currentUser.uid, currentPage.id, patch as any)
-          .then(() => setPageSaveStatus("saved"))
-          .catch(() => setPageSaveStatus("error"));
-      } else {
-        setPageSaveStatus("saved");
-      }
-    }, 600);
+      void executeSaveCurrentPage(patch);
+    }, 1500); // 1.5s debounce
   };
 
   // Page Turn Actions
@@ -684,7 +800,7 @@ export function DigitalJournal({
         setPageTurnDirection("none");
       }, 200);
     } else {
-      handleAddNewPageToActiveBook();
+      void handleAddNewPageToActiveBook();
     }
   };
 
@@ -761,62 +877,51 @@ export function DigitalJournal({
     }, 50);
   };
 
-  // Photo Attachment Handler for Open Page
-  const handleAttachPhotoToPage = (e: ChangeEvent<HTMLInputElement>) => {
+  // Photo Attachment Handler for Open Page (<35KB compressed base64 thumbnail)
+  const handleAttachPhotoToPage = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 4 * 1024 * 1024) {
+    try {
+      const thumb = await createCompressedPhotoThumbnail(file, 400, 0.65);
+      handleMutateCurrentPage({ photos: [thumb], photoUrl: thumb } as any);
       notify(
         language === "Bahasa Melayu"
-          ? "Sila pilih imej di bawah 4MB"
+          ? "Foto dilampirkan ke halaman"
           : language === "中文"
-          ? "请选择小于 4MB 的照片"
-          : "Please choose an image under 4MB"
+          ? "照片已贴入页面"
+          : "Photo attached to page"
       );
-      return;
+    } catch {
+      notify(language === "中文" ? "照片处理失败" : "Failed to process photo");
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        handleMutateCurrentPage({ photoUrl: reader.result });
-        notify(
-          language === "Bahasa Melayu"
-            ? "Foto dilampirkan ke halaman"
-            : language === "中文"
-            ? "照片已贴入页面"
-            : "Photo attached to page"
-        );
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   // Delete current page
   const handleConfirmDeletePage = async () => {
-    if (!pageToDelete) return;
+    if (!pageToDelete || !activeBookId || !currentUser?.uid) return;
     const targetId = pageToDelete.id;
-    const nextList = journalEntries.filter((e) => e.id !== targetId);
-    setJournalEntries(nextList);
-    saveCachedJournalEntries(nextList);
 
-    if (currentUser && targetId && !targetId.startsWith("seed_")) {
-      await deleteJournalEntry(currentUser.uid, targetId).catch(() => {});
+    try {
+      await vaultService.deletePage(currentUser.uid, activeBookId, targetId);
+      setActiveBookPages((prev) => prev.filter((p) => p.id !== targetId));
+      setSearchIndexPages((prev) => prev.filter((p) => p.id !== targetId));
+      setPageToDelete(null);
+      setCurrentPageIndex((prev) => Math.max(0, prev - 1));
+      notify(
+        language === "Bahasa Melayu"
+          ? "Halaman diari dipadam"
+          : language === "中文"
+          ? "日记页面已删除"
+          : "Page deleted"
+      );
+    } catch (err) {
+      console.error("[Vault] Error deleting page:", err);
+      notify(language === "中文" ? "删除页面失败" : "Failed to delete page");
     }
-
-    setPageToDelete(null);
-    setCurrentPageIndex((prev) => Math.max(0, prev - 1));
-    notify(
-      language === "Bahasa Melayu"
-        ? "Halaman diari dipadam"
-        : language === "中文"
-        ? "日记页面已删除"
-        : "Page deleted"
-    );
   };
 
-  // Create or Edit Book Flow (Fix B & Fix C)
+  // Create or Edit Book Flow
   const handleOpenCreateBook = (targetShelfId?: string) => {
     setEditingBook(null);
     setBookTitleInput("");
@@ -827,7 +932,7 @@ export function DigitalJournal({
     setShowCreateBookSheet(true);
   };
 
-  const handleOpenEditBook = (book: JournalBook) => {
+  const handleOpenEditBook = (book: VaultBook) => {
     setEditingBook(book);
     setBookTitleInput(book.title);
     setBookDescInput(book.description || "");
@@ -838,7 +943,7 @@ export function DigitalJournal({
     setShowBookInfoModal(false);
   };
 
-  const handleSaveBook = () => {
+  const handleSaveBook = async () => {
     const titleClean = bookTitleInput.trim();
     if (!titleClean) {
       setCreateBookTitleError(true);
@@ -846,115 +951,107 @@ export function DigitalJournal({
       return;
     }
     setCreateBookTitleError(false);
+    if (!currentUser?.uid) return;
 
-    const nowIso = new Date().toISOString();
+    try {
+      if (editingBook) {
+        await vaultService.updateBook(currentUser.uid, editingBook.id, {
+          title: titleClean,
+          description: bookDescInput.trim(),
+          coverColor: bookColorInput,
+          shelfId: bookShelfIdInput,
+        });
+        setBooks((prev) =>
+          prev.map((b) =>
+            b.id === editingBook.id
+              ? {
+                  ...b,
+                  title: titleClean,
+                  description: bookDescInput.trim(),
+                  coverColor: bookColorInput,
+                  shelfId: bookShelfIdInput,
+                  updatedAt: new Date().toISOString(),
+                }
+              : b
+          )
+        );
+        notify(
+          language === "Bahasa Melayu"
+            ? "Butiran buku dikemas kini"
+            : language === "中文"
+            ? "手帐信息已更新"
+            : "Book details updated"
+        );
+        setShowCreateBookSheet(false);
+        setEditingBook(null);
+      } else {
+        // Atomic batch: Book document + Blank Page 1 + timestamps
+        const { book: newBook, firstPage } = await vaultService.createBook(
+          currentUser.uid,
+          {
+            shelfId: bookShelfIdInput,
+            title: titleClean,
+            description: bookDescInput.trim(),
+            coverColor: bookColorInput,
+            pageTexture: "ruled",
+          }
+        );
 
-    if (editingBook) {
-      const updatedList = books.map((b) =>
-        b.id === editingBook.id
-          ? {
-              ...b,
-              title: titleClean,
-              description: bookDescInput.trim(),
-              coverColor: bookColorInput,
-              shelfId: bookShelfIdInput,
-              updatedAt: nowIso,
-            }
-          : b
-      );
-      updateBooksState(updatedList);
-      notify(
-        language === "Bahasa Melayu"
-          ? "Butiran buku dikemas kini"
-          : language === "中文"
-          ? "手帐信息已更新"
-          : "Book details updated"
-      );
-      setShowCreateBookSheet(false);
-      setEditingBook(null);
-    } else {
-      // Fix C: Create book and open immediately with 0.6s animation and focus on blank Page 1
-      const newBookId = `book_${Date.now()}`;
-      const newBook: JournalBook = {
-        id: newBookId,
-        shelfId: bookShelfIdInput,
-        title: titleClean,
-        coverColor: bookColorInput,
-        description: bookDescInput.trim() || undefined,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        spineHeight: Math.floor(Math.random() * 25) + 150,
-        spineWidth: Math.floor(Math.random() * 8) + 38,
-      };
+        setBooks((prev) => [...prev, newBook]);
+        setActiveBookPages([firstPage]);
+        setSearchIndexPages((prev) => [...prev, firstPage]);
+        setShowCreateBookSheet(false);
+        setEditingBook(null);
 
-      const updatedList = [...books, newBook];
-      updateBooksState(updatedList);
+        // Open new book immediately with 0.6s gentle 3D cover-opening animation
+        void openBookToPage(newBook.id, 0, true);
 
-      // Create initial page 1 for new book
-      const initialPage: FirestoreJournalEntry = {
-        id: `page_${Date.now()}`,
-        title: "",
-        content: "",
-        dateKey: getLocalDateKey(),
-        entryDate: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        bookId: newBookId,
-        pageNumber: 1,
-      };
-      const nextEntries = [...journalEntries, initialPage];
-      setJournalEntries(nextEntries);
-      saveCachedJournalEntries(nextEntries);
-      if (currentUser) {
-        saveJournalEntry(currentUser.uid, initialPage as any).catch(() => {});
+        // Auto focus cursor on Page 1 textarea
+        setTimeout(() => {
+          pageTextareaRef.current?.focus();
+        }, 500);
+
+        notify(
+          language === "Bahasa Melayu"
+            ? "Buku diari dibuka untuk menulis"
+            : language === "中文"
+            ? "已翻开新手帐开始记录"
+            : "Book opened for journaling"
+        );
       }
-
-      setShowCreateBookSheet(false);
-      setEditingBook(null);
-
-      // Open new book immediately in dedicated full-screen page with 0.6s gentle 3D cover-opening animation
-      openBookToPage(newBookId, 0, true);
-
-      // Auto focus cursor on Page 1 textarea
-      setTimeout(() => {
-        pageTextareaRef.current?.focus();
-      }, 500);
-
-      notify(
-        language === "Bahasa Melayu"
-          ? "Buku diari dibuka untuk menulis"
-          : language === "中文"
-          ? "已翻开新手帐开始记录"
-          : "Book opened for journaling"
-      );
+    } catch (err) {
+      console.error("[Vault] Error saving book:", err);
+      notify(language === "中文" ? "保存手帐失败" : "Failed to save book");
     }
   };
 
   // Delete Book
   const handleConfirmDeleteBook = async () => {
-    if (!bookToDelete) return;
+    if (!bookToDelete || !currentUser?.uid) return;
     const targetBookId = bookToDelete.id;
 
-    const nextEntries = journalEntries.filter((e) => (e as any).bookId !== targetBookId);
-    setJournalEntries(nextEntries);
-    saveCachedJournalEntries(nextEntries);
+    try {
+      await vaultService.deleteBook(currentUser.uid, targetBookId);
+      setBooks((prev) => prev.filter((b) => b.id !== targetBookId));
+      setSearchIndexPages((prev) => prev.filter((p) => p.bookId !== targetBookId));
 
-    const nextBooks = books.filter((b) => b.id !== targetBookId);
-    updateBooksState(nextBooks);
+      if (activeBookId === targetBookId) {
+        closeOpenBook();
+      }
 
-    if (activeBookId === targetBookId) {
-      closeOpenBook();
+      setBookToDelete(null);
+      setShowBookInfoModal(false);
+      notify(
+        language === "Bahasa Melayu"
+          ? "Buku dan semua halamannya telah dipadam"
+          : language === "中文"
+          ? "手帐及其所有页面已删除"
+          : "Book and its pages deleted"
+      );
+    } catch (err) {
+      console.error("[Vault] Error deleting book:", err);
+      notify(language === "中文" ? "删除手帐失败" : "Failed to delete book");
     }
-
-    setBookToDelete(null);
-    setShowBookInfoModal(false);
-    notify(
-      language === "Bahasa Melayu"
-        ? "Buku dan semua halamannya telah dipadam"
-        : language === "中文"
-        ? "手帐及其所有页面已删除"
-        : "Book and its pages deleted"
-    );
   };
 
   // Create or Edit Shelf
@@ -964,49 +1061,59 @@ export function DigitalJournal({
     setShowShelfModal(true);
   };
 
-  const handleOpenEditShelf = (shelf: JournalShelf) => {
+  const handleOpenEditShelf = (shelf: VaultShelf) => {
     setEditingShelf(shelf);
     setShelfNameInput(shelf.name);
     setShowShelfModal(true);
   };
 
-  const handleSaveShelf = () => {
+  const handleSaveShelf = async () => {
     const cleanName = shelfNameInput.trim();
-    if (!cleanName) return;
+    if (!cleanName || !currentUser?.uid) return;
 
-    if (editingShelf) {
-      const updated = shelves.map((s) => (s.id === editingShelf.id ? { ...s, name: cleanName } : s));
-      updateShelvesState(updated);
-      notify(
-        language === "Bahasa Melayu"
-          ? "Rak diari dinamakan semula"
-          : language === "中文"
-          ? "书架分类已重命名"
-          : "Shelf renamed"
-      );
-    } else {
-      const newShelf: JournalShelf = {
-        id: `shelf_${Date.now()}`,
-        name: cleanName,
-        createdAt: new Date().toISOString(),
-        order: shelves.length + 1,
-      };
-      const updated = [...shelves, newShelf];
-      updateShelvesState(updated);
-      notify(
-        language === "Bahasa Melayu"
-          ? "Rak baharu ditambah"
-          : language === "中文"
-          ? "新书架已添加"
-          : "New shelf created"
-      );
+    try {
+      if (editingShelf) {
+        await vaultService.updateShelf(currentUser.uid, editingShelf.id, {
+          name: cleanName,
+        });
+        setShelves((prev) =>
+          prev.map((s) =>
+            s.id === editingShelf.id
+              ? { ...s, name: cleanName, updatedAt: new Date().toISOString() }
+              : s
+          )
+        );
+        notify(
+          language === "Bahasa Melayu"
+            ? "Rak diari dinamakan semula"
+            : language === "中文"
+            ? "书架分类已重命名"
+            : "Shelf renamed"
+        );
+      } else {
+        const newShelf = await vaultService.createShelf(currentUser.uid, {
+          name: cleanName,
+          order: shelves.length + 1,
+        });
+        setShelves((prev) => [...prev, newShelf]);
+        notify(
+          language === "Bahasa Melayu"
+            ? "Rak baharu ditambah"
+            : language === "中文"
+            ? "新书架已添加"
+            : "New shelf created"
+        );
+      }
+    } catch (err) {
+      console.error("[Vault] Error saving shelf:", err);
+      notify(language === "中文" ? "保存书架失败" : "Failed to save shelf");
     }
     setShowShelfModal(false);
     setEditingShelf(null);
   };
 
-  const handleConfirmDeleteShelf = () => {
-    if (!shelfToDelete) return;
+  const handleConfirmDeleteShelf = async () => {
+    if (!shelfToDelete || !currentUser?.uid) return;
     const targetShelfId = shelfToDelete.id;
     if (shelves.length <= 1) {
       notify(
@@ -1022,20 +1129,24 @@ export function DigitalJournal({
 
     const fallbackShelf = shelves.find((s) => s.id !== targetShelfId) || shelves[0];
 
-    const nextBooks = books.map((b) => (b.shelfId === targetShelfId ? { ...b, shelfId: fallbackShelf.id } : b));
-    updateBooksState(nextBooks);
-
-    const nextShelves = shelves.filter((s) => s.id !== targetShelfId);
-    updateShelvesState(nextShelves);
-
-    setShelfToDelete(null);
-    notify(
-      language === "Bahasa Melayu"
-        ? "Rak dipadam dan buku dipindahkan"
-        : language === "中文"
-        ? "书架已删除，手帐已移至其他书架"
-        : "Shelf deleted and books relocated"
-    );
+    try {
+      await vaultService.deleteShelf(currentUser.uid, targetShelfId, fallbackShelf.id);
+      setShelves((prev) => prev.filter((s) => s.id !== targetShelfId));
+      setBooks((prev) =>
+        prev.map((b) => (b.shelfId === targetShelfId ? { ...b, shelfId: fallbackShelf.id } : b))
+      );
+      setShelfToDelete(null);
+      notify(
+        language === "Bahasa Melayu"
+          ? "Rak dipadam dan buku dipindahkan"
+          : language === "中文"
+          ? "书架已删除，手帐已移至其他书架"
+          : "Shelf deleted and books relocated"
+      );
+    } catch (err) {
+      console.error("[Vault] Error deleting shelf:", err);
+      notify(language === "中文" ? "删除书架失败" : "Failed to delete shelf");
+    }
   };
 
   // Helper to open a blank page in a chosen book (from hero "Write a Journal Entry" button)
@@ -1047,34 +1158,25 @@ export function DigitalJournal({
     setShowChooseBookModal(true);
   };
 
-  const handleSelectBookToWrite = (bookId: string) => {
+  const handleSelectBookToWrite = async (bookId: string) => {
     setShowChooseBookModal(false);
-    const newPageId = `page_${Date.now()}`;
-    const nowIso = new Date().toISOString();
-    const newPage: FirestoreJournalEntry = {
-      id: newPageId,
-      title: "",
-      content: "",
-      dateKey: getLocalDateKey(),
-      entryDate: nowIso,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      bookId,
-      pageNumber: journalEntries.filter((e) => (e as any).bookId === bookId).length + 1,
-    };
-
-    const nextList = [...journalEntries, newPage];
-    setJournalEntries(nextList);
-    saveCachedJournalEntries(nextList);
-
-    if (currentUser) {
-      saveJournalEntry(currentUser.uid, newPage as any).catch(() => {});
+    if (!currentUser?.uid) return;
+    try {
+      const bookPages = searchIndexPages.filter((p) => p.bookId === bookId);
+      const newPage = await vaultService.createPage(currentUser.uid, bookId, {
+        title: "",
+        content: "",
+        order: bookPages.length + 1,
+      });
+      setActiveBookPages((prev) => [...prev, newPage]);
+      setSearchIndexPages((prev) => [...prev, newPage]);
+      void openBookToPage(bookId, bookPages.length, true);
+      setTimeout(() => {
+        pageTextareaRef.current?.focus();
+      }, 500);
+    } catch (err) {
+      console.error("[Vault] Error creating page:", err);
     }
-
-    openBookToPage(bookId, journalEntries.filter((e) => (e as any).bookId === bookId).length, true);
-    setTimeout(() => {
-      pageTextareaRef.current?.focus();
-    }, 500);
   };
 
   // Calendar bottom sheet date picker helpers (Fix A)
@@ -1282,13 +1384,18 @@ export function DigitalJournal({
     }
   };
 
-  // Fix 2: Texture Selection Handler
-  const handleSelectPageTexture = (style: "lined" | "dotted" | "plain") => {
+  // Texture Selection Handler
+  const handleSelectPageTexture = async (style: "lined" | "dotted" | "plain") => {
     setPageStyle(style);
-    if (activeBook) {
-      const textureKey: "ruled" | "dots" | "blank" = style === "dotted" ? "dots" : style === "plain" ? "blank" : "ruled";
-      const updatedBooks: JournalBook[] = books.map((b) => (b.id === activeBook.id ? { ...b, pageTexture: textureKey } : b));
-      updateBooksState(updatedBooks);
+    if (activeBook && currentUser?.uid) {
+      const textureKey: "ruled" | "dots" | "blank" =
+        style === "dotted" ? "dots" : style === "plain" ? "blank" : "ruled";
+      setBooks((prev) =>
+        prev.map((b) => (b.id === activeBook.id ? { ...b, pageTexture: textureKey } : b))
+      );
+      await vaultService
+        .updateBook(currentUser.uid, activeBook.id, { pageTexture: textureKey })
+        .catch(() => {});
     }
   };
 
@@ -1300,12 +1407,16 @@ export function DigitalJournal({
     setShowMoreMenu(false);
   };
 
-  const handleSaveRenameBook = () => {
+  const handleSaveRenameBook = async () => {
     const trimmed = renameBookTitleInput.trim();
-    if (!trimmed || !activeBook) return;
-    const updatedBooks = books.map((b) => (b.id === activeBook.id ? { ...b, title: trimmed } : b));
-    updateBooksState(updatedBooks);
+    if (!trimmed || !activeBook || !currentUser?.uid) return;
+    setBooks((prev) =>
+      prev.map((b) => (b.id === activeBook.id ? { ...b, title: trimmed } : b))
+    );
     setShowRenameBookModal(false);
+    await vaultService
+      .updateBook(currentUser.uid, activeBook.id, { title: trimmed })
+      .catch(() => {});
     notify(language === "中文" ? "手帐名称已更新" : "Book renamed");
   };
 
@@ -1326,13 +1437,17 @@ export function DigitalJournal({
     setShowMoreMenu(false);
   };
 
-  const handleSaveChangeCover = () => {
-    if (!activeBook) return;
+  const handleSaveChangeCover = async () => {
+    if (!activeBook || !currentUser?.uid) return;
     const norm = normalizeHex(changeCoverColorInput) || activeBook.coverColor;
-    const updatedBooks = books.map((b) => (b.id === activeBook.id ? { ...b, coverColor: norm } : b));
-    updateBooksState(updatedBooks);
+    setBooks((prev) =>
+      prev.map((b) => (b.id === activeBook.id ? { ...b, coverColor: norm } : b))
+    );
     addRecentColor(norm);
     setShowChangeCoverSheet(false);
+    await vaultService
+      .updateBook(currentUser.uid, activeBook.id, { coverColor: norm })
+      .catch(() => {});
     notify(language === "中文" ? "手帐封面色彩已更新" : "Cover color updated");
   };
 
@@ -2107,6 +2222,85 @@ export function DigitalJournal({
               )}
             </div>
 
+            {/* Grouped Search Results View with Context Snippet Highlight */}
+            {debouncedSearchQuery.trim() && (
+              <div className="vault-search-results-panel">
+                <div className="vault-search-results-header">
+                  <span className="vault-search-results-title">
+                    <JournalIcon name="search" size={14} decorative />
+                    <span>
+                      {language === "中文"
+                        ? `搜索结果 (${groupedSearchResults.reduce((acc, g) => acc + g.pages.length, 0)} 条)`
+                        : language === "Bahasa Melayu"
+                        ? `Hasil Carian (${groupedSearchResults.reduce((acc, g) => acc + g.pages.length, 0)})`
+                        : `Search Results (${groupedSearchResults.reduce((acc, g) => acc + g.pages.length, 0)})`}
+                    </span>
+                  </span>
+                  <span className="vault-search-results-query">
+                    "{debouncedSearchQuery}"
+                  </span>
+                </div>
+
+                {groupedSearchResults.length === 0 ? (
+                  <div className="vault-search-no-results">
+                    <p>
+                      {language === "中文"
+                        ? "未找到包含该关键词的日记页面"
+                        : language === "Bahasa Melayu"
+                        ? "Tiada catatan diari yang sepadan"
+                        : "No journal pages found matching this keyword"}
+                    </p>
+                  </div>
+                ) : (
+                  groupedSearchResults.map(({ book, pages }) => (
+                    <div key={book.id} className="vault-search-book-group">
+                      <div className="vault-search-book-header">
+                        <span
+                          className="vault-search-book-dot"
+                          style={{ backgroundColor: book.coverColor }}
+                        />
+                        <span className="vault-search-book-title">{book.title}</span>
+                        <span className="vault-search-book-count">
+                          {pages.length} {pages.length === 1 ? "match" : "matches"}
+                        </span>
+                      </div>
+
+                      <div className="vault-search-pages-list">
+                        {pages.map(({ page, snippet }) => {
+                          const pageIdx = Math.max(0, (page.order || 1) - 1);
+                          return (
+                            <div
+                              key={page.id}
+                              className="vault-search-page-item"
+                              onClick={() => void openBookToPage(book.id, pageIdx, true)}
+                              role="button"
+                              tabIndex={0}
+                            >
+                              <div className="vault-search-page-meta">
+                                <span className="vault-search-page-num">
+                                  {language === "中文"
+                                    ? `第 ${page.order || 1} 页`
+                                    : `Page ${page.order || 1}`}
+                                </span>
+                                <span className="vault-search-page-date">
+                                  {page.createdAt?.slice(0, 10)}
+                                </span>
+                              </div>
+                              <div className="vault-search-page-snippet">
+                                {snippet.before}
+                                <mark className="search-highlight">{snippet.match}</mark>
+                                {snippet.after}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
             {/* Bookshelf Sort Bar */}
             <div className="bookshelf-sort-bar">
               <span className="bookshelf-sort-title">
@@ -2148,8 +2342,17 @@ export function DigitalJournal({
             {/* Interactive Shelves Rendering */}
             <div className="bookshelf-shelves-container">
               {shelves.map((shelf) => {
-                const booksOnShelf = shelfBooksMap.get(shelf.id) || [];
-                const totalPagesOnShelf = booksOnShelf.reduce((acc, item) => acc + item.pages.length, 0);
+                const shelfEntries = shelfBooksMap.get(shelf.id) || [];
+                const allBooksOnShelf = shelfEntries.map((e) => e.book);
+                const matchingBooksOnShelf = shelfEntries.filter((e) =>
+                  isFilterActive ? e.matchesFilter : true
+                );
+                const totalPagesOnShelf = shelfEntries.reduce(
+                  (acc, item) => acc + (item.book.pageCount || item.pages.length),
+                  0
+                );
+                const showEmptyNotice =
+                  isFilterActive && allBooksOnShelf.length > 0 && matchingBooksOnShelf.length === 0;
 
                 return (
                   <div key={shelf.id} className="bookshelf-shelf-row">
@@ -2157,7 +2360,7 @@ export function DigitalJournal({
                       <div className="bookshelf-shelf-title-group">
                         <h4>{shelf.name}</h4>
                         <span className="bookshelf-shelf-count-badge">
-                          {booksOnShelf.length} {booksOnShelf.length === 1 ? "book" : "books"} • {totalPagesOnShelf} p.
+                          {allBooksOnShelf.length} {allBooksOnShelf.length === 1 ? "book" : "books"} • {totalPagesOnShelf} p.
                         </span>
                       </div>
 
@@ -2173,71 +2376,96 @@ export function DigitalJournal({
                     </div>
 
                     <div className="bookshelf-stage">
-                      <div className="bookshelf-scroll-track">
-                        {booksOnShelf.map(({ book, matchCount, pages }) => {
-                          const isSliding = slidingSpineId === book.id;
-                          const textColor = getAccessibleTextColor(book.coverColor);
-                          const ribbonColor = getDerivedRibbonColor(book.coverColor);
-                          const spineH = book.spineHeight || 160;
-                          const spineW = book.spineWidth || 42;
-
-                          return (
-                            <div
-                              key={book.id}
-                              className={`book-spine-card ${isSliding ? "sliding-out" : ""}`}
-                              style={{
-                                height: `${spineH}px`,
-                                width: `${spineW}px`,
-                                backgroundColor: book.coverColor,
-                                color: textColor,
-                              }}
-                              onClick={() => handleTapBookSpine(book.id)}
-                              role="button"
-                              tabIndex={0}
-                              aria-label={`Book ${book.title}, ${pages.length} pages`}
-                            >
-                              <div className="spine-top-band" />
-                              <div className="spine-ribbon" style={{ backgroundColor: ribbonColor }} />
-
-                              {isFilterActive && matchCount > 0 && (
-                                <span className="spine-match-badge">{matchCount}</span>
-                              )}
-
-                              <span
-                                className="spine-title-vertical"
-                                style={{ fontSize: `${getSpineFontSize(book.title)}px` }}
-                              >
-                                {book.title}
-                              </span>
-
-                              <div className="spine-base-meta">
-                                <JournalIcon name="bookOpen" size={11} decorative />
-                                <span>{pages.length}</span>
-                              </div>
-
-                              <div className="spine-bottom-band" />
-                            </div>
-                          );
-                        })}
-
-                        {/* Dashed "+ Book" placeholder spine */}
-                        <div
-                          className="book-spine-add-dashed"
-                          onClick={() => handleOpenCreateBook(shelf.id)}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Add book to shelf ${shelf.name}`}
-                        >
-                          <span className="plus-symbol">+</span>
-                          <span className="plus-label">
-                            {language === "Bahasa Melayu"
-                              ? "TAMBAH"
-                              : language === "中文"
-                              ? "新建"
-                              : "NEW"}
-                          </span>
+                      {showEmptyNotice ? (
+                        <div className="empty-shelf-filter-notice">
+                          <JournalIcon name="search" size={18} decorative />
+                          <p>
+                            {language === "中文"
+                              ? "该分类下暂无符合筛选的手帐"
+                              : language === "Bahasa Melayu"
+                              ? "Tiada buku yang sepadan dalam rak ini"
+                              : "No matching books on this shelf"}
+                          </p>
+                          <button
+                            type="button"
+                            className="empty-shelf-clear-btn"
+                            onClick={handleClearAllFilters}
+                          >
+                            {language === "中文"
+                              ? "清除筛选"
+                              : language === "Bahasa Melayu"
+                              ? "Kosongkan penapis"
+                              : "Clear filters"}
+                          </button>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="bookshelf-scroll-track">
+                          {matchingBooksOnShelf.map(({ book, matchCount, pages }) => {
+                            const isSliding = slidingSpineId === book.id;
+                            const textColor = getAccessibleTextColor(book.coverColor);
+                            const ribbonColor = getDerivedRibbonColor(book.coverColor);
+                            const spineH = (book as any).spineHeight || 160;
+                            const spineW = (book as any).spineWidth || 42;
+                            const pCount = book.pageCount || pages.length;
+
+                            return (
+                              <div
+                                key={book.id}
+                                className={`book-spine-card ${isSliding ? "sliding-out" : ""}`}
+                                style={{
+                                  height: `${spineH}px`,
+                                  width: `${spineW}px`,
+                                  backgroundColor: book.coverColor,
+                                  color: textColor,
+                                }}
+                                onClick={() => handleTapBookSpine(book.id)}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Book ${book.title}, ${pCount} pages`}
+                              >
+                                <div className="spine-top-band" />
+                                <div className="spine-ribbon" style={{ backgroundColor: ribbonColor }} />
+
+                                {isFilterActive && matchCount > 0 && (
+                                  <span className="spine-match-badge">{matchCount}</span>
+                                )}
+
+                                <span
+                                  className="spine-title-vertical"
+                                  style={{ fontSize: `${getSpineFontSize(book.title)}px` }}
+                                >
+                                  {book.title}
+                                </span>
+
+                                <div className="spine-base-meta">
+                                  <JournalIcon name="bookOpen" size={11} decorative />
+                                  <span>{pCount}</span>
+                                </div>
+
+                                <div className="spine-bottom-band" />
+                              </div>
+                            );
+                          })}
+
+                          {/* Dashed "+ Book" placeholder spine */}
+                          <div
+                            className="book-spine-add-dashed"
+                            onClick={() => handleOpenCreateBook(shelf.id)}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Add book to shelf ${shelf.name}`}
+                          >
+                            <span className="plus-symbol">+</span>
+                            <span className="plus-label">
+                              {language === "Bahasa Melayu"
+                                ? "TAMBAH"
+                                : language === "中文"
+                                ? "新建"
+                                : "NEW"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* 3D Shelf Plank */}
                       <div className="bookshelf-plank" />
@@ -2825,7 +3053,7 @@ export function DigitalJournal({
                     <JournalIcon name="calendar" size={13} decorative />
                     <span>
                       {currentPage
-                        ? currentPage.dateKey || getLocalDateKey(currentPage.entryDate)
+                        ? (currentPage as any).dateKey || currentPage.createdAt?.slice(0, 10)
                         : todayKey}
                     </span>
                   </span>
@@ -2844,24 +3072,66 @@ export function DigitalJournal({
                       </>
                     )}
                     {pageSaveStatus === "error" && (
-                      <>
+                      <button
+                        type="button"
+                        onClick={handleRetrySaveCurrentPage}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "inherit",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          padding: 0,
+                        }}
+                        title={language === "中文" ? "点击重试保存" : "Click to retry saving"}
+                      >
                         <JournalIcon name="info" size={12} decorative />
-                        <span>{language === "中文" ? "保存失败，点击重试" : "Error saving"}</span>
-                      </>
+                        <span>{language === "中文" ? "保存失败，点击重试" : "Error saving (retry)"}</span>
+                      </button>
                     )}
                   </span>
                 </div>
 
                 {/* Mood Stamp in Top Corner (Vector Outline Icon) */}
                 <div className="page-mood-stamp-row">
-                  <span className="page-mood-stamp">
+                  <button
+                    type="button"
+                    className="page-mood-stamp"
+                    style={{
+                      background: "transparent",
+                      border: "1px dashed rgba(0, 0, 0, 0.15)",
+                      cursor: "pointer",
+                      borderRadius: "12px",
+                      padding: "2px 8px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                    onClick={() => {
+                      const currentMood = currentPage?.mood || (currentPage as any)?.moodLabel || "Reflective";
+                      const currentIndex = DIARY_MOOD_OPTIONS.findIndex(
+                        (m) => m.label === currentMood || m.key === currentMood
+                      );
+                      const nextMood =
+                        DIARY_MOOD_OPTIONS[(currentIndex + 1) % DIARY_MOOD_OPTIONS.length];
+                      handleMutateCurrentPage({
+                        mood: nextMood.label,
+                        moodLabel: nextMood.label,
+                      } as any);
+                    }}
+                    title={language === "中文" ? "点击切换心情" : "Click to cycle mood"}
+                  >
                     <JournalIcon
-                      name={getMoodIconName(currentPage?.moodLabel || "Reflective")}
+                      name={getMoodIconName(
+                        currentPage?.mood || (currentPage as any)?.moodLabel || "Reflective"
+                      )}
                       size={14}
                       decorative
                     />
-                    <span>{currentPage?.moodLabel || "Reflective"}</span>
-                  </span>
+                    <span>{currentPage?.mood || (currentPage as any)?.moodLabel || "Reflective"}</span>
+                  </button>
                 </div>
 
                 {/* Optional Page Title Input */}
@@ -2895,20 +3165,22 @@ export function DigitalJournal({
                   }
                 />
 
-                {/* Polaroid Photos Section */}
-                {currentPage?.photoUrl && (
+                {/* Polaroid Photos Section (<35KB compressed thumbnails) */}
+                {Boolean(currentPage && (currentPage.photos?.[0] || (currentPage as any).photoUrl)) && (
                   <div className="page-photos-section">
                     <div className="polaroid-card">
                       <div className="polaroid-tape" />
                       <img
-                        src={currentPage.photoUrl}
+                        src={currentPage?.photos?.[0] || (currentPage as any)?.photoUrl || ""}
                         alt="Journal photo"
-                        onClick={() => setPreviewPhotoUrl(currentPage.photoUrl || null)}
+                        onClick={() =>
+                          setPreviewPhotoUrl(currentPage?.photos?.[0] || (currentPage as any)?.photoUrl || null)
+                        }
                       />
                       <button
                         type="button"
                         className="polaroid-remove-btn"
-                        onClick={() => handleMutateCurrentPage({ photoUrl: undefined })}
+                        onClick={() => handleMutateCurrentPage({ photos: [], photoUrl: undefined } as any)}
                         title="Remove photo"
                         aria-label="Remove photo"
                       >
@@ -4193,20 +4465,20 @@ export function DigitalJournal({
                           </strong>
                           <small style={{ color: "var(--muted)", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
                             <JournalIcon name="calendar" size={12} decorative />
-                            <span>{page.dateKey || getLocalDateKey(page.entryDate)}</span>
+                            <span>{(page as any).dateKey || page.createdAt?.slice(0, 10) || todayKey}</span>
                           </small>
                         </div>
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        {page.moodLabel && (
+                        {(page.mood || (page as any).moodLabel) && (
                           <JournalIcon
-                            name={getMoodIconName(page.moodLabel)}
+                            name={getMoodIconName(page.mood || (page as any).moodLabel)}
                             size={15}
                             decorative
                           />
                         )}
-                        {page.photoUrl && (
+                        {((page.photos && page.photos.length > 0) || (page as any).photoUrl) && (
                           <JournalIcon name="camera" size={14} decorative />
                         )}
                         {isCurrent && (
