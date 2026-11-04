@@ -1,6 +1,6 @@
-import { GoogleGenAI, type Content } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
-import { generateDynamicOnyReply } from "./onyCompanionEngine.ts";
+import { generateDynamicOnyReply } from "./onyCompanionEngine.js";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
 export const STABLE_GEMINI_MODEL = "gemini-3.6-flash";
@@ -20,9 +20,9 @@ export const exhaustedModels = new Set<string>([
 ]);
 
 // Maximum time budget for the entire multi-model generation pipeline
-const OVERALL_TIMEOUT_MS = 14_000;
-// Maximum time budget for a single candidate attempt (our tested models respond in 1.2s - 2.8s)
-const ATTEMPT_TIMEOUT_MS = 4_500;
+const OVERALL_TIMEOUT_MS = 40_000;
+// Maximum time budget for a single candidate attempt (measured replies with the full ONY prompt take ~4s - 6.5s)
+const ATTEMPT_TIMEOUT_MS = 15_000;
 // Maximum retries per candidate model (fast progression to next candidate if busy)
 const MAX_RETRIES_PER_CANDIDATE = 1;
 
@@ -379,6 +379,7 @@ export class GeminiChatProvider implements ServerChatProvider {
               config: {
                 systemInstruction: input.systemInstruction,
                 temperature: 0.8,
+                thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
               },
             }),
             timeoutPromise,

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MarketplaceRecommendation, SafetyAction } from "../services/contracts.ts";
-import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../data/merchants.ts";
+import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../data/merchants.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
