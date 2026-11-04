@@ -121,6 +121,12 @@ import {
   CalmingMusicFloatingBar,
   CalmingMusicModal,
 } from "./components/CalmingMusicPlayer";
+import { SupportiveMessageBubble } from "./components/SupportiveMessageBubble";
+import { CommunityPostCard } from "./components/CommunityPostCard";
+import {
+  translateCommunityPost,
+  getCachedPostTranslation,
+} from "./services/communityTranslationService";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -235,7 +241,7 @@ function deduplicateMoodEntriesByDay(entries: MoodEntry[]): MoodEntry[] {
 }
 type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
 type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
-type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string; imageUrl?: string };
+type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string; imageUrl?: string; firestoreId?: string };
 type Post = FirestoreCommunityPost;
 
 const Icon = ({ name }: { name: string }) => {
@@ -1088,6 +1094,7 @@ function AppInner() {
             setMemories(
               loadedMemories.map((m, idx) => ({
                 id: idx + 1,
+                firestoreId: m.id,
                 text: m.text,
                 reason: m.reason,
                 category: m.category,
@@ -3811,6 +3818,11 @@ function MemoryVault({
   setEditingMemory,
   companion,
   notify,
+  memoryConsent,
+  setMemoryConsent,
+  useActiveMemories,
+  setUseActiveMemories,
+  currentUser,
 }: {
   memories: Memory[];
   setMemories: (v: Memory[]) => void;
@@ -3818,12 +3830,200 @@ function MemoryVault({
   setEditingMemory: (v: Memory | null) => void;
   companion: Companion;
   notify: (s: string) => void;
+  memoryConsent: string;
+  setMemoryConsent: (val: string) => void;
+  useActiveMemories: boolean;
+  setUseActiveMemories: (val: boolean) => void;
+  currentUser: User | null;
 }) {
   const { t, language } = useLanguage();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
-  const update = (id: number, patch: Partial<Memory>) =>
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const isAskBeforeSaving = memoryConsent === "control";
+  const activeCount = items.filter((x) => x.active).length;
+  const allPaused = items.length > 0 && items.every((x) => !x.active);
+
+  const update = async (id: number, patch: Partial<Memory>) => {
+    const target = items.find((x) => x.id === id);
     setItems(items.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    if (currentUser && target?.firestoreId) {
+      await updateMemory(currentUser.uid, target.firestoreId, patch).catch((e) =>
+        console.warn("[ONY] Memory item update notice:", e)
+      );
+    }
+  };
+
+  const deleteSingle = async (item: Memory) => {
+    setItems(items.filter((x) => x.id !== item.id));
+    if (currentUser && item.firestoreId) {
+      await deleteMemory(currentUser.uid, item.firestoreId).catch((e) =>
+        console.warn("[ONY] Memory item delete notice:", e)
+      );
+    }
+    notify(t.memory_deleted_toast);
+  };
+
+  const handleToggleAskBeforeSaving = async (nextState: boolean) => {
+    const nextVal = nextState ? "control" : "allow";
+    setMemoryConsent(nextVal);
+    if (currentUser) {
+      await updateUserProfile(currentUser.uid, { memoryConsent: nextVal }).catch((e) =>
+        console.warn("[ONY] Update memory consent error:", e)
+      );
+      writeSystemLog({
+        level: "audit",
+        category: "privacy",
+        action: "MEMORY_CONSENT_TOGGLED",
+        message: `Memory consent updated: Ask before saving = ${nextState ? "ON (manual only)" : "OFF (automatic allowed)"}.`,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+      }).catch(() => {});
+    }
+    notify(
+      language === "Bahasa Melayu"
+        ? nextState
+          ? "Tanya sebelum simpan: Diaktifkan (Persetujuan diperlukan)"
+          : "Simpan automatik: Dibenarkan"
+        : language === "中文"
+        ? nextState
+          ? "保存前询问：已开启（每次均需手动确认）"
+          : "自动辅助记忆：已允许"
+        : nextState
+        ? "Ask before saving: ON (Manual confirmation required)"
+        : "Auto-saving: Enabled"
+    );
+  };
+
+  const handleToggleUseActiveMemories = async (nextState: boolean) => {
+    setUseActiveMemories(nextState);
+    if (currentUser) {
+      await updateUserProfile(currentUser.uid, { useActiveMemories: nextState }).catch((e) =>
+        console.warn("[ONY] Update useActiveMemories error:", e)
+      );
+      writeSystemLog({
+        level: "audit",
+        category: "privacy",
+        action: "ACTIVE_MEMORIES_TOGGLED",
+        message: `Use active memories in conversation set to ${nextState ? "ENABLED" : "DISABLED"}.`,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+      }).catch(() => {});
+    }
+    notify(
+      language === "Bahasa Melayu"
+        ? nextState
+          ? "Memori aktif digunakan dalam sembang"
+          : "Mod sementara aktif: Memori dilumpuhkan dalam sembang"
+        : language === "中文"
+        ? nextState
+          ? "已在对话中启用宝库记忆"
+          : "纯净即时模式：已在对话中停用宝库记忆"
+        : nextState
+        ? "Active memories enabled in conversations"
+        : "Pure ephemeral mode: Memories disabled in conversations"
+    );
+  };
+
+  const handleTogglePauseAll = async () => {
+    const nextActive = allPaused;
+    const updated = items.map((x) => ({ ...x, active: nextActive }));
+    setItems(updated);
+    if (currentUser) {
+      for (const item of items) {
+        if (item.firestoreId) {
+          updateMemory(currentUser.uid, item.firestoreId, { active: nextActive }).catch(() => {});
+        }
+      }
+      writeSystemLog({
+        level: "audit",
+        category: "privacy",
+        action: nextActive ? "ALL_MEMORIES_RESUMED" : "ALL_MEMORIES_PAUSED",
+        message: `${nextActive ? "Resumed" : "Paused"} all ${items.length} memories in vault.`,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+      }).catch(() => {});
+    }
+    notify(nextActive ? t.memory_resumed_all_toast : t.memory_paused_all_toast);
+  };
+
+  const handleExportVault = () => {
+    if (items.length === 0) {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Tiada memori untuk dieksport"
+          : language === "中文"
+          ? "暂无记忆可导出"
+          : "No memories to export"
+      );
+      return;
+    }
+    const payload = {
+      exportDate: new Date().toISOString(),
+      appName: "ONY Mental Wellness Companion",
+      user: currentUser?.email || "ONY Member",
+      privacySettings: {
+        memoryConsent,
+        useActiveMemories,
+        askBeforeSaving: isAskBeforeSaving,
+      },
+      totalMemories: items.length,
+      activeMemories: items.filter((x) => x.active).length,
+      memories: items.map((m) => ({
+        id: m.id,
+        text: m.text,
+        reason: m.reason,
+        category: m.category || "General",
+        active: m.active,
+        kind: m.kind || "text",
+        imageUrl: m.imageUrl || undefined,
+      })),
+    };
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `ony-memory-vault-${dateStr}.json`;
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    notify(t.memory_export_toast);
+
+    if (currentUser) {
+      writeSystemLog({
+        level: "audit",
+        category: "privacy",
+        action: "MEMORY_VAULT_EXPORTED",
+        message: `User exported Memory Vault archive (${items.length} items).`,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+      }).catch(() => {});
+    }
+  };
+
+  const handleConfirmClearAll = async () => {
+    setItems([]);
+    setShowClearConfirm(false);
+    if (currentUser) {
+      await clearAllMemories(currentUser.uid).catch((e) =>
+        console.warn("[ONY] Clear memories error:", e)
+      );
+      writeSystemLog({
+        level: "audit",
+        category: "privacy",
+        action: "ALL_MEMORIES_CLEARED",
+        message: "User permanently cleared entire Memory Vault.",
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+      }).catch(() => {});
+    }
+    notify(t.memory_cleared_toast);
+  };
 
   const filteredItems = items.filter((x) => {
     const q = query.trim().toLowerCase();
@@ -3840,7 +4040,9 @@ function MemoryVault({
     <>
       <PageHeader
         title={t.memory_title}
-        subtitle={`${items.filter((x) => x.active).length} ${t.memory_card_active}`}
+        subtitle={`${activeCount} ${t.memory_card_active} ${
+          !useActiveMemories ? `· ${language === "Bahasa Melayu" ? "Jeda" : language === "中文" ? "已全局暂停" : "Globally Paused"}` : ""
+        }`}
       />
       <section className="page-pad topless memory-page-section">
         <div className="vault-intro">
@@ -3851,6 +4053,7 @@ function MemoryVault({
           </div>
           <Icon name="memory" />
         </div>
+
         <Button
           className="full add-memory-btn"
           onClick={() => {
@@ -3860,6 +4063,7 @@ function MemoryVault({
         >
           + {t.memory_add_btn}
         </Button>
+
         <div className="memory-sticky-controls">
           <div className="search">
             <Icon name="search" />
@@ -3892,6 +4096,7 @@ function MemoryVault({
             ))}
           </div>
         </div>
+
         <div className="section-head">
           <h3>
             {t.memory_saved_section}{" "}
@@ -3900,15 +4105,13 @@ function MemoryVault({
           {items.length > 0 && (
             <Button
               variant="ghost"
-              onClick={() => {
-                setItems([]);
-                notify(t.memory_cleared_toast);
-              }}
+              onClick={() => setShowClearConfirm(true)}
             >
               {t.memory_clear_all}
             </Button>
           )}
         </div>
+
         {filteredItems.map((item) => (
           <div className={`memory-card ${!item.active ? "paused" : ""}`} key={item.id}>
             <div className="memory-top">
@@ -3951,10 +4154,7 @@ function MemoryVault({
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => {
-                  setItems(items.filter((x) => x.id !== item.id));
-                  notify(t.memory_deleted_toast);
-                }}
+                onClick={() => deleteSingle(item)}
               >
                 <Icon name="trash" />
                 {t.common_delete}
@@ -3962,6 +4162,7 @@ function MemoryVault({
             </div>
           </div>
         ))}
+
         {!items.length && (
           <div className="empty">
             <CompanionAvatar companion={companion} large />
@@ -3969,6 +4170,7 @@ function MemoryVault({
             <p>{t.memory_empty_desc}</p>
           </div>
         )}
+
         {items.length > 0 && filteredItems.length === 0 && (
           <div className="empty">
             <span className="empty-emoji">🔍</span>
@@ -4001,33 +4203,131 @@ function MemoryVault({
             </Button>
           </div>
         )}
-        <div className="privacy-row">
-          <Icon name="shield" />
-          <div>
-            <strong>{t.memory_privacy_controls}</strong>
-            <p>
-              {t.memory_ask_before_saving}{" "}
-              {items.length
-                ? language === "Bahasa Melayu"
-                  ? "mati"
-                  : language === "中文"
-                  ? "关闭"
-                  : "off"
-                : language === "Bahasa Melayu"
-                ? "hidup"
-                : language === "中文"
-                ? "开启"
-                : "on"}
-              .
-            </p>
+
+        {/* Fully Functional Memory Privacy & Retention Controls Card */}
+        <div className="vault-privacy-box">
+          <div className="vault-privacy-header">
+            <div className="vault-privacy-header-left">
+              <Icon name="shield" />
+              <strong>{t.memory_privacy_controls}</strong>
+            </div>
+            {!useActiveMemories ? (
+              <span className="vault-privacy-status-pill paused">
+                🔒 {language === "Bahasa Melayu" ? "Mod Sementara" : language === "中文" ? "纯净即时模式" : "Ephemeral Mode"}
+              </span>
+            ) : isAskBeforeSaving ? (
+              <span className="vault-privacy-status-pill control">
+                🛡️ {t.memory_ask_saving_on_badge}
+              </span>
+            ) : (
+              <span className="vault-privacy-status-pill active">
+                🌱 {t.memory_ask_saving_off_badge}
+              </span>
+            )}
           </div>
-          <Toggle on={memoryConsentOn(items)} setOn={() => notify(t.personalise_save_toast)} />
+
+          {/* Privacy Control 1: Ask Before Saving */}
+          <div className="vault-privacy-item">
+            <div className="vault-privacy-item-text">
+              <strong>
+                {t.memory_ask_before_saving}
+                <span className="vault-privacy-item-badge">
+                  {isAskBeforeSaving
+                    ? (language === "Bahasa Melayu" ? "HIDUP" : language === "中文" ? "开启" : "ON")
+                    : (language === "Bahasa Melayu" ? "MATI" : language === "中文" ? "关闭" : "OFF")}
+                </span>
+              </strong>
+              <p>{t.memory_ask_saving_desc}</p>
+            </div>
+            <Toggle on={isAskBeforeSaving} setOn={handleToggleAskBeforeSaving} />
+          </div>
+
+          {/* Privacy Control 2: Master Switch for Active Memories in Chat */}
+          <div className="vault-privacy-item">
+            <div className="vault-privacy-item-text">
+              <strong>
+                {t.personalise_memories_toggle}
+                <span className="vault-privacy-item-badge">
+                  {useActiveMemories
+                    ? `${activeCount} ${language === "Bahasa Melayu" ? "aktif" : language === "中文" ? "条启用" : "active"}`
+                    : (language === "Bahasa Melayu" ? "Dilumpuhkan" : language === "中文" ? "已停用" : "Disabled")}
+                </span>
+              </strong>
+              <p>
+                {useActiveMemories
+                  ? (language === "Bahasa Melayu"
+                      ? `Membenarkan ${activeCount} memori aktif memperibadikan perbualan teman anda.`
+                      : language === "中文"
+                      ? `允许 ${activeCount} 条已启用的个人记忆用于连贯的日常对话。`
+                      : `Allows ${activeCount} active memories to personalize your ongoing companion chats.`)
+                  : t.memory_ephemeral_notice}
+              </p>
+            </div>
+            <Toggle on={useActiveMemories} setOn={handleToggleUseActiveMemories} />
+          </div>
+
+          {!useActiveMemories && (
+            <div className="vault-privacy-ephemeral-banner off">
+              <Icon name="info" />
+              <span>{t.memory_ephemeral_notice}</span>
+            </div>
+          )}
+
+          {/* Inline Clear Confirmation Modal */}
+          {showClearConfirm && (
+            <div className="vault-clear-confirm-modal">
+              <h4>{t.memory_clear_confirm_title}</h4>
+              <p>{t.memory_clear_confirm_desc}</p>
+              <div className="vault-clear-confirm-buttons">
+                <Button variant="danger" onClick={handleConfirmClearAll}>
+                  {t.memory_clear_all}
+                </Button>
+                <Button variant="ghost" onClick={() => setShowClearConfirm(false)}>
+                  {t.common_cancel}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Batch Privacy & Data Sovereignty Actions Grid */}
+          <div className="vault-privacy-actions-grid">
+            <Button
+              variant="secondary"
+              onClick={handleTogglePauseAll}
+              disabled={items.length === 0}
+            >
+              <Icon name={allPaused ? "play" : "pause"} />
+              {allPaused ? t.memory_resume_all : t.memory_pause_all}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleExportVault}
+              disabled={items.length === 0}
+            >
+              <Icon name="download" />
+              {t.memory_export_btn}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={items.length === 0}
+            >
+              <Icon name="trash" />
+              {t.memory_clear_all}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => navigate("privacy")}
+            >
+              <Icon name="shield" />
+              {language === "Bahasa Melayu" ? "Tetapan Privasi Penuh" : language === "中文" ? "完整隐私与数据设置" : "Full Privacy Settings"}
+            </Button>
+          </div>
         </div>
       </section>
     </>
   );
 }
-const memoryConsentOn = (items: Memory[]) => items.length > 0;
 
 function AddMemory({ back, memories, setMemories, editing, notify }: {
   back: () => void; memories: Memory[]; setMemories: (v: Memory[]) => void; editing: Memory | null; notify: (s: string) => void;
@@ -4550,46 +4850,18 @@ function Community({
           ))}
         </div>
       </div>
-      <div className="feed">{shown.map((post) => {
-        const likeList = Array.isArray(post.likeRecords) ? post.likeRecords : [];
-        const commentList = Array.isArray(post.comments) ? post.comments : [];
-        const likedByMe = likeList.some(
-          (l) =>
-            l.userId === currentUid ||
-            l.userName.trim().toLowerCase() === currentUserName.trim().toLowerCase(),
-        );
-        return (
-          <article className="post-card" key={post.id}>
-            <div className="post-meta">
-              <span className="mini-avatar">{post.author[0]}</span>
-              <div>
-                <strong>{post.author}</strong>
-                <small>{getCategoryLabel(post.category, language)} · {formatFriendlyTime(post.createdAt, language)}</small>
-              </div>
-              <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Siaran ditandakan untuk moderasi komuniti." : language === "中文" ? "感谢反馈。帖子已提交社区审核。" : "Thank you. Post flagged for community moderation.")}>{t.common_report}</Button>
-            </div>
-            <button className="post-open" onClick={() => openPost(post)}>
-              <h3>{post.title}</h3>
-              <p>{post.body}</p>
-            </button>
-            {post.media === "voice" && <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />}
-            {post.media === "image" && <div className="post-image"><span>{t.community_calm_image}</span></div>}
-            <div className="post-actions">
-              <Button
-                variant={likedByMe ? "primary" : "ghost"}
-                onClick={() => onLikePost && onLikePost(post.id)}
-              >
-                <Icon name="heart" />
-                {likedByMe ? (language === "Bahasa Melayu" ? "Disukai" : language === "中文" ? "已赞" : "Liked") : (language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "点赞" : "Like")} ({post.likes})
-              </Button>
-              <Button variant="ghost" onClick={() => openPost(post)}>
-                <Icon name="chat" />
-                {commentList.length} {language === "Bahasa Melayu" ? "komen" : language === "中文" ? "条评论" : commentList.length === 1 ? "comment" : "comments"}
-              </Button>
-            </div>
-          </article>
-        );
-      })}
+      <div className="feed">
+        {shown.map((post) => (
+          <CommunityPostCard
+            key={post.id}
+            post={post}
+            currentUid={currentUid}
+            currentUserName={currentUserName}
+            onOpen={openPost}
+            onLike={onLikePost}
+            notify={notify}
+          />
+        ))}
       {shown.length === 0 && (
         <div className="empty">
           <span className="empty-emoji">🌱</span>
@@ -4675,25 +4947,19 @@ function Community({
       ) : (
         <div className="community-thread my-node-bubble-list">
           {mySupportMessages.map((msg) => (
-            <div key={msg.id} className="support-bubble-row member">
-              <div className="support-bubble-avatar" aria-hidden="true">
-                {msg.kind === "voice" ? "🎙️" : "🌱"}
-              </div>
-              <div className="support-bubble-col">
-                <div className="support-bubble-meta">
-                  <strong>{msg.senderAnonymous || (language === "Bahasa Melayu" ? "Pengembara Tanpa Nama" : language === "中文" ? "匿名旅人" : "Anonymous Traveler")}</strong>
-                  <span className="to-you-pill">{language === "Bahasa Melayu" ? "Kepada Anda" : language === "中文" ? "写给您" : "To You"}</span>
-                  <small>{formatFriendlyTime(msg.createdAt, language)}</small>
-                </div>
-                <div className="support-bubble member">
-                  {msg.kind === "text" ? (
-                    <p>{msg.text}</p>
-                  ) : (
-                    <VoiceNote audioUrl={msg.audioUrl} audioDuration={msg.audioDuration} notify={notify} />
-                  )}
-                </div>
-              </div>
-            </div>
+            <SupportiveMessageBubble
+              key={msg.id}
+              id={msg.id}
+              kind={msg.kind}
+              text={msg.text}
+              audioUrl={msg.audioUrl}
+              audioDuration={msg.audioDuration}
+              transcription={msg.transcription}
+              senderAnonymous={msg.senderAnonymous}
+              timeDisplay={formatFriendlyTime(msg.createdAt, language)}
+              toYou={true}
+              notify={notify}
+            />
           ))}
         </div>
       )}
@@ -5100,6 +5366,61 @@ function PostDetail({
 
   const commentInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Translation state for post details
+  const [showDetailTranslation, setShowDetailTranslation] = useState(false);
+  const [translatedDetailContent, setTranslatedDetailContent] = useState<{
+    translatedTitle: string;
+    translatedBody: string;
+  } | null>(() => getCachedPostTranslation(post.id, language) || null);
+  const [isTranslatingDetail, setIsTranslatingDetail] = useState(false);
+
+  useEffect(() => {
+    const cached = getCachedPostTranslation(post.id, language);
+    if (cached) {
+      setTranslatedDetailContent(cached);
+    } else {
+      setTranslatedDetailContent(null);
+      setShowDetailTranslation(false);
+    }
+  }, [post.id, language]);
+
+  const handleToggleDetailTranslation = async () => {
+    if (showDetailTranslation) {
+      setShowDetailTranslation(false);
+      return;
+    }
+    if (translatedDetailContent) {
+      setShowDetailTranslation(true);
+      return;
+    }
+    setIsTranslatingDetail(true);
+    try {
+      const res = await translateCommunityPost(
+        { id: post.id, title: post.title, body: post.body },
+        language
+      );
+      setTranslatedDetailContent(res);
+      setShowDetailTranslation(true);
+      notify(
+        language === "Bahasa Melayu"
+          ? "Siaran diterjemahkan"
+          : language === "中文"
+          ? "帖子已翻译"
+          : "Post translated"
+      );
+    } catch {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Gagal menterjemah siaran"
+          : language === "中文"
+          ? "翻译失败，请稍后重试"
+          : "Translation failed"
+      );
+    } finally {
+      setIsTranslatingDetail(false);
+    }
+  };
+
   const cleanUid = currentUid.trim() || "anonymous_user";
   const cleanName = currentUserName.trim() || "ONY Member";
 
@@ -5266,12 +5587,47 @@ function PostDetail({
                 {formatFriendlyTime(post.createdAt, language)}
               </small>
             </div>
-            <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Siaran ditandakan untuk semakan moderasi." : language === "中文" ? "感谢反馈。帖子已提交审核。" : "Thank you. Post flagged for moderation review.")}>
-              {t.common_report}
-            </Button>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "6px", alignItems: "center" }}>
+              <button
+                type="button"
+                className={`post-translate-btn ${showDetailTranslation ? "active" : ""}`}
+                onClick={handleToggleDetailTranslation}
+                disabled={isTranslatingDetail}
+                title={showDetailTranslation ? t.community_show_original : t.community_translate_btn}
+                aria-label={showDetailTranslation ? t.community_show_original : t.community_translate_btn}
+              >
+                {isTranslatingDetail ? (
+                  <>
+                    <span className="spinner mini" />
+                    <span>{t.community_translating}</span>
+                  </>
+                ) : showDetailTranslation ? (
+                  <>
+                    <span className="translate-icon">↩</span>
+                    <span>{t.community_show_original}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="translate-icon">🌐</span>
+                    <span>{t.community_translate_btn}</span>
+                  </>
+                )}
+              </button>
+              <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Siaran ditandakan untuk semakan moderasi." : language === "中文" ? "感谢反馈。帖子已提交审核。" : "Thank you. Post flagged for moderation review.")}>
+                {t.common_report}
+              </Button>
+            </div>
           </div>
-          <h1>{post.title}</h1>
-          <p>{post.body}</p>
+          {showDetailTranslation && (
+            <div className="post-translated-badge-row">
+              <span className="support-translated-badge">
+                <span className="translate-badge-dot" />
+                {t.community_translated_badge} ({language})
+              </span>
+            </div>
+          )}
+          <h1 className="post-card-title">{showDetailTranslation && translatedDetailContent ? translatedDetailContent.translatedTitle : post.title}</h1>
+          <p className="post-card-body">{showDetailTranslation && translatedDetailContent ? translatedDetailContent.translatedBody : post.body}</p>
           {post.media === "voice" && (
             <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />
           )}
@@ -8905,6 +9261,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     text: string;
     audioUrl?: string;
     audioDuration?: number;
+    transcription?: string;
     createdAt: string;
     toUserMood?: string;
   };
@@ -8936,6 +9293,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
             text: m.text,
             audioUrl: m.audioUrl,
             audioDuration: m.audioDuration,
+            transcription: m.transcription,
             createdAt: m.createdAt,
             toUserMood: m.toUserMood || user.moodLabel,
           }));
@@ -8989,6 +9347,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                 text: m.text,
                 audioUrl: m.audioUrl,
                 audioDuration: m.audioDuration,
+                transcription: m.transcription,
                 createdAt: m.createdAt,
                 toUserMood: m.toUserMood || user.moodLabel,
               };
@@ -9350,30 +9709,19 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
               const isMe = message.from === "me";
               const timeDisplay = formatFriendlyTime(message.createdAt, language);
               return (
-                <div className={`support-bubble-row ${isMe ? "me" : "member"}`} key={message.id}>
-                  {!isMe && (
-                    <div className="support-bubble-avatar" aria-hidden="true">
-                      {message.kind === "voice" ? "🎙️" : "🌱"}
-                    </div>
-                  )}
-                  <div className="support-bubble-col">
-                    <div className="support-bubble-meta">
-                      <strong>{isMe ? (language === "Bahasa Melayu" ? "Anda (Tanpa Nama)" : language === "中文" ? "你 (匿名)" : "You (Anonymous)") : message.senderAnonymous}</strong>
-                      <small>{timeDisplay}</small>
-                    </div>
-                    <div className={`support-bubble ${isMe ? "me" : "member"}`}>
-                      {message.kind === "text" ? (
-                        <p>{message.text}</p>
-                      ) : (
-                        <VoiceNote
-                          audioUrl={message.audioUrl}
-                          audioDuration={message.audioDuration}
-                          notify={notify}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <SupportiveMessageBubble
+                  key={message.id}
+                  id={message.id}
+                  kind={message.kind}
+                  text={message.text}
+                  audioUrl={message.audioUrl}
+                  audioDuration={message.audioDuration}
+                  transcription={message.transcription}
+                  isMe={isMe}
+                  senderAnonymous={message.senderAnonymous}
+                  timeDisplay={timeDisplay}
+                  notify={notify}
+                />
               );
             })}
             <div ref={threadEndRef} className="chat-bottom-spacer" />

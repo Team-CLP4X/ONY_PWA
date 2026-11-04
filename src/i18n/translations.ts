@@ -424,6 +424,18 @@ export interface TranslationDictionary {
   memory_why_remembers: string;
   memory_privacy_controls: string;
   memory_ask_before_saving: string;
+  memory_ask_saving_desc: string;
+  memory_ephemeral_notice: string;
+  memory_pause_all: string;
+  memory_resume_all: string;
+  memory_paused_all_toast: string;
+  memory_resumed_all_toast: string;
+  memory_export_btn: string;
+  memory_export_toast: string;
+  memory_clear_confirm_title: string;
+  memory_clear_confirm_desc: string;
+  memory_ask_saving_on_badge: string;
+  memory_ask_saving_off_badge: string;
   memory_edit_title: string;
   memory_add_sub: string;
   memory_hero_title: string;
@@ -614,6 +626,18 @@ export interface TranslationDictionary {
   professional_all_states: string;
   professional_search_prompt: string;
   professional_closest_first: string;
+
+  // Supportive Message Translation & Voice Transcription
+  community_translate_btn: string;
+  community_translating: string;
+  community_show_original: string;
+  community_show_translation: string;
+  community_translated_badge: string;
+  community_fetch_transcript: string;
+  community_hide_transcript: string;
+  community_transcribing: string;
+  community_voice_transcript: string;
+  community_translate_transcript: string;
 }
 
 export const translations: Record<AppLanguage, TranslationDictionary> = {
@@ -1040,7 +1064,19 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     memory_added_toast: "Memory added to your Vault",
     memory_why_remembers: "ONY remembers this because…",
     memory_privacy_controls: "Memory privacy controls",
-    memory_ask_before_saving: "Ask before saving is currently",
+    memory_ask_before_saving: "Ask before saving",
+    memory_ask_saving_desc: "When enabled, ONY will never save memories automatically without your explicit confirmation.",
+    memory_ephemeral_notice: "Pure Ephemeral Mode: When disabled, ONY will not reference any saved memories during conversations.",
+    memory_pause_all: "Pause All Memories",
+    memory_resume_all: "Resume All Memories",
+    memory_paused_all_toast: "All memories paused in conversations",
+    memory_resumed_all_toast: "All memories resumed in conversations",
+    memory_export_btn: "Export Vault Archive (.json)",
+    memory_export_toast: "Memory Vault exported to file",
+    memory_clear_confirm_title: "Clear all saved memories?",
+    memory_clear_confirm_desc: "This will permanently remove all your saved reflections and preferences from both your vault and cloud storage.",
+    memory_ask_saving_on_badge: "Manual Consent Required",
+    memory_ask_saving_off_badge: "Auto-Assistance Allowed",
     memory_edit_title: "Edit memory",
     memory_add_sub: "Only save what feels helpful",
     memory_hero_title: "You decide what stays.",
@@ -1230,6 +1266,16 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     professional_all_states: "All Malaysia",
     professional_search_prompt: "Search clinic name, hospital, area, or service...",
     professional_closest_first: "Sorted by real GPS proximity to your current location",
+    community_translate_btn: "Translate",
+    community_translating: "Translating…",
+    community_show_original: "Show Original",
+    community_show_translation: "Show Translation",
+    community_translated_badge: "Translated",
+    community_fetch_transcript: "View Transcript",
+    community_hide_transcript: "Hide Transcript",
+    community_transcribing: "Fetching voice text…",
+    community_voice_transcript: "Voice Transcript",
+    community_translate_transcript: "Translate Voice Text",
   },
 
   "Bahasa Melayu": {
@@ -1655,7 +1701,19 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     memory_added_toast: "Memori berjaya ditambah ke Kubah anda",
     memory_why_remembers: "ONY mengingati ini kerana…",
     memory_privacy_controls: "Kawalan privasi memori",
-    memory_ask_before_saving: "Tanya sebelum menyimpan kini",
+    memory_ask_before_saving: "Tanya sebelum menyimpan",
+    memory_ask_saving_desc: "Apabila diaktifkan, ONY tidak akan menyimpan sebarang memori secara automatik tanpa persetujuan jelas anda.",
+    memory_ephemeral_notice: "Mod Sementara Tulen: Apabila dilumpuhkan, ONY tidak akan merujuk sebarang memori tersimpan semasa perbualan.",
+    memory_pause_all: "Jeda Semua Memori",
+    memory_resume_all: "Sambung Semua Memori",
+    memory_paused_all_toast: "Semua memori dijeda dalam perbualan",
+    memory_resumed_all_toast: "Semua memori disambung semula dalam perbualan",
+    memory_export_btn: "Eksport Arkib Kubah (.json)",
+    memory_export_toast: "Kubah Memori berjaya dieksport",
+    memory_clear_confirm_title: "Kosongkan semua memori tersimpan?",
+    memory_clear_confirm_desc: "Ini akan memadamkan secara kekal semua refleksi dan keutamaan anda dari kubah dan storan awan selamat.",
+    memory_ask_saving_on_badge: "Persetujuan Manual Diperlukan",
+    memory_ask_saving_off_badge: "Bantuan Automatik Dibenarkan",
     memory_edit_title: "Sunting memori",
     memory_add_sub: "Hanya simpan apa yang dirasakan bermanfaat",
     memory_hero_title: "Anda tentukan apa yang kekal.",
@@ -1845,6 +1903,16 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     professional_all_states: "Seluruh Malaysia",
     professional_search_prompt: "Cari nama klinik, hospital, kawasan, atau perkhidmatan...",
     professional_closest_first: "Disusun mengikut jarak GPS sebenar ke lokasi semasa anda",
+    community_translate_btn: "Terjemah",
+    community_translating: "Menterjemah…",
+    community_show_original: "Lihat Asal",
+    community_show_translation: "Lihat Terjemahan",
+    community_translated_badge: "Diterjemah",
+    community_fetch_transcript: "Lihat Transkripsi",
+    community_hide_transcript: "Tutup Transkripsi",
+    community_transcribing: "Mendapatkan teks suara…",
+    community_voice_transcript: "Transkripsi Suara",
+    community_translate_transcript: "Terjemah Teks Suara",
   },
 
   "中文": {
@@ -2270,7 +2338,19 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     memory_added_toast: "记忆已添加至您的宝库",
     memory_why_remembers: "ONY 记住这个是因为…",
     memory_privacy_controls: "记忆隐私控制",
-    memory_ask_before_saving: "保存前询问功能当前为",
+    memory_ask_before_saving: "保存前询问",
+    memory_ask_saving_desc: "开启后，未经您的明确确认，ONY 绝不会自动记录或沉淀任何对话记忆。",
+    memory_ephemeral_notice: "纯净即时模式：关闭后，ONY 在对话中绝不读取或引用任何宝库记忆。",
+    memory_pause_all: "暂停全部记忆",
+    memory_resume_all: "恢复全部记忆",
+    memory_paused_all_toast: "已在对话中暂停使用全部记忆",
+    memory_resumed_all_toast: "已在对话中恢复使用全部记忆",
+    memory_export_btn: "导出宝库归档 (.json)",
+    memory_export_toast: "记忆宝库已成功导出",
+    memory_clear_confirm_title: "确认清空所有已保存记忆？",
+    memory_clear_confirm_desc: "这将从记忆宝库与安全云端中彻底删除您的全部偏好与反思记录，操作无法撤销。",
+    memory_ask_saving_on_badge: "需手动确认",
+    memory_ask_saving_off_badge: "允许适时自动辅助",
     memory_edit_title: "编辑记忆",
     memory_add_sub: "只保存对您有帮助的事项",
     memory_hero_title: "由您决定保留什么。",
@@ -2460,6 +2540,16 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     professional_all_states: "全马来西亚",
     professional_search_prompt: "搜索诊所名称、医院、所在地区或服务项目...",
     professional_closest_first: "已根据您的当前 GPS 位置按距离由近到远排序",
+    community_translate_btn: "翻译",
+    community_translating: "翻译中…",
+    community_show_original: "查看原文",
+    community_show_translation: "查看译文",
+    community_translated_badge: "已翻译",
+    community_fetch_transcript: "查看文字转写",
+    community_hide_transcript: "收起转写",
+    community_transcribing: "正在获取语音文字…",
+    community_voice_transcript: "语音文字转写",
+    community_translate_transcript: "翻译语音内容",
   },
 };
 

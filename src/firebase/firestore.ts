@@ -189,6 +189,7 @@ export interface FirestoreCommunityMessage {
   text: string;
   audioUrl?: string;
   audioDuration?: number;
+  transcription?: string;
   createdAt: string;
 }
 
@@ -1483,6 +1484,7 @@ export const DEFAULT_COMMUNITY_MESSAGES: Omit<FirestoreCommunityMessage, "id">[]
     kind: "voice",
     text: "Encouraging voice note · 0:08",
     audioDuration: 8,
+    transcription: "Hey there! Just wanted to send you a gentle reminder that you are doing so well. Take things one breath at a time today 🌱",
     createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
   },
   {

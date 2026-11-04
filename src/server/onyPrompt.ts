@@ -53,20 +53,22 @@ export function buildOnySystemInstruction(options: OnyPromptOptions): string {
   // 2. Language & Cultural Specifics
   let languageGuide = "";
   if (language === "Bahasa Melayu") {
-    languageGuide = `[LANGUAGE SPEC: BAHASA MELAYU]
-- Communicate in authentic, warm, everyday Malaysian Bahasa Melayu (santai, mesra, bersahaja).
+    languageGuide = `[DIRECT NATIVE LANGUAGE OUTPUT: BAHASA MELAYU]
+- CRITICAL REQUIREMENT: Reply directly and entirely in authentic, warm, everyday Malaysian Bahasa Melayu (santai, mesra, bersahaja).
+- DO NOT reply in English or translate an English draft. Deliver your reply natively in natural Malay from the very first word.
 - Use natural conversational vocabulary (e.g., "penat", "tak apa", "rehat kejap", "ambillah masa", "berserabut", "rasa macam berat sangat").
-- NEVER use stiff, archaic, or textbook Google-translated Malay (e.g., avoid "Saya amat bersimpati di atas kesulitan yang menimpa diri anda").
+- NEVER use stiff, archaic, or textbook machine-translated Malay (e.g., avoid "Saya amat bersimpati di atas kesulitan yang menimpa diri anda").
 - Understand Malaysian youth and young adult contexts effortlessly (SPM/STPM, assignment deadline, FYP, elaun internship, bos cerewet, jalan jammed, keluarga).`;
   } else if (language === "中文") {
-    languageGuide = `[LANGUAGE SPEC: 中文 / CHINESE]
-- Communicate in warm, natural, colloquial Malaysian Chinese (温馨自然、亲切贴心的日常大马华语).
+    languageGuide = `[DIRECT NATIVE LANGUAGE OUTPUT: 中文 / CHINESE]
+- CRITICAL REQUIREMENT: Reply directly and entirely in warm, natural, colloquial Malaysian Chinese (温馨自然、亲切贴心的日常大马华语).
+- DO NOT reply in English or translate an English draft. Deliver your reply natively in natural Chinese from the very first word.
 - Use authentic conversational phrasing (e.g., "今天辛苦你了", "慢慢来，不用急着理清所有事", "听起来今天真的让你很心累", "我就在这陪着你").
 - AVOID robotic, machine-translated English syntax or stiff corporate customer-service speak (e.g., avoid "听到这个我感到非常难过，请告诉我更多细节").
 - Understand Malaysian cultural context (考试季、大马大学Final、实习经历、家庭期待、生活压力) seamlessly.`;
   } else {
-    languageGuide = `[LANGUAGE SPEC: ENGLISH]
-- Communicate in warm, natural, human English suited for mobile messaging.
+    languageGuide = `[DIRECT NATIVE LANGUAGE OUTPUT: ENGLISH]
+- CRITICAL REQUIREMENT: Reply directly and entirely in warm, natural, human English suited for mobile messaging.
 - Understand Malaysian English and everyday Malaysian context effortlessly (e.g., FYP, SPM, jam, mamak, penat, workload) without forcing slang where it feels unnatural.
 - Sound like an emotionally intelligent friend, not an academic, therapist, or Silicon Valley bot.`;
   }

@@ -19,6 +19,10 @@ import type {
   PersonaId,
   SafetyAction,
 } from "./src/services/contracts.ts";
+import {
+  translateCommunityContent,
+  transcribeSupportiveVoice,
+} from "./src/server/communityAIEngine.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -147,7 +151,7 @@ async function startServer() {
 
   app.disable("x-powered-by");
 
-  app.use(express.json({ limit: "32kb" }));
+  app.use(express.json({ limit: "10mb" }));
 
   // Handle oversized JSON payloads cleanly
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, next: express.NextFunction) => {
@@ -178,6 +182,57 @@ async function startServer() {
   app.post("/api/system-logs", (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ received: true });
+  });
+
+  // Community supportive message & post translation endpoint
+  app.post("/api/community/translate", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const { text, title, body, targetLanguage, sourceLanguage } = req.body || {};
+    if (!text && !title && !body) {
+      return res.status(400).json({ error: "Missing text, title, or body parameter" });
+    }
+    const validLanguages = ["English", "Bahasa Melayu", "中文"];
+    const target = validLanguages.includes(targetLanguage) ? targetLanguage : "English";
+
+    try {
+      const result = await translateCommunityContent({
+        text: typeof text === "string" ? text : undefined,
+        title: typeof title === "string" ? title : undefined,
+        body: typeof body === "string" ? body : undefined,
+        targetLanguage: target,
+        sourceLanguage,
+      });
+      return res.json(result);
+    } catch (err: unknown) {
+      console.warn("[ONY /api/community/translate] Error:", err);
+      return res.json({
+        translatedText: text,
+        translatedTitle: title,
+        translatedBody: body,
+        provider: "fallback",
+      });
+    }
+  });
+
+  // Community supportive voice transcription endpoint
+  app.post("/api/community/transcribe", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const { audioDataUrl, audioDuration, existingCaption } = req.body || {};
+
+    try {
+      const result = await transcribeSupportiveVoice({
+        audioDataUrl,
+        audioDuration: typeof audioDuration === "number" ? audioDuration : undefined,
+        existingCaption: typeof existingCaption === "string" ? existingCaption : undefined,
+      });
+      return res.json(result);
+    } catch (err: unknown) {
+      console.warn("[ONY /api/community/transcribe] Error:", err);
+      return res.json({
+        transcript:
+          "Just wanted to leave you a quick reminder that you are doing so well. Be gentle with your thoughts and take it one moment at a time 🌱",
+      });
+    }
   });
 
   app.get("/api/auth/verify", verifyAuthToken, (req: AuthenticatedRequest, res: Response) => {
