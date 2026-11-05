@@ -5403,7 +5403,8 @@ function PostDetail({
   const [editingReplyText, setEditingReplyText] = useState("");
   const [editingReplyError, setEditingReplyError] = useState<string | null>(null);
 
-  const commentInputRef = useRef<HTMLInputElement | null>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const commentsEndRef = useRef<HTMLDivElement | null>(null);
 
   // Translation state for post details
   const [showDetailTranslation, setShowDetailTranslation] = useState(false);
@@ -5484,8 +5485,8 @@ function PostDetail({
     );
   };
 
-  const handleAddComment = async (event: FormEvent) => {
-    event.preventDefault();
+  const handleAddComment = async (event?: FormEvent) => {
+    if (event) event.preventDefault();
     const check = validateCommunityCommentText(comment);
     if (!check.valid) {
       setCommentError(check.reason || "Comment violates community guidelines.");
@@ -5502,6 +5503,12 @@ function PostDetail({
       });
       if (onPostUpdated) onPostUpdated(updated);
       setComment("");
+      if (commentInputRef.current) {
+        commentInputRef.current.style.height = "36px";
+      }
+      setTimeout(() => {
+        commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 80);
       notify(language === "Bahasa Melayu" ? "Komen telah dihantar" : language === "中文" ? "评论已发布" : "Comment posted");
     } catch (err: any) {
       setCommentError(err?.message || "Could not post comment.");
@@ -5958,9 +5965,11 @@ function PostDetail({
               );
             })
           )}
+          <div ref={commentsEndRef} />
         </div>
       </section>
 
+      {/* Sticky Bottom Comment Input Bar */}
       <div className="comment-composer-wrapper">
         {commentError && (
           <div className="comment-guideline-error" role="alert">
@@ -5968,20 +5977,48 @@ function PostDetail({
             <span>{commentError}</span>
           </div>
         )}
-        <form className="comment-composer" onSubmit={handleAddComment}>
-          <input
+        <form
+          className="comment-composer"
+          onSubmit={handleAddComment}
+          onClick={(e) => {
+            if ((e.target as HTMLElement).tagName !== "BUTTON" && !(e.target as HTMLElement).closest("button")) {
+              commentInputRef.current?.focus();
+            }
+          }}
+        >
+          <textarea
             ref={commentInputRef}
+            className="comment-textarea"
+            rows={1}
             value={comment}
             onChange={(event) => {
               setComment(event.target.value);
               if (commentError) setCommentError(null);
+              const el = event.target;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 110)}px`;
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void handleAddComment();
+              }
             }}
             placeholder={`${t.community_comment_as} ${cleanName}…`}
             aria-label={t.community_comments_title}
+            maxLength={1000}
           />
-          <Button type="submit" disabled={submittingComment}>
-            <Icon name="send" />
-          </Button>
+          <div className="comment-composer-actions">
+            <button
+              type="submit"
+              className={`comment-send-btn ${comment.trim() ? "ready" : ""}`}
+              disabled={submittingComment || !comment.trim()}
+              title={language === "Bahasa Melayu" ? "Hantar komen" : language === "中文" ? "发送评论" : "Send comment"}
+              aria-label={language === "Bahasa Melayu" ? "Hantar komen" : language === "中文" ? "发送评论" : "Send comment"}
+            >
+              {submittingComment ? <span className="spinner mini" /> : <Icon name="send" />}
+            </button>
+          </div>
         </form>
       </div>
     </div>
