@@ -136,6 +136,29 @@ import {
   translateCommunityPost,
   getCachedPostTranslation,
 } from "./services/communityTranslationService";
+import {
+  SettingsHeader,
+  SettingsSection,
+  SettingsRow,
+  SettingsIcon,
+  EditProfileScreen,
+  AppearanceScreen,
+  NotificationSettingsScreen,
+  AppLockScreen,
+  SoundHapticsScreen,
+  ChangePasswordScreen,
+  ConnectedAccountsScreen,
+  DeleteAccountScreen,
+  ExportDataScreen,
+  FeedbackReportScreen,
+  TermsScreen,
+  PrivacyPolicyScreen,
+  loadStoredProfile,
+  loadStoredAppearance,
+  applyAppearanceToDom,
+} from "./components/SettingsComponents";
+import { ThemeProvider, useTheme } from "./theme/ThemeContext";
+import type { ThemeId } from "./theme/palettes";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -169,7 +192,19 @@ type Screen =
   | "resources"
   | "legal"
   | "systemLogs"
-  | "language";
+  | "language"
+  | "editProfile"
+  | "appearance"
+  | "soundHaptics"
+  | "changePassword"
+  | "connectedAccounts"
+  | "appLock"
+  | "sendFeedback"
+  | "reportProblem"
+  | "exportData"
+  | "deleteAccountConfirm"
+  | "terms"
+  | "privacyPolicy";
 
 type Theme = "ocean" | "sunset" | "forest" | "lavender" | "peach" | "neutral";
 type Companion = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
@@ -836,7 +871,22 @@ function AppInner() {
   const [conversationStyle, setConversationStyle] = useState("Reflective");
   const [responseLength, setResponseLength] = useState("Balanced");
   const [selectedTopics, setSelectedTopics] = useState<string[]>(["Stress", "Study"]);
-  const [theme, setTheme] = useState<Theme>("peach");
+  const {
+    themeId,
+    setColorTheme,
+    themeMode,
+    setThemeMode,
+    fontSizeScale,
+    fontSizePercent,
+    tokens,
+    isDark,
+    syncWithDatabase,
+    resetSettingsOnLogout,
+  } = useTheme();
+  const theme = themeId as Theme;
+  const setTheme = (newTheme: Theme) => {
+    setColorTheme(newTheme as ThemeId);
+  };
   const [companion, setCompanion] = useState<Companion>("Cat");
   const [persona, setPersona] = useState<Persona>("gentle");
   const [soundOn, setSoundOn] = useState(false);
@@ -904,6 +954,10 @@ function AppInner() {
       setCurrentTrack(ambientMusicEngine.getCurrentTrack());
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    applyAppearanceToDom(loadStoredAppearance());
   }, []);
 
   const handleToggleSound = (targetTrackId?: string) => {
@@ -1035,6 +1089,7 @@ function AppInner() {
         }).catch(() => {});
         try {
           await seedInitialUserData(user.uid).catch((e) => console.warn("[ONY] User seed notice:", e));
+          await syncWithDatabase(user.uid).catch((e) => console.warn("[ONY] Theme sync notice:", e));
           const profile = await getUserProfile(user.uid);
           const resolvedName =
             profile?.displayName || user.displayName || user.email?.split("@")[0] || "Friend";
@@ -1482,6 +1537,7 @@ function AppInner() {
   const handleLogout = async () => {
     try {
       await logoutUser();
+      resetSettingsOnLogout();
       setAuthenticated(false);
       setOnboarding(0);
       setDisplayName("");
@@ -1495,6 +1551,7 @@ function AppInner() {
       notify("Logged out successfully");
     } catch (e) {
       console.warn("[ONY] Logout notice:", e);
+      resetSettingsOnLogout();
       setAuthenticated(false);
       setOnboarding(0);
       setDisplayName("");
@@ -1511,6 +1568,7 @@ function AppInner() {
   const handleDeleteAccount = async () => {
     try {
       await deleteUserAccount();
+      resetSettingsOnLogout();
       setAuthenticated(false);
       setOnboarding(0);
       setDisplayName("");
@@ -1816,6 +1874,8 @@ function AppInner() {
                     subscriptionStatus={subscriptionStatus}
                     onLogout={handleLogout}
                     onSelectLanguage={handleSelectLanguage}
+                    effectiveEmail={effectiveEmail}
+                    currentUser={currentUser}
                   />
                 )}
               </main>
@@ -1874,7 +1934,7 @@ function AppInner() {
                 />
               )}
               {screen === "notificationSettings" && (
-                <NotificationSettings
+                <NotificationSettingsScreen
                   back={back}
                   notify={notify}
                 />
@@ -1951,6 +2011,79 @@ function AppInner() {
             )}
             {screen === "resources" && <ResourceLibrary back={back} navigate={navigate} notify={notify} />}
             {screen === "legal" && <LegalHub back={back} navigate={navigate} />}
+            {screen === "editProfile" && (
+              <EditProfileScreen
+                back={back}
+                currentDisplayName={displayName}
+                onSaveDisplayName={(name) => {
+                  setDisplayName(name);
+                  if (currentUser) {
+                    syncRegisteredAccount({
+                      uid: currentUser.uid,
+                      displayName: name,
+                      email: effectiveEmail,
+                      phoneNumber: userPhone,
+                    }).catch(() => {});
+                  }
+                }}
+                currentEmail={effectiveEmail}
+                notify={notify}
+                currentUser={currentUser}
+              />
+            )}
+            {screen === "appearance" && <AppearanceScreen back={back} notify={notify} />}
+            {screen === "soundHaptics" && (
+              <SoundHapticsScreen
+                back={back}
+                notify={notify}
+                onOpenAmbientModal={() => setShowMusicModal(true)}
+              />
+            )}
+            {screen === "changePassword" && (
+              <ChangePasswordScreen back={back} notify={notify} userEmail={effectiveEmail} />
+            )}
+            {screen === "connectedAccounts" && (
+              <ConnectedAccountsScreen
+                back={back}
+                notify={notify}
+                userEmail={effectiveEmail}
+                currentUser={currentUser}
+              />
+            )}
+            {screen === "appLock" && <AppLockScreen back={back} notify={notify} />}
+            {screen === "sendFeedback" && (
+              <FeedbackReportScreen
+                type="feedback"
+                back={back}
+                notify={notify}
+                userEmail={effectiveEmail}
+              />
+            )}
+            {screen === "reportProblem" && (
+              <FeedbackReportScreen
+                type="report"
+                back={back}
+                notify={notify}
+                userEmail={effectiveEmail}
+              />
+            )}
+            {screen === "exportData" && (
+              <ExportDataScreen
+                back={back}
+                notify={notify}
+                currentUser={currentUser}
+                displayName={displayName}
+              />
+            )}
+            {screen === "deleteAccountConfirm" && (
+              <DeleteAccountScreen
+                back={back}
+                onConfirmDelete={handleDeleteAccount}
+                notify={notify}
+              />
+            )}
+            {screen === "terms" && <TermsScreen back={back} />}
+            {screen === "privacyPolicy" && <PrivacyPolicyScreen back={back} />}
           </main>
         )}
         {soundOn && (
@@ -6167,6 +6300,8 @@ function Profile({
   subscriptionStatus,
   onLogout,
   onSelectLanguage,
+  effectiveEmail,
+  currentUser,
 }: {
   navigate: (s: Screen) => void;
   displayName: string;
@@ -6181,9 +6316,14 @@ function Profile({
   subscriptionStatus: SubscriptionStatus;
   onLogout: () => void;
   onSelectLanguage: (lang: AppLanguage) => void;
+  effectiveEmail?: string;
+  currentUser?: User | null;
 }) {
   const { t } = useLanguage();
   const currentLang = (language as AppLanguage) || "English";
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const storedProfile = loadStoredProfile();
+
   const contactLabel =
     pendingIncomingCount > 0
       ? `${pendingIncomingCount} ${currentLang === "Bahasa Melayu" ? "permohonan menunggu untuk disemak" : currentLang === "中文" ? "条待处理申请待确认" : "incoming request(s) to review"}`
@@ -6194,6 +6334,7 @@ function Profile({
           : contactStatus === "rejected"
             ? `${trustedName} · ${currentLang === "Bahasa Melayu" ? "Permohonan ditolak" : currentLang === "中文" ? "已谢绝" : "Request declined"}`
             : currentLang === "Bahasa Melayu" ? "Tiada kenalan dipercayai disambungkan" : currentLang === "中文" ? "未绑定信任联系人" : "No trusted contact connected";
+
   const subscriptionLabel = subscriptionStatus === "trial"
     ? (currentLang === "Bahasa Melayu" ? "Percubaan Premium ONY · Baki 2 hari" : currentLang === "中文" ? "ONY 进阶试用 · 剩余 2 天" : "ONY Premium Trial · 2 days remaining")
     : subscriptionStatus === "payg"
@@ -6203,65 +6344,211 @@ function Profile({
         : subscriptionStatus === "trialEnded"
           ? (currentLang === "Bahasa Melayu" ? "Percuma · Percubaan tamat" : currentLang === "中文" ? "免费版 · 试用已结束" : "Free · Trial ended")
           : (currentLang === "Bahasa Melayu" ? "Percuma · Akses percuma" : currentLang === "中文" ? "免费版 · 开放使用" : "Free · Free access");
+
   const languageDisplayLabel =
     language === "Bahasa Melayu"
       ? "Bahasa Melayu"
       : language === "中文"
         ? "中文 (简体)"
         : "English";
-  const menu = [
-    ["language", t.profile_menu_language, languageDisplayLabel],
-    ["personalise", t.profile_menu_personalise, t.profile_menu_personalise_sub],
-    ["monthlyReport", t.profile_menu_monthly, t.profile_menu_monthly_sub],
-    ["trusted", t.profile_menu_trusted, contactLabel],
-    [
-      "notifications",
-      t.profile_menu_notifications,
-      unreadNotificationsCount > 0
-        ? `${unreadNotificationsCount} ${t.notif_unread}`
-        : t.notif_all_caught_up,
-    ],
-    ["privacy", t.profile_menu_privacy, t.profile_menu_privacy_sub],
-    ["systemLogs", t.profile_menu_logs, t.profile_menu_logs_sub],
-    ["legal", t.profile_menu_legal, t.profile_menu_legal_sub],
-    ["subscription", t.profile_menu_subscription, subscriptionLabel],
-    ["help", t.profile_menu_help, t.profile_menu_help_sub],
-    ["about", t.profile_menu_about, currentLang === "Bahasa Melayu" ? "Versi 1.0.0 (Keluaran)" : currentLang === "中文" ? "版本 1.0.0 (正式发布版)" : "Version 1.0.0 (Release)"],
-  ] as [Screen, string, string][];
+
+  const companionSubtitle = `${getCompanionLabel(companion, currentLang)} · ${getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", currentLang).name}`;
+
   return (
-    <>
+    <div className="settings-page">
       <PageHeader title={t.profile_title} subtitle={t.profile_subtitle} />
       <section className="page-pad top-row">
-        <div className="profile-card">
-          <CompanionAvatar companion={companion} />
-          <div>
-            <h2>{displayName} & ONY</h2>
-            <p>{currentLang === "Bahasa Melayu" ? "Nama paparan pilihan · " : currentLang === "中文" ? "首选显示昵称 · " : "Preferred display name · "}{language}</p>
-            <span>{getCompanionLabel(companion, currentLang)} · {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", currentLang).name}</span>
-          </div>
-          <SmallLogo />
-        </div>
+        {/* 1. PROFILE HEADER (top of page) */}
+        <SettingsHeader
+          displayName={displayName || storedProfile.displayName || "ONY Member"}
+          email={effectiveEmail || currentUser?.email || "Edit profile & personal preferences"}
+          avatarUrl={storedProfile.avatarType === "photo" ? storedProfile.avatarUrl : undefined}
+          presetAvatar={storedProfile.avatarType === "preset" ? storedProfile.presetAvatar : undefined}
+          onEditProfile={() => navigate("editProfile")}
+        />
 
-        <div className="section-head">
-          <h3>{t.profile_settings_head}</h3>
-        </div>
-        <div className="menu">
-          {menu.map(([id, title, text]) => (
-            <button key={id} onClick={() => navigate(id)}>
-              <span className="menu-icon">
-                <Icon name={id === "language" ? "settings" : id === "help" ? "shield" : id === "notifications" ? "bell" : id === "privacy" ? "memory" : id === "systemLogs" ? "fileText" : "profile"} />
-              </span>
-              <span>
-                <strong>{title}</strong>
-                <small>{text}</small>
-              </span>
-              <Icon name="chevron" />
-            </button>
-          ))}
-        </div>
-        <Button variant="secondary" className="full logout" onClick={onLogout}>
-          {t.profile_menu_logout}
-        </Button>
+        {/* STANDALONE ROW: Monthly Reflection placed above sections */}
+        <SettingsRow
+          isStandalone={true}
+          icon="sparkles"
+          title={t.profile_menu_monthly}
+          subtitle={t.profile_menu_monthly_sub}
+          onClick={() => navigate("monthlyReport")}
+          ariaLabel="Monthly Reflection: Review your monthly wellness highlights"
+        />
+
+        {/* SECTION: ACCOUNT */}
+        <SettingsSection title="ACCOUNT">
+          <SettingsRow
+            icon="user"
+            title="Edit Profile"
+            subtitle="Display username, avatar, bio & pronouns"
+            onClick={() => navigate("editProfile")}
+          />
+          <SettingsRow
+            icon="creditCard"
+            title={t.profile_menu_subscription}
+            subtitle={subscriptionLabel}
+            onClick={() => navigate("subscription")}
+          />
+          <SettingsRow
+            icon="key"
+            title="Change Password"
+            subtitle="Update sign-in credentials"
+            onClick={() => navigate("changePassword")}
+          />
+          <SettingsRow
+            icon="link"
+            title="Connected Accounts"
+            subtitle="Google, Apple & registered email"
+            onClick={() => navigate("connectedAccounts")}
+          />
+        </SettingsSection>
+
+        {/* SECTION: PREFERENCES */}
+        <SettingsSection title="PREFERENCES">
+          <SettingsRow
+            icon="globe"
+            title={t.profile_menu_language}
+            subtitle={languageDisplayLabel}
+            onClick={() => navigate("language")}
+          />
+          <SettingsRow
+            icon="messageCircle"
+            title={t.profile_menu_personalise}
+            subtitle={companionSubtitle}
+            onClick={() => navigate("personalise")}
+          />
+          <SettingsRow
+            icon="palette"
+            title="Appearance"
+            subtitle="Color theme & text size slider"
+            onClick={() => navigate("appearance")}
+          />
+          <SettingsRow
+            icon="bell"
+            title="Notifications"
+            subtitle={
+              unreadNotificationsCount > 0
+                ? `${unreadNotificationsCount} unread alert(s)`
+                : "Daily check-in & quiet hours"
+            }
+            onClick={() => navigate("notificationSettings")}
+          />
+          <SettingsRow
+            icon="volume"
+            title="Sound & Haptics"
+            subtitle="Audio cues, tactile vibration & voice volume"
+            onClick={() => navigate("soundHaptics")}
+          />
+        </SettingsSection>
+
+        {/* SECTION: PRIVACY & SECURITY */}
+        <SettingsSection title="PRIVACY & SECURITY">
+          <SettingsRow
+            icon="shield"
+            title={t.profile_menu_privacy}
+            subtitle={t.profile_menu_privacy_sub}
+            onClick={() => navigate("privacy")}
+          />
+          <SettingsRow
+            icon="phone"
+            title={t.profile_menu_trusted}
+            subtitle={contactLabel}
+            onClick={() => navigate("trusted")}
+          />
+          <SettingsRow
+            icon="lock"
+            title="App Lock"
+            subtitle="Passcode PIN & biometric verification"
+            onClick={() => navigate("appLock")}
+          />
+          <SettingsRow
+            icon="fileText"
+            title={t.profile_menu_legal}
+            subtitle={t.profile_menu_legal_sub}
+            onClick={() => navigate("legal")}
+          />
+        </SettingsSection>
+
+        {/* SECTION: SUPPORT */}
+        <SettingsSection title="SUPPORT">
+          <SettingsRow
+            icon="helpCircle"
+            title={t.profile_menu_help}
+            subtitle={t.profile_menu_help_sub}
+            onClick={() => navigate("help")}
+          />
+          <SettingsRow
+            icon="messageSquare"
+            title="Send Feedback"
+            subtitle="Share ideas and reflections with ONY team"
+            onClick={() => navigate("sendFeedback")}
+          />
+          <SettingsRow
+            icon="alertTriangle"
+            title="Report a Problem"
+            subtitle="Report a glitch, sync error or issue"
+            onClick={() => navigate("reportProblem")}
+          />
+        </SettingsSection>
+
+        {/* SECTION: ABOUT */}
+        <SettingsSection title="ABOUT">
+          <SettingsRow
+            icon="info"
+            title={t.profile_menu_about}
+            subtitle={
+              currentLang === "Bahasa Melayu"
+                ? "Versi 1.0.0 (Keluaran)"
+                : currentLang === "中文"
+                ? "版本 1.0.0 (正式发布版)"
+                : "Version 1.0.0 (Release)"
+            }
+            onClick={() => navigate("about")}
+          />
+          <SettingsRow
+            icon="fileText"
+            title="Terms of Service"
+            subtitle="Terms, conditions & platform rules"
+            onClick={() => navigate("terms")}
+          />
+          <SettingsRow
+            icon="shield"
+            title="Privacy Policy"
+            subtitle="Malaysian PDPA & user privacy standards"
+            onClick={() => navigate("privacyPolicy")}
+          />
+        </SettingsSection>
+
+        {/* SECTION: DATA */}
+        <SettingsSection title="DATA">
+          <SettingsRow
+            icon="download"
+            title="Export My Data"
+            subtitle="Download complete personal wellness archive"
+            onClick={() => navigate("exportData")}
+          />
+          <SettingsRow
+            icon="trash"
+            destructive={true}
+            title="Delete Account"
+            subtitle="Permanently erase your account and all data"
+            onClick={() => navigate("deleteAccountConfirm")}
+          />
+        </SettingsSection>
+
+        {/* LOG OUT BUTTON (Outlined with red text & confirmation dialog) */}
+        <button
+          type="button"
+          className="settings-logout-btn"
+          onClick={() => setShowLogoutModal(true)}
+          aria-label="Log out of ONY account"
+        >
+          <SettingsIcon name="logOut" />
+          <span>{t.profile_menu_logout}</span>
+        </button>
+
         <p className="platform-foot">
           {currentLang === "Bahasa Melayu"
             ? "Platform Selamat ONY · Privasi anda dilindungi dengan penyulitan selamat."
@@ -6269,8 +6556,42 @@ function Profile({
             ? "ONY 守护平台 · 严格守护您的隐私安全。"
             : "ONY Platform · Your privacy is protected with secure encryption."}
         </p>
+
+        {/* LOG OUT CONFIRMATION DIALOG */}
+        {showLogoutModal && (
+          <div className="settings-modal-overlay" onClick={() => setShowLogoutModal(false)}>
+            <div className="settings-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="settings-modal-icon-alert">
+                <SettingsIcon name="logOut" />
+              </div>
+              <h3 className="settings-modal-title">Log Out of ONY?</h3>
+              <p className="settings-modal-desc">
+                Are you sure you want to log out? You will need to sign in again to access your private diary, check-ins, and companion chats.
+              </p>
+              <div className="settings-modal-actions">
+                <button
+                  type="button"
+                  className="settings-btn secondary"
+                  onClick={() => setShowLogoutModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="settings-btn danger"
+                  onClick={() => {
+                    setShowLogoutModal(false);
+                    onLogout();
+                  }}
+                >
+                  Log Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
-    </>
+    </div>
   );
 }
 
@@ -10609,7 +10930,9 @@ function BottomNav({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
 function App() {
   return (
     <LanguageProvider>
-      <AppInner />
+      <ThemeProvider>
+        <AppInner />
+      </ThemeProvider>
     </LanguageProvider>
   );
 }

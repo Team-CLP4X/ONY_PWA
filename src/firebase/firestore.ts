@@ -335,6 +335,33 @@ export async function updateUserProfile(
   }
 }
 
+// User Settings Operations (Saved in user_settings/{uid})
+export async function getUserSettingsDoc(uid: string): Promise<Record<string, unknown> | null> {
+  const path = `user_settings/${uid}`;
+  try {
+    const settingsRef = doc(db, "user_settings", uid);
+    const snap = await getDoc(settingsRef);
+    if (!snap.exists()) return null;
+    return snap.data() as Record<string, unknown>;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
+export async function saveUserSettingsDoc(
+  uid: string,
+  settings: Record<string, unknown>,
+): Promise<void> {
+  const path = `user_settings/${uid}`;
+  try {
+    const settingsRef = doc(db, "user_settings", uid);
+    await setDoc(settingsRef, settings, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+
 // Mood Check-in Operations (Saved per day in users/{uid}/moodCheckins/{YYYY-MM-DD})
 export async function listMoodEntries(uid: string): Promise<FirestoreMoodEntry[]> {
   const path = `users/${uid}/moodCheckins`;

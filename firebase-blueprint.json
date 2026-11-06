@@ -334,9 +334,34 @@
         "deletedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "bookId", "createdAt", "updatedAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User persistent theme mode, color palette, typography font scale, companion preferences, notification settings, and app lock controls.",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number" },
+        "userId": { "type": "string" },
+        "colorTheme": { "type": "string", "enum": ["peach", "ocean", "sunset", "forest", "lavender", "neutral"] },
+        "themeMode": { "type": "string", "enum": ["light", "dark", "system"] },
+        "fontSizeScale": { "type": "string", "enum": ["small", "default", "large", "extraLarge"] },
+        "fontSizePercent": { "type": "number" },
+        "language": { "type": "string" },
+        "companionPreferences": { "type": "object" },
+        "notificationPreferences": { "type": "object" },
+        "soundHapticsPreferences": { "type": "object" },
+        "appLockPreferences": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["schemaVersion", "colorTheme", "themeMode", "fontSizeScale", "updatedAt"]
     }
   },
   "firestore": {
+    "/user_settings/{userId}": {
+      "schema": "UserSettings",
+      "description": "Stores user appearance, theme, typography scaling, notification, and companion preferences."
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "Stores user profiles, preferences, and consent controls."

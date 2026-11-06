@@ -7,6 +7,10 @@ import { registerSW } from "virtual:pwa-register"
 import App from "./App"
 
 import "./index.css"
+import { initThemeSystem } from "./theme/ThemeContext"
+
+// Initialize theme tokens & dark mode immediately to prevent flash
+initThemeSystem();
 
 registerSW({
   immediate: true,
