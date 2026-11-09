@@ -157,8 +157,16 @@ import {
   loadStoredAppearance,
   applyAppearanceToDom,
 } from "./components/SettingsComponents";
+import { ToolkitPage } from "./components/ToolkitPage";
+import { SuggestedToolkitCard } from "./components/SuggestedToolkitCard";
 import { ThemeProvider, useTheme } from "./theme/ThemeContext";
 import type { ThemeId } from "./theme/palettes";
+import {
+  CompanionAvatar as VectorCompanionAvatar,
+  type CompanionAnimal,
+  type CompanionExpression,
+} from "./components/CompanionAvatar";
+import { CompanionPreviewSheet } from "./components/CompanionPreviewSheet";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -938,6 +946,8 @@ function AppInner() {
   );
   const [tab, setTab] = useState<Tab>("chat");
   const [screen, setScreen] = useState<Screen>("main");
+  const [selectedToolkitGuideId, setSelectedToolkitGuideId] = useState<string | undefined>(undefined);
+  const [preloadedChatTopic, setPreloadedChatTopic] = useState<string | undefined>(undefined);
   const [isWritingJournalBook, setIsWritingJournalBook] = useState(false);
   const [isJournalSheetOpen, setIsJournalSheetOpen] = useState(false);
   const [history, setHistory] = useState<Screen[]>([]);
@@ -946,6 +956,10 @@ function AppInner() {
   const back = () => { const prev = history[history.length - 1] || "main"; setHistory((h) => h.slice(0, -1)); setScreen(prev); };
   const notify = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
   const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); setIsWritingJournalBook(false); setIsJournalSheetOpen(false); };
+  const handleOpenToolkitGuide = (guideId?: string) => {
+    setSelectedToolkitGuideId(guideId);
+    navigate("resources");
+  };
 
   useEffect(() => {
     const unsub = ambientMusicEngine.subscribe((state) => {
@@ -1838,7 +1852,7 @@ function AppInner() {
                   const next = freeUsage + 1;
                   setFreeUsage(next);
                   if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
-                }} notify={notify} onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
+                }} notify={notify} onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} onOpenToolkitGuide={handleOpenToolkitGuide} preloadedTopic={preloadedChatTopic} onClearPreloadedTopic={() => setPreloadedChatTopic(undefined)} />}
                 {tab === "memory" && (
                   <DigitalJournal
                     journalEntries={journalEntries}
@@ -2009,7 +2023,61 @@ function AppInner() {
                 notify={notify}
               />
             )}
-            {screen === "resources" && <ResourceLibrary back={back} navigate={navigate} notify={notify} />}
+            {screen === "resources" && (
+              <ToolkitPage
+                back={back}
+                navigate={navigate}
+                notify={notify}
+                onOpenMusicModal={() => setShowMusicModal(true)}
+                isMusicPlaying={soundOn}
+                onToggleMusic={() => handleSetSoundOn(!soundOn)}
+                onSaveToVault={async (text, guideTitle) => {
+                  const now = new Date().toISOString();
+                  const dateKey = now.slice(0, 10);
+                  const newEntry: FirestoreJournalEntry = {
+                    id: `journal_${Date.now()}`,
+                    title: `Reflection: ${guideTitle}`,
+                    content: text,
+                    dateKey,
+                    entryDate: dateKey,
+                    moodEmoji: "🌱",
+                    moodLabel: "Reflective",
+                    tags: ["Toolkit", "Reflection"],
+                    createdAt: now,
+                    updatedAt: now,
+                  };
+                  setJournalEntries((prev) => [newEntry, ...prev]);
+                  if (currentUser) {
+                    saveJournalEntry(currentUser.uid, newEntry).catch((err) =>
+                      console.warn("[ONY] Journal entry save notice:", err),
+                    );
+                    saveMemory(currentUser.uid, {
+                      text,
+                      reason: `Toolkit exercise: ${guideTitle}`,
+                      category: "Reflections",
+                      active: true,
+                    }).catch(() => {});
+                  }
+                  setMemories((prev) => [
+                    {
+                      id: Date.now(),
+                      text,
+                      reason: `Toolkit exercise: ${guideTitle}`,
+                      category: "Reflections",
+                      active: true,
+                      createdAt: now,
+                    },
+                    ...prev,
+                  ]);
+                }}
+                onPreloadChatTopic={(topic) => {
+                  setPreloadedChatTopic(topic);
+                  setTab("chat");
+                  setScreen("main");
+                }}
+                initialGuideId={selectedToolkitGuideId}
+              />
+            )}
             {screen === "legal" && <LegalHub back={back} navigate={navigate} />}
             {screen === "editProfile" && (
               <EditProfileScreen
@@ -2617,7 +2685,7 @@ function Onboarding({ step, setStep, displayName, consent, setConsent, language,
             <Choice active={consent === "control"} onClick={() => setConsent("control")} title={t.onboarding_privacy_control_title} text={t.onboarding_privacy_control_desc} />
           </>}
           {step === 8 && <>
-            <div className="companion-confirm"><CompanionAvatar companion={companion} large /><img src={logo} alt="Official ONY logo" /></div>
+            <div className="companion-confirm"><CompanionAvatar companion={companion} size="xl" mood="happy" showGlow interactive /></div>
             <div className="eyebrow">{t.onboarding_complete_eyebrow}</div><h1>{t.onboarding_complete_title}</h1>
             <p className="lead">{t.onboarding_complete_lead}</p>
             <div className="user-preview-card"><span className="avatar">{displayName[0]?.toUpperCase()}</span><div><strong>{displayName}</strong><small>{getCompanionLabel(companion, language as AppLanguage)} · {getThemeDetails(theme, themeOptions.find((item) => item.id === theme)?.name || "", "", language as AppLanguage).name}</small></div><Icon name="check" /></div>
@@ -2651,24 +2719,107 @@ function PersonaPicker({ value, setValue, compact = false }: { value: Persona; s
   );
 }
 
-function CompanionAvatar({ companion, large = false }: { companion: Companion; large?: boolean }) {
-  if (companion === "Cat") return <img className={`companion-logo ${large ? "large" : ""}`} src={logo} alt="ONY Cat companion" />;
-  return <span className={`companion-face animal-${companion.toLowerCase()} ${large ? "large" : ""}`} aria-label={`ONY with ${companion.toLowerCase()} appearance`}><i className="ear left" /><i className="ear right" /><i className="face-patch" /><i className="eye left" /><i className="eye right" /><i className="nose" /><small>ONY</small></span>;
+function CompanionAvatar({
+  companion,
+  animal,
+  large = false,
+  size,
+  mood,
+  expression,
+  showGlow,
+  interactive = false,
+  className,
+  style,
+  onClick,
+}: {
+  companion?: Companion | string;
+  animal?: Companion | string;
+  large?: boolean;
+  size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | number;
+  mood?: CompanionExpression;
+  expression?: CompanionExpression;
+  showGlow?: boolean;
+  interactive?: boolean;
+  className?: string;
+  style?: CSSProperties;
+  onClick?: () => void;
+}) {
+  return (
+    <VectorCompanionAvatar
+      animal={(animal || companion) as CompanionAnimal}
+      size={size || (large ? "xl" : "sm")}
+      mood={mood || expression || "idle"}
+      showGlow={showGlow}
+      interactive={interactive}
+      className={className}
+      style={style}
+      onClick={onClick}
+    />
+  );
 }
 
 function CompanionPicker({ value, setValue }: { value: Companion; setValue: (v: Companion) => void }) {
   const { language } = useLanguage();
+  const [showPreviewSheet, setShowPreviewSheet] = useState(false);
   const companions: Companion[] = ["Cat", "Dog", "Bunny", "Bear", "Fox", "Panda"];
+
   return (
-    <div className="companion-grid">
-      {companions.map((item) => (
-        <button key={item} className={value === item ? "active" : ""} onClick={() => setValue(item)}>
-          <CompanionAvatar companion={item} />
-          <strong>{getCompanionLabel(item, language)}</strong>
-          {value === item && <span><Icon name="check" /></span>}
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="companion-grid" role="radiogroup" aria-label="Select companion mascot">
+        {companions.map((item) => {
+          const isSelected = value === item;
+          return (
+            <button
+              key={item}
+              type="button"
+              role="radio"
+              aria-checked={isSelected}
+              className={isSelected ? "active" : ""}
+              onClick={() => setValue(item)}
+              aria-label={getCompanionLabel(item, language)}
+            >
+              <CompanionAvatar
+                companion={item}
+                size="lg"
+                mood={isSelected ? "happy" : "idle"}
+                interactive
+              />
+              <strong>{getCompanionLabel(item, language)}</strong>
+              {isSelected && (
+                <span>
+                  <Icon name="check" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: "4px", marginBottom: "12px" }}>
+        <Button
+          variant="ghost"
+          onClick={() => setShowPreviewSheet(true)}
+          style={{ fontSize: "12px", gap: "6px", display: "inline-flex", alignItems: "center" }}
+        >
+          <span>✨</span>
+          {language === "Bahasa Melayu"
+            ? "Lihat Showcase & Ekspresi 6 Maskot"
+            : language === "中文"
+            ? "全景查看 6 款伴侣立绘与动态表情"
+            : "Showcase All 6 Mascots & Expressions"}
+        </Button>
+      </div>
+
+      {showPreviewSheet && (
+        <CompanionPreviewSheet
+          isOpen={showPreviewSheet}
+          onClose={() => setShowPreviewSheet(false)}
+          currentCompanion={value}
+          onSelectCompanion={(selected) => setValue(selected as Companion)}
+          language={language}
+        />
+      )}
+    </>
   );
 }
 
@@ -2889,7 +3040,7 @@ export function getOnyTimeGreeting(
   };
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal, onOpenToolkitGuide, preloadedTopic, onClearPreloadedTopic }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   setPersona?: (p: Persona) => void;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
@@ -2903,6 +3054,9 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   onOpenMerchant?: (name: string) => void;
   currentTrack?: CalmingTrack;
   onOpenMusicModal?: () => void;
+  onOpenToolkitGuide?: (guideId: string) => void;
+  preloadedTopic?: string;
+  onClearPreloadedTopic?: () => void;
 }) {
   const onyxGreeting = useMemo(() => getOnyTimeGreeting(language, displayName), [language, displayName]);
   const activeIdRef = useRef<number | null>(activeChatId);
@@ -2941,8 +3095,24 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const [chatError, setChatError] = useState<string | null>(null);
   const [failedUserText, setFailedUserText] = useState<string | null>(null);
   const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
+  const [dismissedToolkitSuggest, setDismissedToolkitSuggest] = useState(false);
   const { t } = useLanguage();
   const { unreadCount, openNotifications } = useNotifications();
+
+  useEffect(() => {
+    if (preloadedTopic) {
+      const topicText =
+        language === "Bahasa Melayu"
+          ? `Saya ingin bercakap tentang refleksi saya dalam Toolkit: ${preloadedTopic}`
+          : language === "中文"
+          ? `我想和 ONY 聊聊刚才在工具箱里的反思体验：${preloadedTopic}`
+          : `I'd like to talk about what I reflected on in the Toolkit: ${preloadedTopic}`;
+      setInput(topicText);
+      if (onClearPreloadedTopic) {
+        onClearPreloadedTopic();
+      }
+    }
+  }, [preloadedTopic, onClearPreloadedTopic, language]);
   const suggestedCards = useMemo(() => {
     if (language === "Bahasa Melayu") {
       return [
@@ -3278,6 +3448,24 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const studyContext = ["study", "exam", "assignment", "class"].some((phrase) => latestLower.includes(phrase));
   const jobContext = ["job", "work opportunity", "internship", "career"].some((phrase) => latestLower.includes(phrase));
   const relationshipContext = ["relationship", "partner", "boyfriend", "girlfriend", "friendship"].some((phrase) => latestLower.includes(phrase));
+
+  const showSuggestedToolkit =
+    !safetyContext &&
+    (anxietyContext ||
+      ["breathe", "ground", "panic", "sleep", "stress", "restless", "angry", "lonely", "tarik nafas", "sesak", "tidur", "sunyi", "marah", "焦虑", "慌", "呼吸", "睡不着", "难受"].some((w) => latestLower.includes(w)));
+
+  const suggestedGuideId =
+    latestLower.includes("sleep") || latestLower.includes("tidur") || latestLower.includes("睡")
+      ? "sleep_winddown"
+      : latestLower.includes("ground") || latestLower.includes("panic") || latestLower.includes("bumi") || latestLower.includes("着陆")
+      ? "grounding_54321"
+      : latestLower.includes("journal") || latestLower.includes("write") || latestLower.includes("tulis") || latestLower.includes("日记")
+      ? "reflection_journaling"
+      : latestLower.includes("angry") || latestLower.includes("marah") || latestLower.includes("愤怒")
+      ? "calming_anger"
+      : latestLower.includes("lonely") || latestLower.includes("sunyi") || latestLower.includes("孤单")
+      ? "self_compassion_loneliness"
+      : "breathing_box";
   const saveContextMemory = () => {
     const id = Date.now();
     setMemories([{ id, text: latestUserText, category: "Things That Help Me", active: true, kind: "text", reason: language === "Bahasa Melayu" ? "Anda memilih untuk mengingati perkara ini semasa perbualan ONY." : language === "中文" ? "您选择在与 ONY 对话期间记住这一点。" : "You chose to remember this during an ONY conversation." }, ...memories]);
@@ -3335,7 +3523,11 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
       <header className="chat-native-header" role="banner">
         <div className="chat-header-identity">
           <div className="chat-avatar-wrapper">
-            <CompanionAvatar companion={companion} />
+            <CompanionAvatar
+              companion={companion}
+              size="sm"
+              mood={typing ? "listening" : "idle"}
+            />
             <span className="online-presence-dot" aria-label="Available" />
           </div>
           <div className="chat-identity-info">
@@ -3445,7 +3637,13 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         <div className="chat-hero-avatar-stage">
           <div className="chat-hero-halo-aura" aria-hidden="true" />
           <div className="chat-hero-avatar-bubble">
-            <CompanionAvatar companion={companion} large />
+            <CompanionAvatar
+              companion={companion}
+              size="xl"
+              mood={typing ? "speaking" : "idle"}
+              showGlow
+              interactive
+            />
             <span className="chat-hero-presence-badge" aria-label="Available & online">
               <span className="chat-hero-presence-pulse" />
             </span>
@@ -3627,7 +3825,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
     )}
     {messages.length > 0 && <div className="messages">
       {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
-        {m.from === "ony" && <CompanionAvatar companion={companion} />}
+        {m.from === "ony" && <CompanionAvatar companion={companion} size="sm" mood="idle" />}
         <div className="message-col">
           <div className="message">
             <FormattedChatMessage text={m.text} isUser={m.from === "user"} />
@@ -3670,7 +3868,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
           </button>
         )}
       </div>)}
-      {typing && <div className="message-row ony"><CompanionAvatar companion={companion} /><div className="message typing"><i /><i /><i /></div></div>}
+      {typing && <div className="message-row ony"><CompanionAvatar companion={companion} size="sm" mood="speaking" /><div className="message typing"><i /><i /><i /></div></div>}
       {chatError && !typing && <div className="chat-error-banner" role="alert">
         <div><Icon name="info" /><span>{chatError}</span></div>
         <div className="chat-error-actions">
@@ -3678,15 +3876,134 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
           {failedUserText && <Button variant="secondary" onClick={retryLastMessage}>{t.common_retry}</Button>}
         </div>
       </div>}
-      {!typing && <div className="context-actions">
-        {safetyContext && <><Button variant="danger" onClick={() => navigate("safety")}>{t.chat_action_get_help}</Button><Button variant="secondary" onClick={() => navigate("professional")}>{t.chat_action_find_support}</Button><Button variant="secondary" onClick={() => navigate("trusted")}>{t.chat_action_contact_trusted}</Button></>}
-        {!safetyContext && serverSafetyAction === "offer_human_support" && <><Button variant="secondary" onClick={() => navigate("professional")}>{t.chat_action_find_support}</Button><Button variant="secondary" onClick={() => navigate("help")}>{t.chat_action_view_resources}</Button></>}
-        {!safetyContext && memoryContext && (savedMemoryId === null ? <Button variant="secondary" onClick={saveContextMemory}><Icon name="memory" />{t.chat_action_remember_this}</Button> : <div className="memory-saved"><Icon name="check" /><span>{t.chat_action_saved_vault}</span><Button variant="ghost" onClick={undoContextMemory}>{t.common_undo}</Button></div>)}
-        {!safetyContext && anxietyContext && <><Button variant="secondary" onClick={() => navigate("wellbeing")}>{t.chat_action_try_calming}</Button><Button variant="secondary" onClick={() => notify(t.chat_action_breathing)}>{t.chat_action_breathing}</Button><Button variant="secondary" onClick={() => navigate("wellbeing")}>{t.chat_action_calming_music}</Button></>}
-        {!safetyContext && studyContext && <><Button variant="secondary" onClick={() => reply(t.chat_action_study_plan)}>{t.chat_action_study_plan}</Button><Button variant="secondary" onClick={() => notify(t.chat_action_take_break)}>{t.chat_action_take_break}</Button><Button variant="secondary" onClick={() => reply(t.chat_action_talk_about_it)}>{t.chat_action_talk_about_it}</Button></>}
-        {!safetyContext && jobContext && <><Button variant="secondary" onClick={() => navigate("jobs")}>{t.chat_action_find_jobs}</Button><Button variant="secondary" onClick={() => navigate("jobPrefs")}>{t.chat_action_job_prefs}</Button></>}
-        {!safetyContext && relationshipContext && <><Button variant="secondary" onClick={() => reply(t.chat_action_tell_more)}>{t.chat_action_tell_more}</Button><Button variant="secondary" onClick={() => reply(t.chat_action_help_reflect)}>{t.chat_action_help_reflect}</Button></>}
-      </div>}
+      {!typing && (
+        <>
+          {showSuggestedToolkit && !dismissedToolkitSuggest && (
+            <div style={{ padding: "0 12px", width: "100%" }}>
+              <SuggestedToolkitCard
+                guideId={suggestedGuideId}
+                onOpenGuide={(gId) => {
+                  if (onOpenToolkitGuide) {
+                    onOpenToolkitGuide(gId);
+                  } else {
+                    navigate("resources");
+                  }
+                }}
+                onDismiss={() => setDismissedToolkitSuggest(true)}
+                lang={language}
+              />
+            </div>
+          )}
+          <div className="context-actions">
+            {safetyContext && (
+              <>
+                <Button variant="danger" onClick={() => navigate("safety")}>
+                  {t.chat_action_get_help}
+                </Button>
+                <Button variant="secondary" onClick={() => navigate("professional")}>
+                  {t.chat_action_find_support}
+                </Button>
+                <Button variant="secondary" onClick={() => navigate("trusted")}>
+                  {t.chat_action_contact_trusted}
+                </Button>
+              </>
+            )}
+            {!safetyContext && serverSafetyAction === "offer_human_support" && (
+              <>
+                <Button variant="secondary" onClick={() => navigate("professional")}>
+                  {t.chat_action_find_support}
+                </Button>
+                <Button variant="secondary" onClick={() => navigate("resources")}>
+                  <Icon name="memory" />
+                  {t.chat_action_view_resources}
+                </Button>
+              </>
+            )}
+            {!safetyContext && memoryContext && (
+              savedMemoryId === null ? (
+                <Button variant="secondary" onClick={saveContextMemory}>
+                  <Icon name="memory" />
+                  {t.chat_action_remember_this}
+                </Button>
+              ) : (
+                <div className="memory-saved">
+                  <Icon name="check" />
+                  <span>{t.chat_action_saved_vault}</span>
+                  <Button variant="ghost" onClick={undoContextMemory}>
+                    {t.common_undo}
+                  </Button>
+                </div>
+              )
+            )}
+            {!safetyContext && anxietyContext && (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    onOpenToolkitGuide
+                      ? onOpenToolkitGuide("breathing_box")
+                      : navigate("resources")
+                  }
+                >
+                  <Icon name="wind" />
+                  {t.chat_action_breathing}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    onOpenToolkitGuide
+                      ? onOpenToolkitGuide("grounding_54321")
+                      : navigate("resources")
+                  }
+                >
+                  <Icon name="memory" />
+                  {language === "Bahasa Melayu"
+                    ? "Teknik Pembumian 5-4-3-2-1"
+                    : language === "中文"
+                    ? "5-4-3-2-1 身心着陆法"
+                    : "5-4-3-2-1 Grounding"}
+                </Button>
+                <Button variant="secondary" onClick={() => navigate("wellbeing")}>
+                  {t.chat_action_calming_music}
+                </Button>
+              </>
+            )}
+            {!safetyContext && studyContext && (
+              <>
+                <Button variant="secondary" onClick={() => reply(t.chat_action_study_plan)}>
+                  {t.chat_action_study_plan}
+                </Button>
+                <Button variant="secondary" onClick={() => notify(t.chat_action_take_break)}>
+                  {t.chat_action_take_break}
+                </Button>
+                <Button variant="secondary" onClick={() => reply(t.chat_action_talk_about_it)}>
+                  {t.chat_action_talk_about_it}
+                </Button>
+              </>
+            )}
+            {!safetyContext && jobContext && (
+              <>
+                <Button variant="secondary" onClick={() => navigate("jobs")}>
+                  {t.chat_action_find_jobs}
+                </Button>
+                <Button variant="secondary" onClick={() => navigate("jobPrefs")}>
+                  {t.chat_action_job_prefs}
+                </Button>
+              </>
+            )}
+            {!safetyContext && relationshipContext && (
+              <>
+                <Button variant="secondary" onClick={() => reply(t.chat_action_tell_more)}>
+                  {t.chat_action_tell_more}
+                </Button>
+                <Button variant="secondary" onClick={() => reply(t.chat_action_help_reflect)}>
+                  {t.chat_action_help_reflect}
+                </Button>
+              </>
+            )}
+          </div>
+        </>
+      )}
       <div ref={messagesEndRef} className="chat-bottom-spacer" />
     </div>}
     </div>
@@ -4337,7 +4654,7 @@ function MemoryVault({
 
         {!items.length && (
           <div className="empty">
-            <CompanionAvatar companion={companion} large />
+            <CompanionAvatar companion={companion} size="xl" mood="comforting" showGlow interactive />
             <h3>{t.memory_empty_title}</h3>
             <p>{t.memory_empty_desc}</p>
           </div>
@@ -6801,7 +7118,7 @@ function Personalise({ back, language, setLanguage, conversationStyle, setConver
     />
     <SettingChoices title={t.personalise_language} values={["English", "Bahasa Melayu", "中文"]} value={language} setValue={setLanguage} />
     <div className="setting-toggle"><div><strong>{t.personalise_memories_toggle}</strong><p>{t.personalise_memories_desc}</p></div><Toggle on={useActiveMemories} setOn={setUseActiveMemories} /></div>
-    <div className="preview-bubble"><CompanionAvatar companion={companion} /><div><span>{currentLang === "Bahasa Melayu" ? "Pratonton anda" : currentLang === "中文" ? "您的实时预览" : "Your preview"}</span><p>{personaDetails.preview}</p></div></div>
+    <div className="preview-bubble"><CompanionAvatar companion={companion} size="md" mood="happy" interactive /><div><span>{currentLang === "Bahasa Melayu" ? "Pratonton anda" : currentLang === "中文" ? "您的实时预览" : "Your preview"}</span><p>{personaDetails.preview}</p></div></div>
     <Button className="full" onClick={() => { if (onSave) onSave(); notify(t.personalise_save_toast); }}>{t.common_save}</Button>
   </section></>;
 }

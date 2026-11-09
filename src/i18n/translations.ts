@@ -882,7 +882,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
     // Extra Chat & Voice
     chat_safety_protocols: "Safety protocols",
-    chat_resources: "Resources",
+    chat_resources: "Toolkit",
     chat_chats_btn: "Chats",
     chat_voice_on: "Voice on",
     chat_voice_off: "Voice off",
@@ -1007,7 +1007,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     chat_action_get_help: "Get help now",
     chat_action_find_support: "Find professional support",
     chat_action_contact_trusted: "Contact trusted person",
-    chat_action_view_resources: "View support resources",
+    chat_action_view_resources: "Open Toolkit",
     chat_action_remember_this: "Remember this",
     chat_action_saved_vault: "Saved to your Memory Vault.",
     chat_action_try_calming: "Try something calming",
@@ -1519,7 +1519,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
     // Extra Chat & Voice
     chat_safety_protocols: "Protokol keselamatan",
-    chat_resources: "Sumber bantuan",
+    chat_resources: "Peralatan",
     chat_chats_btn: "Perbualan",
     chat_voice_on: "Suara hidup",
     chat_voice_off: "Suara mati",
@@ -1644,7 +1644,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     chat_action_get_help: "Dapatkan bantuan sekarang",
     chat_action_find_support: "Cari sokongan profesional",
     chat_action_contact_trusted: "Hubungi orang dipercayai",
-    chat_action_view_resources: "Lihat sumber sokongan",
+    chat_action_view_resources: "Buka Peralatan",
     chat_action_remember_this: "Ingati perkara ini",
     chat_action_saved_vault: "Disimpan ke Kubah Memori anda.",
     chat_action_try_calming: "Cuba aktiviti menenangkan",
@@ -2156,7 +2156,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
     // Extra Chat & Voice
     chat_safety_protocols: "安全干预机制",
-    chat_resources: "援助资源",
+    chat_resources: "心理工具箱",
     chat_chats_btn: "对话历史",
     chat_voice_on: "语音播报开启",
     chat_voice_off: "语音播报关闭",
@@ -2281,7 +2281,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     chat_action_get_help: "立即获取帮助",
     chat_action_find_support: "寻找专业支持",
     chat_action_contact_trusted: "联系紧急信任联系人",
-    chat_action_view_resources: "查看求助资源",
+    chat_action_view_resources: "打开心理工具箱",
     chat_action_remember_this: "记住这件事",
     chat_action_saved_vault: "已保存至您的记忆宝库。",
     chat_action_try_calming: "尝试舒缓练习",

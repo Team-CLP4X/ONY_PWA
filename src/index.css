@@ -281,10 +281,257 @@ p { line-height: 1.55; font-size: var(--font-body, 14px); color: var(--theme-tex
 .theme-preview { height: 58px; border-radius: 12px; display: flex; align-items: flex-end; overflow: hidden; padding: 8px; gap: 4px; }
 .theme-preview i { display: block; border-radius: 20px 20px 4px 4px; background: rgba(255,255,255,.66); width: 35%; }.theme-preview i:nth-child(1) { height: 22px; }.theme-preview i:nth-child(2) { height: 38px; }.theme-preview i:nth-child(3) { height: 29px; }
 .preview-ocean, .visual-ocean { background: linear-gradient(145deg, #b9e2e8, #4f9fab); }.preview-sunset, .visual-sunset { background: linear-gradient(145deg, #f8d39b, #e67c73); }.preview-forest, .visual-forest { background: linear-gradient(145deg, #c6d9b8, #63845f); }.preview-lavender { background: linear-gradient(145deg, #e5d8ef, #9275ad); }.preview-peach, .visual-peach { background: linear-gradient(145deg, #ffd9c4, #e97778); }.preview-neutral { background: linear-gradient(145deg, #eeeae4, #8b847e); }
-.companion-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 16px 0; }.companion-grid button { position: relative; border: 1px solid var(--line); background: var(--paper); border-radius: 18px; padding: 10px 5px; cursor: pointer; }.companion-grid button.active { border-color: var(--coral); background: var(--peach-soft); }.companion-grid button > strong { display: block; font-size: 11px; margin-top: 5px; }.companion-grid button > span:last-child { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: white; background: var(--coral); }.companion-grid button > span .icon { width: 12px; }
-.companion-logo, .companion-face { width: 38px; height: 38px; border-radius: 13px; flex: none; }.companion-logo { display: block; object-fit: cover; }.companion-logo.large, .companion-face.large { width: 112px; height: 112px; border-radius: 34px; }
-.companion-face { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 4px; background: linear-gradient(145deg, #fff4e7, #eac8ae); border: 1px solid var(--line); color: var(--coral-dark); box-shadow: inset 0 -8px 14px rgba(95,64,45,.06); }.companion-face small { font-size: 5px; font-weight: 800; z-index: 3; color: rgba(70,54,46,.62); }.companion-face.large { padding-bottom: 10px; }.companion-face.large small { font-size: 10px; }.companion-face .ear { position: absolute; width: 12px; height: 14px; background: #eac8ae; border: 1px solid rgba(92,67,52,.12); top: -4px; border-radius: 10px 10px 3px 3px; }.companion-face .ear.left { left: 5px; transform: rotate(-18deg); }.companion-face .ear.right { right: 5px; transform: rotate(18deg); }.companion-face.large .ear { width: 31px; height: 38px; top: -11px; }.companion-face.large .ear.left { left: 13px; }.companion-face.large .ear.right { right: 13px; }.companion-face .eye { position: absolute; top: 14px; width: 3px; height: 4px; border-radius: 50%; background: #493a34; z-index: 2; }.companion-face .eye.left { left: 12px; }.companion-face .eye.right { right: 12px; }.companion-face .nose { position: absolute; top: 21px; width: 5px; height: 4px; border-radius: 60% 60% 80% 80%; background: #b46e6e; z-index: 2; }.companion-face.large .eye { top: 46px; width: 8px; height: 10px; }.companion-face.large .eye.left { left: 34px; }.companion-face.large .eye.right { right: 34px; }.companion-face.large .nose { top: 65px; width: 13px; height: 10px; }.animal-bunny .ear { height: 22px; top: -13px; }.animal-bunny.large .ear { height: 52px; top: -28px; }.animal-bear .ear, .animal-panda .ear { width: 14px; height: 14px; border-radius: 50%; }.animal-bear.large .ear, .animal-panda.large .ear { width: 34px; height: 34px; }.animal-panda { background: linear-gradient(145deg, #fff, #e8e6e2); }.animal-panda .ear { background: #4b4745; }.animal-panda .face-patch { position: absolute; inset: 8px 6px 11px; border-radius: 45%; background: radial-gradient(circle at 25% 36%, #4b4745 0 13%, transparent 14%), radial-gradient(circle at 75% 36%, #4b4745 0 13%, transparent 14%); }.animal-fox { background: linear-gradient(145deg, #f3b476, #df8359); }.animal-fox .ear { border-radius: 2px 12px 4px; background: #df8359; }.animal-dog .ear { height: 18px; top: 0; background: #b98c6d; }.animal-dog .ear.left { transform: rotate(-36deg); left: 1px; }.animal-dog .ear.right { transform: rotate(36deg); right: 1px; }
-.companion-confirm { display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin: 30px auto; }.companion-confirm > img { width: 50px; height: 50px; object-fit: cover; border-radius: 15px; box-shadow: var(--shadow); }
+.companion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+.companion-grid button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--theme-border, var(--line));
+  background: var(--theme-surface, var(--paper));
+  border-radius: 22px;
+  padding: 14px 8px 12px;
+  cursor: pointer;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+  min-height: 120px;
+}
+.companion-grid button:hover {
+  transform: translateY(-2px);
+  border-color: var(--theme-primary, var(--coral));
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+}
+.companion-grid button:active {
+  transform: scale(0.96);
+}
+.companion-grid button.active {
+  border-color: var(--theme-primary, var(--coral));
+  background: var(--theme-surface-elevated, var(--peach-soft));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-primary, var(--coral)) 25%, transparent);
+}
+.companion-grid button > strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 8px;
+  color: var(--theme-text-primary, inherit);
+}
+.companion-grid button > span:last-child {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: var(--theme-primary, var(--coral));
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--theme-primary, var(--coral)) 40%, transparent);
+}
+.companion-grid button > span .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* Redesigned Mascot Animations & Styling */
+.ony-chibi-mascot-wrapper {
+  transform-origin: 50% 90%;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ony-chibi-mascot-wrapper.interactive-tap:hover {
+  transform: scale(1.05);
+}
+.ony-chibi-mascot-wrapper.interactive-tap:active {
+  transform: scale(0.92);
+}
+
+/* Breathing animation for idle */
+@keyframes ony-breathe {
+  0%, 100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.02, 0.985) translateY(-1.5px);
+  }
+}
+
+/* Natural occasional blink every 4.5s */
+@keyframes ony-blink {
+  0%, 94%, 98%, 100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+
+/* Soft ear twitch */
+@keyframes ony-ear-wiggle {
+  0%, 90%, 100% {
+    transform: rotate(0deg);
+  }
+  93% {
+    transform: rotate(-3deg);
+  }
+  96% {
+    transform: rotate(2.5deg);
+  }
+}
+
+/* Tail wag */
+@keyframes ony-tail-wag {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
+
+/* Listening head tilt */
+@keyframes ony-listen-tilt {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  30%, 80% {
+    transform: rotate(3.5deg) scale(1.02);
+  }
+}
+
+/* Speaking subtle rhythmic bounce */
+@keyframes ony-speak-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.2px);
+  }
+}
+
+/* Happy cheerful hop */
+@keyframes ony-happy-hop {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-5px) scale(1.04);
+  }
+  60% {
+    transform: translateY(0) scale(0.98);
+  }
+}
+
+/* Comforting soft sway */
+@keyframes ony-comfort-sway {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(2deg) scale(1.015);
+  }
+}
+
+/* Float for happy heart sparkle */
+@keyframes ony-float-sparkle {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(-4px) scale(1.15);
+    opacity: 1;
+  }
+}
+
+/* Halo aura pulse */
+@keyframes hero-halo-pulse {
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.28;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.42;
+  }
+}
+
+/* Apply animations to SVG groups when animated-mascot is present */
+.animated-mascot.mood-idle .ony-mascot-plushie-group {
+  animation: ony-breathe 4s ease-in-out infinite;
+  transform-origin: 80px 145px;
+}
+.animated-mascot.mood-listening .ony-mascot-plushie-group {
+  animation: ony-listen-tilt 3.2s ease-in-out infinite;
+  transform-origin: 80px 145px;
+}
+.animated-mascot.mood-speaking .ony-mascot-plushie-group {
+  animation: ony-speak-bounce 0.65s ease-in-out infinite alternate;
+  transform-origin: 80px 145px;
+}
+.animated-mascot.mood-happy .ony-mascot-plushie-group {
+  animation: ony-happy-hop 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  transform-origin: 80px 145px;
+}
+.animated-mascot.mood-comforting .ony-mascot-plushie-group {
+  animation: ony-comfort-sway 4.5s ease-in-out infinite;
+  transform-origin: 80px 145px;
+}
+
+.animated-mascot .ony-eye-left,
+.animated-mascot .ony-eye-right {
+  animation: ony-blink 4.8s ease-in-out infinite;
+  transform-origin: 80px 82px;
+}
+.animated-mascot .ony-ears-group {
+  animation: ony-ear-wiggle 5s ease-in-out infinite;
+  transform-origin: 80px 50px;
+}
+.animated-mascot .ony-tail-wiggle {
+  animation: ony-tail-wag 2.4s ease-in-out infinite;
+  transform-origin: 116px 124px;
+}
+.animated-mascot .ony-sparkle-float,
+.animated-mascot .ony-comfort-stars {
+  animation: ony-float-sparkle 2.2s ease-in-out infinite;
+  transform-origin: 114px 65px;
+}
+
+/* Accessibility: Respect user's motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animated-mascot .ony-mascot-plushie-group,
+  .animated-mascot .ony-eye-left,
+  .animated-mascot .ony-eye-right,
+  .animated-mascot .ony-ears-group,
+  .animated-mascot .ony-tail-wiggle,
+  .animated-mascot .ony-sparkle-float,
+  .animated-mascot .ony-comfort-stars,
+  .chat-hero-halo-aura,
+  .chat-hero-presence-pulse {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+.companion-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 24px auto;
+}
+.companion-confirm > img {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
 .ambient-onboarding { display: flex; flex-direction: column; align-items: center; gap: 10px; background: color-mix(in srgb, var(--paper) 88%, transparent); border: 1px solid var(--line); border-radius: 24px; padding: 22px; margin: 24px 0; }.sound-orb { width: 88px; height: 88px; display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: 50%; background: var(--sage-soft); }.sound-orb i { width: 5px; height: 22px; border-radius: 10px; background: var(--sage); }.sound-orb i:nth-child(2) { height: 38px; }.sound-orb.playing i { animation: waveform .65s infinite alternate; }
 .starter-offer { text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: 25px; padding: 22px; box-shadow: var(--shadow); }.starter-offer > span { display: block; color: var(--coral-dark); text-transform: uppercase; letter-spacing: .1em; font-size: 9px; font-weight: 800; }.starter-offer > strong { display: block; color: var(--coral-dark); font: 800 46px "Nunito"; margin: 5px 0; }.starter-offer p { color: var(--muted); font-size: 12px; }.starter-offer ul { padding: 0; margin: 16px 0 0; list-style: none; text-align: left; }.starter-offer li { margin: 8px 0; font-size: 11px; }.starter-offer li:before { content: "✓"; color: var(--sage); font-weight: 800; margin-right: 8px; }.onboarding-plans { display: grid; gap: 7px; margin-top: 10px; }.onboarding-plans span { display: flex; justify-content: space-between; gap: 8px; background: var(--peach-soft); border-radius: 12px; padding: 10px; font-size: 9px; }.onboarding-plans strong { font-size: 10px; }
 .chips { display: flex; flex-wrap: wrap; gap: 9px; margin: 16px 0 25px; }
@@ -839,33 +1086,52 @@ p { line-height: 1.55; font-size: var(--font-body, 14px); color: var(--theme-tex
   }
 }
 
-.chat-hero-avatar-bubble {
+.chat-hero-avatar-stage {
   position: relative;
-  z-index: 2;
-  width: 108px;
-  height: 108px;
-  border-radius: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, #ffffff, color-mix(in srgb, var(--peach-soft) 85%, white));
-  border: 2px solid color-mix(in srgb, var(--coral) 35%, white);
-  box-shadow: 0 14px 36px rgba(233, 111, 115, 0.16), 0 2px 8px rgba(0,0,0,0.03);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  margin: 8px auto 14px;
+  width: 170px;
+  height: 170px;
+}
+
+.chat-hero-halo-aura {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--theme-accent, #fad2c8) 0%, transparent 70%);
+  opacity: 0.45;
+  filter: blur(16px);
+  animation: hero-halo-pulse 4s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.chat-hero-avatar-bubble {
+  position: relative;
+  z-index: 2;
+  width: 154px;
+  height: 154px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, color-mix(in srgb, var(--theme-surface-elevated, #fff) 85%, transparent) 0%, transparent 85%);
+  border: none;
+  box-shadow: none;
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: visible;
 }
 
 .chat-hero-avatar-bubble:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 18px 40px rgba(233, 111, 115, 0.22);
+  transform: translateY(-4px) scale(1.03);
 }
 
 .chat-hero-avatar-bubble .companion-logo.large,
-.chat-hero-avatar-bubble .companion-face.large {
-  width: 96px;
-  height: 96px;
-  border-radius: 28px;
-  box-shadow: none;
+.chat-hero-avatar-bubble .companion-face.large,
+.chat-hero-avatar-bubble .ony-chibi-mascot-wrapper {
+  width: 150px;
+  height: 150px;
 }
 
 .chat-hero-presence-badge {
@@ -1872,17 +2138,18 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
 .help-hero {
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: white;
-  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  gap: 12px;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
   border-radius: 18px;
-  padding: 11px 13px;
+  padding: 12px 14px;
   margin-bottom: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  color: var(--theme-text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
-.help-hero > .icon { width: 24px; height: 24px; color: var(--sage); flex-shrink: 0; }
-.help-hero h2 { font-family: "Nunito", sans-serif; font-size: 14.5px; font-weight: 800; line-height: 1.25; margin: 0 0 2px; color: var(--ink); }
-.help-hero p { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.35; }
+.help-hero > .icon { width: 24px; height: 24px; color: var(--theme-primary); flex-shrink: 0; }
+.help-hero h2 { font-family: "Nunito", sans-serif; font-size: calc(15px * var(--font-scale, 1)); font-weight: 800; line-height: 1.25; margin: 0 0 2px; color: var(--theme-text-primary); }
+.help-hero p { margin: 0; font-size: calc(11.5px * var(--font-scale, 1)); color: var(--theme-text-secondary); line-height: 1.35; }
 .support-distinction { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }.support-distinction div { background: var(--paper); border: 1px solid var(--line); border-radius: 15px; padding: 11px; }.support-distinction strong { font-size: 10px; }.support-distinction p { color: var(--muted); font-size: 8px; margin: 4px 0 0; }
 .group-title { margin: 24px 0 9px; font-size: 14px; }.resource { width: 100%; text-decoration: none; color: var(--ink); display: flex; align-items: center; gap: 10px; background: white; border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin: 8px 0; text-align: left; }.resource span { flex: 1; }.resource strong, .resource small { display: block; }.resource strong { font-size: 13px; }.resource small { color: var(--muted); font-size: 10px; margin-top: 3px; }.resource b { font-size: 12px; color: var(--coral-dark); }.emergency-resource { border-color: #e6aaa7; background: #fff4f1; }.resource-button { cursor: pointer; }
 .result-summary { display: flex; justify-content: space-between; align-items: center; margin: 18px 2px 10px; }.result-summary span { color: var(--muted); font-size: 9px; }
@@ -3135,14 +3402,15 @@ summary { cursor: pointer; font-weight: 700; } details p { margin: 7px 0; }
     padding: 16px 12px 22px;
   }
   .chat-hero-avatar-bubble {
-    width: 92px;
-    height: 92px;
-    border-radius: 28px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
   }
   .chat-hero-avatar-bubble .companion-logo.large,
-  .chat-hero-avatar-bubble .companion-face.large {
-    width: 80px;
-    height: 80px;
+  .chat-hero-avatar-bubble .companion-face.large,
+  .chat-hero-avatar-bubble .ony-chibi-mascot-wrapper {
+    width: 116px;
+    height: 116px;
   }
   .chat-hero-greeting-heading {
     font-size: 19px;
@@ -10456,5 +10724,70 @@ input, textarea, select {
   color: var(--theme-text-primary) !important;
 }
 
+/* ==========================================================================
+   Toolkit & Interactive Self-Help Tools
+   ========================================================================== */
 
+.toolkit-scroll-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border) transparent;
+}
 
+.toolkit-scroll-container::-webkit-scrollbar {
+  height: 4px;
+}
+
+.toolkit-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--theme-border);
+  border-radius: 4px;
+}
+
+/* Responsive Quick Relief Grid */
+.toolkit-quick-relief-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 360px) {
+  .toolkit-quick-relief-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+/* Breathing Animation Circle */
+@keyframes breathingPulse {
+  0% {
+    transform: scale(0.72);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--theme-primary) 20%, transparent);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 35px color-mix(in srgb, var(--theme-primary) 45%, transparent);
+  }
+  100% {
+    transform: scale(0.72);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--theme-primary) 20%, transparent);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .breathing-animated-circle {
+    animation: none !important;
+    transition: none !important;
+  }
+  .breathing-pulse-aura {
+    display: none !important;
+  }
+}
+
+/* Suggested Toolkit Card in Chat */
+.suggested-toolkit-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.suggested-toolkit-card:hover {
+  transform: translateY(-1px);
+}

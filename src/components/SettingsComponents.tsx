@@ -26,6 +26,19 @@ import {
   type ThemeId,
   type ThemeMode,
 } from "../theme/palettes";
+import { CompanionAvatar } from "./CompanionAvatar";
+
+export function getAnimalFromPreset(preset?: string): "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda" | null {
+  if (!preset) return null;
+  const p = preset.trim().toLowerCase();
+  if (p === "cat" || p === "🐱") return "Cat";
+  if (p === "dog" || p === "🐶") return "Dog";
+  if (p === "bunny" || p === "🐰") return "Bunny";
+  if (p === "bear" || p === "🐻") return "Bear";
+  if (p === "fox" || p === "🦊") return "Fox";
+  if (p === "panda" || p === "🐼") return "Panda";
+  return null;
+}
 
 // ==========================================
 // Settings Custom Storage Keys & Types
@@ -365,6 +378,7 @@ export function SettingsHeader({
   avatarUrl,
   presetAvatar,
   onEditProfile,
+  companion,
 }: SettingsHeaderProps) {
   const cleanName = displayName.trim() || "ONY Member";
   const initials = cleanName
@@ -372,6 +386,8 @@ export function SettingsHeader({
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() || "")
     .join("") || "O";
+
+  const animalPreset = getAnimalFromPreset(presetAvatar) || getAnimalFromPreset(companion);
 
   return (
     <div
@@ -390,6 +406,8 @@ export function SettingsHeader({
       <div className="settings-header-avatar-slot">
         {avatarUrl ? (
           <img src={avatarUrl} alt={cleanName} className="settings-header-avatar-img" />
+        ) : animalPreset ? (
+          <CompanionAvatar animal={animalPreset} size="sm" mood="idle" />
         ) : presetAvatar ? (
           <span className="settings-header-avatar-emoji">{presetAvatar}</span>
         ) : (
@@ -736,7 +754,16 @@ export function EditProfileScreen({
             {avatarType === "photo" && avatarUrl ? (
               <img src={avatarUrl} alt="Avatar Preview" className="edit-profile-avatar-img" />
             ) : avatarType === "preset" ? (
-              <span className="edit-profile-avatar-emoji">{presetAvatar}</span>
+              getAnimalFromPreset(presetAvatar) ? (
+                <CompanionAvatar
+                  animal={getAnimalFromPreset(presetAvatar)!}
+                  size="lg"
+                  mood="happy"
+                  interactive
+                />
+              ) : (
+                <span className="edit-profile-avatar-emoji">{presetAvatar}</span>
+              )
             ) : (
               <div className="edit-profile-avatar-initials">{initials}</div>
             )}
@@ -906,21 +933,28 @@ export function EditProfileScreen({
             <h3 className="settings-modal-title">Choose Companion Preset</h3>
             <p className="settings-modal-desc">Select a friendly emblem for your profile</p>
             <div className="preset-grid">
-              {PRESET_AVATARS.map((p) => (
-                <button
-                  type="button"
-                  key={p.name}
-                  className={`preset-choice-btn ${presetAvatar === p.emoji ? "selected" : ""}`}
-                  onClick={() => {
-                    setPresetAvatar(p.emoji);
-                    setAvatarType("preset");
-                    setShowPresetModal(false);
-                  }}
-                >
-                  <span className="preset-choice-emoji">{p.emoji}</span>
-                  <span className="preset-choice-name">{p.name}</span>
-                </button>
-              ))}
+              {PRESET_AVATARS.map((p) => {
+                const animalName = getAnimalFromPreset(p.emoji) || getAnimalFromPreset(p.name);
+                return (
+                  <button
+                    type="button"
+                    key={p.name}
+                    className={`preset-choice-btn ${presetAvatar === p.emoji || presetAvatar === p.name ? "selected" : ""}`}
+                    onClick={() => {
+                      setPresetAvatar(p.emoji);
+                      setAvatarType("preset");
+                      setShowPresetModal(false);
+                    }}
+                  >
+                    {animalName ? (
+                      <CompanionAvatar animal={animalName} size="md" interactive />
+                    ) : (
+                      <span className="preset-choice-emoji">{p.emoji}</span>
+                    )}
+                    <span className="preset-choice-name">{p.name}</span>
+                  </button>
+                );
+              })}
             </div>
             <button
               type="button"
