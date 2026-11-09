@@ -692,6 +692,9 @@ export function applyTokensToDocument(
   // Legacy mappings for 100% backward compatibility
   root.style.setProperty("--cream", tokens.background);
   root.style.setProperty("--paper", tokens.surface);
+  root.style.setProperty("--surface", tokens.surface);
+  root.style.setProperty("--surface-strong", tokens.surfaceElevated);
+  root.style.setProperty("--text", tokens.textPrimary);
   root.style.setProperty("--ink", tokens.textPrimary);
   root.style.setProperty("--muted", tokens.textSecondary);
   root.style.setProperty("--line", tokens.border);
@@ -702,6 +705,31 @@ export function applyTokensToDocument(
   root.style.setProperty("--peach", tokens.surfaceElevated);
   root.style.setProperty("--peach-soft", tokens.surfaceSoft);
   root.style.setProperty("--danger", tokens.error);
+  root.style.setProperty("--theme-env-gradient", tokens.envGradient);
+
+  // Soft status colors for badges & alerts
+  root.style.setProperty(
+    "--theme-error-soft",
+    isDark ? "rgba(248, 113, 113, 0.18)" : "#fee2e2"
+  );
+  root.style.setProperty(
+    "--theme-success-soft",
+    isDark ? "rgba(74, 222, 128, 0.18)" : "#dcfce7"
+  );
+  root.style.setProperty(
+    "--theme-warning-soft",
+    isDark ? "rgba(251, 191, 36, 0.18)" : "#fef3c7"
+  );
+
+  if (document.body) {
+    document.body.setAttribute("data-theme", themeId);
+    document.body.setAttribute("data-theme-mode", isDark ? "dark" : "light");
+    if (isDark) {
+      document.body.classList.add("dark-mode", "dark");
+    } else {
+      document.body.classList.remove("dark-mode", "dark");
+    }
+  }
 
   if (isDark) {
     root.style.setProperty("--shadow", "0 14px 34px rgba(0, 0, 0, 0.45)");

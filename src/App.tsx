@@ -2243,8 +2243,8 @@ function AuthFlowContent({
           style={{
             marginBottom: "12px",
             padding: "12px 14px",
-            border: "1px solid var(--accent, #e07a5f)",
-            background: "var(--surface-strong, #fff8f5)",
+            border: "1px solid var(--theme-accent)",
+            background: "var(--theme-surface-elevated)",
           }}
         >
           <span className="eyebrow">Trusted Contact Invite Link</span>
@@ -2490,7 +2490,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     <>
       <PageHeader title={item.title} subtitle={item.subtitle} back={back} />
       <section className="page-pad legal-document">
-        <span className="status-badge" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>
+        <span className="status-badge" style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}>
           {language === "Bahasa Melayu" ? "Dokumen Rasmi" : language === "中文" ? "官方政策文档" : "Official Document"}
         </span>
         {item.sections.map((section) => (
@@ -6204,7 +6204,7 @@ function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, db
         action={
           <span
             className="status-badge"
-            style={{ background: "var(--sage-soft)", color: "#2e7d32" }}
+            style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}
           >
             {dbSyncing
               ? language === "Bahasa Melayu"
@@ -6283,7 +6283,7 @@ function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: 
   const { t, language } = useLanguage();
   const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
   const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{merchant.value}</h1><p>{merchant.offer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>{language === "Bahasa Melayu" ? "Pas Ahli Digital Aktif" : language === "中文" ? "有效数字会员凭证" : "Active Digital Member Pass"}</small></div><div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}><Icon name="check" />{language === "Bahasa Melayu" ? "Tunjukkan kod bar ini kepada kakitangan semasa membuat pesanan atau tempahan." : language === "中文" ? "在点单或预约核销时向店员出示此条形码即可。" : "Present this barcode to the staff upon placing your order or booking."}</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
+  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{merchant.value}</h1><p>{merchant.offer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>{language === "Bahasa Melayu" ? "Pas Ahli Digital Aktif" : language === "中文" ? "有效数字会员凭证" : "Active Digital Member Pass"}</small></div><div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}><Icon name="check" />{language === "Bahasa Melayu" ? "Tunjukkan kod bar ini kepada kakitangan semasa membuat pesanan atau tempahan." : language === "中文" ? "在点单或预约核销时向店员出示此条形码即可。" : "Present this barcode to the staff upon placing your order or booking."}</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
 }
 
 function Profile({
@@ -6671,8 +6671,8 @@ function LanguagePreferences({
                   width: "100%",
                   padding: "14px 16px",
                   borderRadius: "14px",
-                  border: isSelected ? "2px solid var(--accent, #e07a5f)" : "1px solid var(--line, #e2ded9)",
-                  background: isSelected ? "var(--surface-strong, #fff)" : "var(--surface, #faf7f4)",
+                  border: isSelected ? "2px solid var(--theme-accent)" : "1px solid var(--theme-border)",
+                  background: isSelected ? "var(--theme-surface-elevated)" : "var(--theme-surface)",
                   marginBottom: "8px",
                   cursor: "pointer",
                   textAlign: "left",
@@ -6680,15 +6680,15 @@ function LanguagePreferences({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                  <span style={{ fontSize: "26px", lineHeight: 1 }}>{item.flag}</span>
+                  <span style={{ fontSize: "calc(26px * var(--font-scale, 1))", lineHeight: 1 }}>{item.flag}</span>
                   <div>
-                    <strong style={{ display: "block", fontSize: "15px", color: "var(--text)" }}>
+                    <strong style={{ display: "block", fontSize: "var(--font-body, 15px)", color: "var(--theme-text-primary)" }}>
                       {item.label}
                     </strong>
-                    <small style={{ display: "block", color: "var(--muted)", fontSize: "12px", marginTop: "1px" }}>
+                    <small style={{ display: "block", color: "var(--theme-text-secondary)", fontSize: "var(--font-caption, 12px)", marginTop: "1px" }}>
                       {item.sub}
                     </small>
-                    <span style={{ display: "block", color: "var(--muted)", fontSize: "11px", marginTop: "3px" }}>
+                    <span style={{ display: "block", color: "var(--theme-text-muted)", fontSize: "var(--font-micro, 11px)", marginTop: "3px" }}>
                       {item.desc}
                     </span>
                   </div>
@@ -6698,8 +6698,8 @@ function LanguagePreferences({
                     width: "22px",
                     height: "22px",
                     borderRadius: "50%",
-                    border: isSelected ? "6px solid var(--accent, #e07a5f)" : "2px solid var(--muted, #aaa)",
-                    background: "#fff",
+                    border: isSelected ? "6px solid var(--theme-accent)" : "2px solid var(--theme-border)",
+                    background: "var(--theme-surface)",
                     flexShrink: 0,
                   }}
                 />
@@ -6708,7 +6708,7 @@ function LanguagePreferences({
           })}
         </div>
 
-        <div className="community-note" style={{ background: "var(--sage-soft, #e8f5e9)", borderColor: "var(--sage, #a5d6a7)", color: "#2e7d32" }}>
+        <div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}>
           <Icon name="shield" />
           <span>{t.language_sync_notice}</span>
         </div>
@@ -7092,7 +7092,7 @@ function Notifications({
             ) : (
               <span
                 className="notifications-unread-pill"
-                style={{ background: "var(--sage-soft)", color: "#2e7d32" }}
+                style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}
               >
                 {t.notif_all_caught_up}
               </span>
@@ -7872,7 +7872,7 @@ function JobOpportunities({ back, navigate }: { back: () => void; navigate: (s: 
     subtitle={language === "Bahasa Melayu" ? "Peluang peringkat permulaan & latihan industri terpilih" : language === "中文" ? "精选入门级全职与实习岗位" : "Curated entry-level & internship openings"}
     back={back}
   /><section className="page-pad">
-    <div className="community-note" style={{ background: "var(--sage-soft)", borderColor: "var(--sage)", color: "#2e7d32" }}>
+    <div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}>
       <Icon name="check" />{language === "Bahasa Melayu" ? "Senarai rakan kongsi disahkan yang komited kepada kesejahteraan belia dan waktu kerja munasabah." : language === "中文" ? "经认证的合作伙伴，致力于保障青年身心健康与合理工时。" : "Verified partner listings committed to young adult well-being and reasonable working hours."}
     </div>
     <div className="result-summary">
@@ -8035,7 +8035,7 @@ function Wellbeing({ back, navigate, notify, onOpenMusicModal }: { back: () => v
       <button
         type="button"
         className="professional-banner"
-        style={{ marginBottom: "12px", background: "linear-gradient(135deg, #fff3f0, #fcf6ed)" }}
+        style={{ marginBottom: "12px", background: "var(--theme-surface-elevated)" }}
         onClick={onOpenMusicModal}
       >
         <Icon name="music" />
@@ -8420,7 +8420,7 @@ function ProfessionalSupport({
             {shown.length} {language === "Bahasa Melayu" ? "pusat rawatan disahkan" : language === "中文" ? "所认证医疗服务机构" : "verified healthcare providers"}
           </span>
           {userCoords && (
-            <span style={{ color: "#2e7d32", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
+            <span style={{ color: "var(--theme-success)", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
               <Icon name="mapPin" /> {language === "Bahasa Melayu" ? "Disusun mengikut jarak" : language === "中文" ? "按真实距离排序" : "Distance sorted"}
             </span>
           )}
@@ -8476,8 +8476,8 @@ function ProfessionalSupport({
                     <span
                       className="status-badge"
                       style={{
-                        background: provider.type === "hospital" ? "#fee2e2" : provider.type === "mentari" ? "var(--sage-soft)" : "var(--peach-soft)",
-                        color: provider.type === "hospital" ? "#b91c1c" : provider.type === "mentari" ? "#2e7d32" : "var(--coral-dark)",
+                        background: provider.type === "hospital" ? "var(--theme-error-soft)" : provider.type === "mentari" ? "var(--theme-success-soft)" : "var(--theme-surface-soft)",
+                        color: provider.type === "hospital" ? "var(--theme-error)" : provider.type === "mentari" ? "var(--theme-success)" : "var(--theme-primary)",
                         fontWeight: 800,
                       }}
                     >
@@ -8654,8 +8654,8 @@ function ProviderDetail({
             <span
               className="status-badge"
               style={{
-                background: provider.type === "hospital" ? "#fee2e2" : "var(--sage-soft)",
-                color: provider.type === "hospital" ? "#b91c1c" : "#2e7d32",
+                background: provider.type === "hospital" ? "var(--theme-error-soft)" : "var(--theme-success-soft)",
+                color: provider.type === "hospital" ? "var(--theme-error)" : "var(--theme-success)",
                 fontWeight: 800,
               }}
             >
@@ -9168,8 +9168,8 @@ function TrustedContact({
             className="card"
             style={{
               marginBottom: "16px",
-              border: "2px solid var(--accent, #e07a5f)",
-              background: "var(--surface-strong, #fff8f5)",
+              border: "2px solid var(--theme-accent)",
+              background: "var(--theme-surface-elevated)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
@@ -9238,11 +9238,11 @@ function TrustedContact({
             style={{
               padding: "10px 12px",
               borderRadius: "12px",
-              background: "var(--surface, #f7f4f0)",
-              border: "1px solid var(--line)",
-              fontSize: "12px",
+              background: "var(--theme-surface-soft)",
+              border: "1px solid var(--theme-border)",
+              fontSize: "var(--font-caption, 12px)",
               wordBreak: "break-all",
-              color: "var(--text)",
+              color: "var(--theme-text-primary)",
               marginBottom: "10px",
               userSelect: "all",
             }}
@@ -9320,8 +9320,8 @@ function TrustedContact({
                     style={{
                       padding: "12px",
                       borderRadius: "14px",
-                      border: "1px solid var(--line)",
-                      background: "var(--surface-strong, #fff)",
+                      border: "1px solid var(--theme-border)",
+                      background: "var(--theme-surface-elevated)",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -9333,7 +9333,7 @@ function TrustedContact({
                         <small style={{ color: "var(--muted)", display: "block" }}>
                           {req.fromEmail} {req.contactPhone ? `· ${language === "Bahasa Melayu" ? "Tel Kecemasan" : language === "中文" ? "紧急电话" : "Emergency Phone"}: ${req.contactPhone}` : ""}
                         </small>
-                        <small style={{ color: "var(--accent, #e07a5f)", display: "block", fontWeight: 600, marginTop: "2px" }}>
+                        <small style={{ color: "var(--theme-accent)", display: "block", fontWeight: 600, marginTop: "2px" }}>
                           {isFromMyInviteLink
                             ? (language === "Bahasa Melayu" ? "Membuka pautan anda · Ingin menjadi Kenalan Kecemasan anda" : language === "中文" ? "通过邀请链接进入 · 申请成为您的紧急联系人" : "Clicked your invite link · Wants to be your Emergency Contact")
                             : (language === "Bahasa Melayu" ? "Ingin menambah anda sebagai Kenalan Dipercayai mereka" : language === "中文" ? "希望将您添加为其信任联系人" : "Wants to add you as their Trusted Contact")}
@@ -10442,7 +10442,7 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
           </div>
         </div>
         <div className="knowledge-status">
-          <span className="status-badge" style={{ background: "var(--sage-soft)", color: "#2e7d32" }}>{language === "Bahasa Melayu" ? "Perpustakaan Disahkan" : language === "中文" ? "权威核实资源库" : "Verified Library"}</span>
+          <span className="status-badge" style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}>{language === "Bahasa Melayu" ? "Perpustakaan Disahkan" : language === "中文" ? "权威核实资源库" : "Verified Library"}</span>
           <p>{language === "Bahasa Melayu" ? "Disusun selaras dengan garis panduan kesihatan mental dan talian bantuan krisis Malaysia yang disahkan." : language === "中文" ? "依据心理健康准则与马来西亚官方核实危机热线精选编制。" : "Curated in alignment with mental health guidelines and verified Malaysian crisis helplines."}</p>
         </div>
         <div className="resource-library">

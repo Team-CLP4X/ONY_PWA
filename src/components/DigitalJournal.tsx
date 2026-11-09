@@ -1912,7 +1912,7 @@ export function DigitalJournal({
                 name="pipette"
                 size={14}
                 decorative
-                color={isCustomActive ? getAccessibleTextColor(currentColor) : "#2b7a78"}
+                color={isCustomActive ? getAccessibleTextColor(currentColor) : "var(--theme-primary)"}
               />
             </div>
             <span className="custom-swatch-sublabel">
@@ -3803,8 +3803,9 @@ export function DigitalJournal({
                 <div
                   className="book-spine-card"
                   style={{
-                    height: "165px",
-                    width: "42px",
+                    height: "calc(165px * var(--font-scale, 1))",
+                    minHeight: "calc(165px * var(--font-scale, 1))",
+                    width: "calc(42px * var(--font-scale, 1))",
                     backgroundColor: changeCoverColorInput,
                     color: getAccessibleTextColor(changeCoverColorInput),
                   }}
@@ -3970,8 +3971,9 @@ export function DigitalJournal({
                 <div
                   className="book-spine-card"
                   style={{
-                    height: "165px",
-                    width: "42px",
+                    height: "calc(165px * var(--font-scale, 1))",
+                    minHeight: "calc(165px * var(--font-scale, 1))",
+                    width: "calc(42px * var(--font-scale, 1))",
                     backgroundColor: selectedBookForInfo.coverColor,
                     color: getAccessibleTextColor(selectedBookForInfo.coverColor),
                   }}
@@ -4003,7 +4005,7 @@ export function DigitalJournal({
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 <div className="page-index-item" style={{ cursor: "default" }}>
                   <div>
-                    <strong style={{ fontSize: "14px" }}>{selectedBookForInfo.title}</strong>
+                    <strong style={{ fontSize: "var(--font-body, 14px)" }}>{selectedBookForInfo.title}</strong>
                     <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
                       {uniqueShelves.find((s) => s.id === selectedBookForInfo.shelfId)?.name || "Shelf"} •{" "}
                       {journalEntries.filter((e) => (e as any).bookId === selectedBookForInfo.id).length} pages
@@ -4014,12 +4016,12 @@ export function DigitalJournal({
                 {selectedBookForInfo.description && (
                   <div
                     style={{
-                      background: "#faf8f5",
-                      border: "1px solid var(--line)",
+                      background: "var(--theme-surface-soft)",
+                      border: "1px solid var(--theme-border)",
                       borderRadius: "12px",
                       padding: "12px 14px",
-                      fontSize: "12.5px",
-                      color: "var(--muted)",
+                      fontSize: "var(--font-caption, 12.5px)",
+                      color: "var(--theme-text-secondary)",
                       lineHeight: "1.5",
                       fontStyle: "italic",
                     }}
@@ -4279,8 +4281,9 @@ export function DigitalJournal({
                 <div
                   className="book-spine-card"
                   style={{
-                    height: "165px",
-                    width: "42px",
+                    height: "calc(165px * var(--font-scale, 1))",
+                    minHeight: "calc(165px * var(--font-scale, 1))",
+                    width: "calc(42px * var(--font-scale, 1))",
                     backgroundColor: bookColorInput,
                     color: getAccessibleTextColor(bookColorInput),
                   }}

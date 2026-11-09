@@ -1170,7 +1170,7 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: "11px",
+                        fontSize: "calc(11px * var(--font-scale, 1))",
                       }}
                     >
                       ✓
@@ -1222,7 +1222,7 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
             </div>
 
             <div className="slider-row">
-              <span className="slider-end-label small" style={{ fontSize: "12px", color: "var(--theme-text-secondary)" }}>85%</span>
+              <span className="slider-end-label small" style={{ fontSize: "var(--font-caption, 12px)", color: "var(--theme-text-secondary)" }}>85%</span>
               <input
                 type="range"
                 min="85"
@@ -1233,7 +1233,7 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
                 className="appearance-range-slider"
                 aria-label="Text size scale slider"
               />
-              <span className="slider-end-label large" style={{ fontSize: "16px", color: "var(--theme-text-secondary)" }}>150%</span>
+              <span className="slider-end-label large" style={{ fontSize: "var(--font-subheading, 16px)", color: "var(--theme-text-secondary)" }}>150%</span>
             </div>
 
             <div className="slider-ticks" style={{ color: "var(--theme-text-secondary)" }}>
@@ -2442,7 +2442,7 @@ export function ExportDataScreen({ back, notify, currentUser, displayName }: Exp
             <SettingsIcon name="download" />
           </div>
           <h3 style={{ textAlign: "center", margin: "0 0 6px" }}>Download Personal Wellness Archive</h3>
-          <p style={{ textAlign: "center", color: "var(--muted)", fontSize: "12px", margin: "0 0 16px" }}>
+          <p style={{ textAlign: "center", color: "var(--theme-text-secondary)", fontSize: "var(--font-caption, 12px)", margin: "0 0 16px" }}>
             ONY respects your digital sovereignty. You can download a complete, readable JSON archive of your account settings, mood entries, and reflections.
           </p>
 
