@@ -14,6 +14,14 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: emitSourcemaps ? "inline" : false,
       minify: !emitSourcemaps,
+      rolldownOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("maplibre-gl")) return "maplibre-gl";
+            if (id.includes("world-atlas")) return "world-atlas";
+          },
+        },
+      },
     },
 
     plugins: [
@@ -64,8 +72,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,webp}"],
-          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          globPatterns: ["**/*.{js,mjs,css,html,ico,png,svg,webp}"],
+          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
           runtimeCaching: [],
           cleanupOutdatedCaches: true,
           navigateFallback: "/index.html",

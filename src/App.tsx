@@ -47,6 +47,8 @@ import {
   saveConversation,
   deleteConversation,
   listGlobeUsers,
+  subscribeVisibleGlobeUsers,
+  updateGlobeUserNode,
   listCommunityPosts,
   createCommunityPost,
   toggleCommunityPostLike,
@@ -96,6 +98,25 @@ import {
   type FirestoreCommunityMessage,
   type FirestoreTrustedContactRequest,
 } from "./firebase/firestore";
+import GlobeView, { type GlobeCameraTarget } from "./components/globe/GlobeView";
+import Fallback2DMap from "./components/globe/Fallback2DMap";
+import { ListViewPanel } from "./components/globe/ClusterLayer";
+import GlobeBreadcrumb from "./components/globe/GlobeBreadcrumb";
+import GlobeControls from "./components/globe/GlobeControls";
+import NodeSheet from "./components/globe/NodeSheet";
+import {
+  buildGlobeDisplayItems,
+  buildHierarchicalList,
+  coarsenCoordinates,
+  getHierarchyLevelForZoom,
+  getLocalizedMoodLabel,
+  normalizeMoodKey,
+  resolveAndCoarsenLocation,
+  resolveNodeMoodKey,
+  type GlobeClusterDisplayItem,
+  type GlobeNodeDisplayItem,
+  type ListCountryGroup,
+} from "./data/worldRegions";
 import { LanguageProvider, useLanguage } from "./i18n/LanguageContext";
 import {
   type AppLanguage,
@@ -306,7 +327,7 @@ function deduplicateMoodEntriesByDay(entries: MoodEntry[]): MoodEntry[] {
       (b.createdAt || "").localeCompare(a.createdAt || ""),
   );
 }
-type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
+type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodKey?: string; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
 type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
 type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string; imageUrl?: string; firestoreId?: string };
 type Post = FirestoreCommunityPost;
@@ -1075,9 +1096,11 @@ function AppInner() {
     };
   }, [pendingInvite?.inviterUid]);
 
-  // Seed shared database collections (Globe, Community Posts, Merchants) and fetch live from Firestore
+  // Seed shared database collections (Globe, Community Posts, Merchants) and subscribe live from Firestore
   useEffect(() => {
     let active = true;
+    let unsubGlobe: (() => void) | null = null;
+
     async function syncDatabase() {
       setDbSyncing(true);
       try {
@@ -1105,6 +1128,12 @@ function AppInner() {
             action: "DATABASE_SYNCED",
             message: "Connected to Cloud Firestore (ai-studio-onypwa-289f0eda-a42f-43da-8c66-8ac63f5d46a8). Synced live collections.",
           }).catch(() => {});
+
+          unsubGlobe = subscribeVisibleGlobeUsers((liveUsers) => {
+            if (active && liveUsers.length > 0) {
+              setGlobeUsers(liveUsers);
+            }
+          });
         }
       } catch (err) {
         console.warn("[ONY] Database fetch warning:", err);
@@ -1115,6 +1144,7 @@ function AppInner() {
     syncDatabase();
     return () => {
       active = false;
+      if (unsubGlobe) unsubGlobe();
     };
   }, []);
 
@@ -1910,7 +1940,7 @@ function AppInner() {
                     onSheetOpenChange={setIsJournalSheetOpen}
                   />
                 )}
-                {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
+                {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} setGlobeUsers={setGlobeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
                 {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
                 {tab === "profile" && (
                   <Profile
@@ -4998,12 +5028,33 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
 
 
 
+const GLOBE_PREFS_STORAGE_KEY = "ony_globe_node_prefs_v1";
+
+function loadCachedGlobePrefs(): { discoverable?: boolean; acceptsMessages?: boolean } {
+  try {
+    const raw = localStorage.getItem(GLOBE_PREFS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as { discoverable?: boolean; acceptsMessages?: boolean };
+  } catch {
+    // ignore storage errors
+  }
+  return {};
+}
+
+function saveCachedGlobePrefs(prefs: { discoverable: boolean; acceptsMessages: boolean }) {
+  try {
+    localStorage.setItem(GLOBE_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function Community({
   navigate,
   openPost,
   openMember,
   notify,
   globeUsers = DEFAULT_GLOBE_USERS,
+  setGlobeUsers,
   posts = [],
   currentUid = "guest_local_user",
   currentUserName = "ONY Member",
@@ -5020,6 +5071,7 @@ function Community({
   openMember: (user: GlobeUser) => void;
   notify: (s: string) => void;
   globeUsers?: GlobeUser[];
+  setGlobeUsers?: React.Dispatch<React.SetStateAction<GlobeUser[]>>;
   posts?: Post[];
   setPosts?: React.Dispatch<React.SetStateAction<Post[]>>;
   currentUid?: string;
@@ -5048,31 +5100,172 @@ function Community({
     }
     return "globe";
   });
-  const [selectedNode, setSelectedNode] = useState<number | null>(null);
-  const [rotation, setRotation] = useState(0);
-  const [regionLevel, setRegionLevel] = useState(0);
-  const [locationChoice, setLocationChoice] = useState<"none" | "declined" | "allowed">(() => userCoords ? "allowed" : "none");
-  const [manualArea, setManualArea] = useState(userCoords?.regionName || "");
+
+  const meFromDb = globeUsers.find((u) => u.id === 0 || u.isMe);
+  const cachedPrefs = useMemo(() => loadCachedGlobePrefs(), []);
+
+  const [discoverable, setDiscoverableState] = useState<boolean>(
+    () => cachedPrefs.discoverable ?? meFromDb?.discoverable ?? true,
+  );
+  const [acceptMessages, setAcceptMessagesState] = useState<boolean>(
+    () => cachedPrefs.acceptsMessages ?? meFromDb?.acceptsMessages ?? true,
+  );
+
+  // Sync from live Firestore updates on own node
+  useEffect(() => {
+    if (!meFromDb) return;
+    setDiscoverableState(meFromDb.discoverable);
+    setAcceptMessagesState(meFromDb.acceptsMessages);
+    saveCachedGlobePrefs({
+      discoverable: meFromDb.discoverable,
+      acceptsMessages: meFromDb.acceptsMessages,
+    });
+  }, [meFromDb?.discoverable, meFromDb?.acceptsMessages]);
+
+  const [selectedNodeInfo, setSelectedNodeInfo] = useState<{
+    user: GlobeUser;
+    country: string;
+    state: string;
+    isHiddenSelf: boolean;
+  } | null>(null);
+  const [globeMode, setGlobeMode] = useState<"globe" | "list">("globe");
+  const [use2DFallback, setUse2DFallback] = useState(false);
+  const [webglErrorDetail, setWebglErrorDetail] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [visibilitySheetOpen, setVisibilitySheetOpen] = useState(false);
+  const [mapZoom, setMapZoom] = useState(1.55);
+  const [focusedCountry, setFocusedCountry] = useState<string | null>(null);
+  const [focusedState, setFocusedState] = useState<string | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<GlobeCameraTarget | null>(null);
+  const [blockedNodeIds, setBlockedNodeIds] = useState<Set<number>>(() => new Set());
+  const privacySettingsRef = useRef<HTMLDivElement | null>(null);
+
+  const [locationChoice, setLocationChoice] = useState<"none" | "declined" | "allowed">(() =>
+    userCoords ? "allowed" : "none",
+  );
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [discoverable, setDiscoverable] = useState(true);
-  const [acceptMessages, setAcceptMessages] = useState(true);
+
+  // Store language-neutral mood key on nodes; localize display at render time
+  const myMoodKey = latestMood ? normalizeMoodKey(latestMood.label, latestMood.level) : "calm";
+  const myMoodLabel = getLocalizedMoodLabel(myMoodKey, language);
+  const myMoodGlow: "bright" | "soft" | "dim" | "neutral" = latestMood
+    ? latestMood.level >= 4
+      ? "bright"
+      : latestMood.level === 3
+        ? "soft"
+        : "dim"
+    : "bright";
+
+  const flyTo = useCallback(
+    (lon: number, lat: number, zoom: number, country?: string | null, state?: string | null) => {
+      setFocusedCountry(country ?? null);
+      setFocusedState(state ?? null);
+      setCameraTarget({ lon, lat, zoom, seq: Date.now() + Math.random() });
+    },
+    [],
+  );
+
+  // Coarsened coordinates derived from either userCoords or node 0's saved location
+  const myCoarsenedLocation = useMemo(() => {
+    const rawLat = userCoords ? userCoords.lat : meFromDb?.lat ?? DEFAULT_GLOBE_USERS[0].lat;
+    const rawLon = userCoords ? userCoords.lng : meFromDb?.lon ?? DEFAULT_GLOBE_USERS[0].lon;
+    return coarsenCoordinates(rawLat, rawLon, 0);
+  }, [userCoords, meFromDb?.lat, meFromDb?.lon]);
+
+  // Persist "Appear on the globe" toggle directly to Firestore + state (live update, no restart)
+  const handleSetDiscoverable = useCallback(
+    (next: boolean) => {
+      setDiscoverableState(next);
+      saveCachedGlobePrefs({ discoverable: next, acceptsMessages: acceptMessages });
+      if (setGlobeUsers) {
+        setGlobeUsers((prev) =>
+          prev.map((u) => (u.id === 0 || u.isMe ? { ...u, discoverable: next } : u)),
+        );
+      }
+      void updateGlobeUserNode(0, {
+        discoverable: next,
+        moodGlow: myMoodGlow,
+        moodKey: myMoodKey,
+        moodLabel: myMoodKey,
+        lat: myCoarsenedLocation.lat,
+        lon: myCoarsenedLocation.lon,
+      }).catch((e) => console.warn("[ONY Globe] Could not persist discoverable:", e));
+
+      notify(
+        next
+          ? language === "Bahasa Melayu"
+            ? "Nod anda kini kelihatan di glob"
+            : language === "中文"
+              ? "您的匿名微光已在星球上可见"
+              : "Your anonymous node is now visible on the globe"
+          : language === "Bahasa Melayu"
+            ? "Nod anda telah disembunyikan daripada orang lain"
+            : language === "中文"
+              ? "您的节点已对其他人隐藏"
+              : "Your node is now hidden from everyone on the globe",
+      );
+    },
+    [acceptMessages, setGlobeUsers, myMoodGlow, myMoodKey, myCoarsenedLocation, notify, language],
+  );
+
+  // Persist "Receive supportive messages" toggle directly to Firestore + state
+  const handleSetAcceptMessages = useCallback(
+    (next: boolean) => {
+      setAcceptMessagesState(next);
+      saveCachedGlobePrefs({ discoverable, acceptsMessages: next });
+      if (setGlobeUsers) {
+        setGlobeUsers((prev) =>
+          prev.map((u) => (u.id === 0 || u.isMe ? { ...u, acceptsMessages: next } : u)),
+        );
+      }
+      void updateGlobeUserNode(0, {
+        acceptsMessages: next,
+      }).catch((e) => console.warn("[ONY Globe] Could not persist acceptsMessages:", e));
+
+      notify(
+        next
+          ? language === "Bahasa Melayu"
+            ? "Mesej sokongan diaktifkan"
+            : language === "中文"
+              ? "已开启接收匿名鼓励留言"
+              : "Supportive messages enabled for your node"
+          : language === "Bahasa Melayu"
+            ? "Mesej sokongan dimatikan"
+            : language === "中文"
+              ? "已关闭接收匿名留言"
+              : "Supportive messages turned off for your node",
+      );
+    },
+    [discoverable, setGlobeUsers, notify, language],
+  );
 
   const handleEnableLocation = async () => {
     setDetectingLocation(true);
     setLocationError(null);
     try {
       const coords = await requestDeviceLocation();
+      const coarse = coarsenCoordinates(coords.lat, coords.lng, 0);
       if (setUserCoords) setUserCoords(coords);
       setLocationChoice("allowed");
-      setRegionLevel(1);
-      setRotation(-102);
+      if (setGlobeUsers) {
+        setGlobeUsers((prev) =>
+          prev.map((u) =>
+            u.id === 0 || u.isMe ? { ...u, lat: coarse.lat, lon: coarse.lon } : u,
+          ),
+        );
+      }
+      void updateGlobeUserNode(0, {
+        lat: coarse.lat,
+        lon: coarse.lon,
+      }).catch(() => {});
+      flyTo(coarse.lon, coarse.lat, 5.2, coarse.country, coarse.state);
       notify(
         language === "Bahasa Melayu"
-          ? `Lokasi dikesan: ${coords.regionName || "Malaysia"}`
+          ? `Kawasan anggaran ditetapkan: ${coarse.state}, ${coarse.country}`
           : language === "中文"
-            ? `已成功定位：${coords.regionName || "马来西亚"}`
-            : `Location detected: ${coords.regionName || "Malaysia"}`
+            ? `已模糊定位至大区：${coarse.state}，${coarse.country}`
+            : `Coarse regional area set: ${coarse.state}, ${coarse.country}`,
       );
     } catch (err: any) {
       setLocationChoice("declined");
@@ -5085,17 +5278,28 @@ function Community({
 
   const handleSelectManualArea = (area: MalaysianAreaItem) => {
     const coords = createManualLocation(area);
+    const coarse = coarsenCoordinates(coords.lat, coords.lng, 0);
     if (setUserCoords) setUserCoords(coords);
     setLocationChoice("allowed");
     setLocationError(null);
-    setRegionLevel(1);
-    setRotation(-102);
+    if (setGlobeUsers) {
+      setGlobeUsers((prev) =>
+        prev.map((u) =>
+          u.id === 0 || u.isMe ? { ...u, lat: coarse.lat, lon: coarse.lon } : u,
+        ),
+      );
+    }
+    void updateGlobeUserNode(0, {
+      lat: coarse.lat,
+      lon: coarse.lon,
+    }).catch(() => {});
+    flyTo(coarse.lon, coarse.lat, 5.2, coarse.country, coarse.state);
     notify(
       language === "Bahasa Melayu"
         ? `Kawasan serantau: ${area.nameBm}, ${area.state}`
         : language === "中文"
           ? `已将大区设为：${area.nameZh}（${area.state}）`
-          : `Regional area set to: ${area.nameEn}, ${area.state}`
+          : `Regional area set to: ${area.nameEn}, ${area.state}`,
     );
   };
 
@@ -5103,13 +5307,21 @@ function Community({
     clearCachedLocation();
     if (setUserCoords) setUserCoords(null);
     setLocationChoice("none");
-    setManualArea("");
+    const defaultCoarse = coarsenCoordinates(
+      DEFAULT_GLOBE_USERS[0].lat,
+      DEFAULT_GLOBE_USERS[0].lon,
+      0,
+    );
+    void updateGlobeUserNode(0, {
+      lat: defaultCoarse.lat,
+      lon: defaultCoarse.lon,
+    }).catch(() => {});
     notify(
       language === "Bahasa Melayu"
         ? "Lokasi peranti dipadamkan"
         : language === "中文"
           ? "已清除设备定位"
-          : "Device location cleared"
+          : "Device location cleared",
     );
   };
 
@@ -5123,15 +5335,6 @@ function Community({
   const mySupportMessages = propMySupportMessages || internalSupportMessages;
   const setMySupportMessages = propSetMySupportMessages || setInternalSupportMessages;
   const [loadingMyMessages, setLoadingMyMessages] = useState(false);
-
-  const myMoodLabel = latestMood ? latestMood.label : "Calm";
-  const myMoodGlow: "bright" | "soft" | "dim" | "neutral" = latestMood
-    ? latestMood.level >= 4
-      ? "bright"
-      : latestMood.level === 3
-        ? "soft"
-        : "dim"
-    : "bright";
 
   const fetchMySupportMessages = async () => {
     setLoadingMyMessages(true);
@@ -5176,30 +5379,8 @@ function Community({
     }
   }, [view]);
 
-
-  const regions = [
-    {
-      label: language === "Bahasa Melayu" ? "Dunia" : language === "中文" ? "全球" : "World",
-      note: language === "Bahasa Melayu" ? "Ahli tanpa nama yang boleh ditemui merentasi kawasan luas dan selamat privasi" : language === "中文" ? "跨越广阔安全大区的匿名成员" : "Discoverable anonymous members across broad, privacy-safe regions",
-    },
-    {
-      label: language === "Bahasa Melayu" ? "Malaysia" : language === "中文" ? "马来西亚" : "Malaysia",
-      note: language === "Bahasa Melayu" ? "Paparan anggaran negara; tiada lokasi tepat pengguna" : language === "中文" ? "全国概览视图；绝不公开精确坐标" : "Approximate country view; no precise user locations",
-    },
-    {
-      label: language === "Bahasa Melayu" ? "Selangor" : language === "中文" ? "雪兰莪" : "Selangor",
-      note: language === "Bahasa Melayu" ? "Paparan negeri anggaran dengan lebih ramai ahli yang boleh ditemui" : language === "中文" ? "州属概览视图，发现更多同行伙伴" : "Approximate state view with more discoverable members",
-    },
-    {
-      label: language === "Bahasa Melayu" ? "Daerah Petaling" : language === "中文" ? "八打灵区" : "Petaling district",
-      note: language === "Bahasa Melayu" ? "Kawasan wilayah luas; bukan alamat tepat" : language === "中文" ? "宽泛大区视图；绝非具体门牌住址" : "Broad regional area; never an exact address",
-    },
-  ];
-  const region = regions[regionLevel];
-  const drag = useRef({ active: false, moved: false, x: 0, rotation: 0 });
-
-  // Ensure the user's own node (id === 0 / isMe) reflects current discoverable/acceptMessages/mood settings
-  const normalizedGlobeUsers: GlobeUser[] = (() => {
+  // Ensure the user's own node (id === 0 / isMe) reflects persisted privacy toggles, mood & coarsened coordinates
+  const normalizedGlobeUsers: GlobeUser[] = useMemo(() => {
     const hasMe = globeUsers.some((u) => u.id === 0 || u.isMe);
     const baseList = hasMe ? globeUsers : [DEFAULT_GLOBE_USERS[0], ...globeUsers];
     return baseList.map((u) =>
@@ -5209,186 +5390,361 @@ function Community({
             id: 0,
             isMe: true,
             moodGlow: myMoodGlow,
-            moodLabel: myMoodLabel,
+            moodKey: myMoodKey,
+            moodLabel: myMoodKey,
             discoverable,
             acceptsMessages: acceptMessages,
-            lat: userCoords ? userCoords.lat : u.lat,
-            lon: userCoords ? userCoords.lng : u.lon,
+            lat: myCoarsenedLocation.lat,
+            lon: myCoarsenedLocation.lon,
           }
         : u,
     );
-  })();
+  }, [globeUsers, myMoodGlow, myMoodKey, discoverable, acceptMessages, myCoarsenedLocation]);
 
-  const visibleUsers = normalizedGlobeUsers.filter((user) => user.discoverable && user.minLevel <= regionLevel);
-  const selectedUser = normalizedGlobeUsers.find((user) => user.id === selectedNode) || null;
+  const myNodeResolved = useMemo(
+    () => resolveAndCoarsenLocation(myCoarsenedLocation.lat, myCoarsenedLocation.lon, 0),
+    [myCoarsenedLocation],
+  );
+
+  const displayData = useMemo(
+    () => buildGlobeDisplayItems(normalizedGlobeUsers, mapZoom, blockedNodeIds, focusedCountry),
+    [normalizedGlobeUsers, mapZoom, blockedNodeIds, focusedCountry],
+  );
+
+  const listGroups = useMemo(
+    () =>
+      buildHierarchicalList(
+        normalizedGlobeUsers,
+        blockedNodeIds,
+        myNodeResolved.country,
+        myNodeResolved.state,
+      ),
+    [normalizedGlobeUsers, blockedNodeIds, myNodeResolved.country, myNodeResolved.state],
+  );
+
+  const myNodeObject = normalizedGlobeUsers.find((u) => u.id === 0 || u.isMe) || DEFAULT_GLOBE_USERS[0];
+
+  const breadcrumbVisibleCount = useMemo(() => {
+    if (displayData.level === "state" && focusedCountry && focusedState) {
+      const cGroup = listGroups.find((g) => g.country === focusedCountry);
+      const sGroup = cGroup?.states.find((s) => s.state === focusedState);
+      if (sGroup) return sGroup.count;
+    }
+    if (displayData.level !== "world" && focusedCountry) {
+      const cGroup = listGroups.find((g) => g.country === focusedCountry);
+      if (cGroup) return cGroup.count;
+    }
+    return displayData.visibleCount;
+  }, [displayData.level, displayData.visibleCount, focusedCountry, focusedState, listGroups]);
+
+  const handleClusterTap = useCallback(
+    (cluster: GlobeClusterDisplayItem) => {
+      setMapZoom(cluster.targetZoom);
+      flyTo(
+        cluster.lon,
+        cluster.lat,
+        cluster.targetZoom,
+        cluster.countryName ?? focusedCountry,
+        cluster.stateName ?? null,
+      );
+    },
+    [flyTo, focusedCountry],
+  );
+
+  const handleNodeTap = useCallback((nodeItem: GlobeNodeDisplayItem) => {
+    setVisibilitySheetOpen(false);
+    setSelectedNodeInfo({
+      user: nodeItem.user,
+      country: nodeItem.countryName,
+      state: nodeItem.stateName,
+      isHiddenSelf: nodeItem.isHiddenSelf,
+    });
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    setSelectedNodeInfo(null);
+    setMapZoom(1.55);
+    flyTo(104.5, 9.5, 1.55, null, null);
+  }, [flyTo]);
+
+  const handleFindMyNode = useCallback(() => {
+    const isHidden = !myNodeObject.discoverable;
+    setVisibilitySheetOpen(false);
+    if (globeMode === "globe") {
+      setMapZoom(5.5);
+      flyTo(
+        myCoarsenedLocation.lon,
+        myCoarsenedLocation.lat,
+        5.5,
+        myNodeResolved.country,
+        myNodeResolved.state,
+      );
+    }
+    setSelectedNodeInfo({
+      user: myNodeObject,
+      country: myNodeResolved.country,
+      state: myNodeResolved.state,
+      isHiddenSelf: isHidden,
+    });
+  }, [globeMode, flyTo, myCoarsenedLocation, myNodeObject, myNodeResolved]);
+
+  const handleBreadcrumbSelect = useCallback(
+    (target: "world" | "country") => {
+      if (target === "world") {
+        handleResetView();
+      } else if (focusedCountry) {
+        const match = listGroups.find((g) => g.country === focusedCountry);
+        setMapZoom(3.4);
+        flyTo(
+          match ? match.lon : myNodeResolved.countryLon,
+          match ? match.lat : myNodeResolved.countryLat,
+          3.4,
+          focusedCountry,
+          null,
+        );
+      }
+    },
+    [handleResetView, focusedCountry, listGroups, flyTo, myNodeResolved],
+  );
+
+  const handleDrillCountry = useCallback(
+    (group: ListCountryGroup) => {
+      setMapZoom(3.4);
+      flyTo(group.lon, group.lat, 3.4, group.country, null);
+    },
+    [flyTo],
+  );
+
+  const handleDrillState = useCallback(
+    (country: string, stateGroup: ListCountryGroup["states"][number]) => {
+      setMapZoom(5.4);
+      flyTo(stateGroup.lon, stateGroup.lat, 5.4, country, stateGroup.state);
+    },
+    [flyTo],
+  );
+
+  const handleMapZoomChange = useCallback(
+    (zoom: number) => {
+      setMapZoom(zoom);
+      const nextLvl = getHierarchyLevelForZoom(zoom);
+      if (nextLvl === "world" && (focusedCountry || focusedState)) {
+        setFocusedCountry(null);
+        setFocusedState(null);
+      } else if (nextLvl === "country" && focusedState) {
+        setFocusedState(null);
+      }
+    },
+    [focusedCountry, focusedState],
+  );
+
   const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title={t.community_title} subtitle={t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className="page-pad community-page">
+  return <><PageHeader title={t.community_title} subtitle={view === "globe" ? undefined : t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className={`page-pad community-page ${view === "globe" ? "globe-tab-active" : ""}`}>
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
       <Button variant={view === "myNode" ? "primary" : "secondary"} onClick={() => setView("myNode")}>{t.community_my_node} ({mySupportMessages.length})</Button>
     </div>
     {view === "globe" && <>
-      <div className="community-world full-globe">
-        <div className="world-copy">
-          <span className="eyebrow">{t.community_discoverable_eyebrow}</span>
-          <div className="region-breadcrumb">{regions.slice(0, regionLevel + 1).map((item, index) => <span key={item.label}>{index > 0 && "›"} {item.label}</span>)}</div>
-          <h2>{region.label}</h2><p>{region.note}. {language === "Bahasa Melayu" ? "Ketik nod bercahaya anda (\"Anda\") atau mana-mana nod ahli untuk berhubung." : language === "中文" ? "轻点您发光的节点（\"您\"）或任意成员节点即可互动连结。" : "Tap your glowing node (\"You\") or any member node to connect."}</p>
-        </div>
-        <div className="globe-controls"><Button variant="ghost" disabled={regionLevel === 0} onClick={() => { setRegionLevel((level) => Math.max(0, level - 1)); setSelectedNode(null); }}>{t.community_zoom_out}</Button><span>{visibleUsers.length} {t.community_nodes_count}</span><Button disabled={regionLevel === regions.length - 1} onClick={() => { setRegionLevel((level) => Math.min(regions.length - 1, level + 1)); setSelectedNode(null); }}>{t.community_zoom_in}</Button></div>
-        {regionLevel > 0 && <Button variant="ghost" className="back-world" onClick={() => { setRegionLevel(0); setSelectedNode(null); }}>{t.community_back_world}</Button>}
-        <div className="globe-stage"><div className={`globe globe-level-${regionLevel}`} aria-label={`Interactive user globe for ${region.label}`} style={{ backgroundPosition: `${rotation * 1.4}px center` }} onPointerDown={(event) => { drag.current = { active: true, moved: false, x: event.clientX, rotation }; if (!(event.target as HTMLElement).closest(".globe-node")) event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (drag.current.active) { const distance = event.clientX - drag.current.x; if (Math.abs(distance) > 5) drag.current.moved = true; setRotation(drag.current.rotation + distance * .7); } }} onPointerUp={() => { drag.current.active = false; }} onPointerCancel={() => { drag.current.active = false; }}><i className="orbit one" /><i className="orbit two" />{visibleUsers.map((user) => {
-          const isMeNode = Boolean(user.isMe || user.id === 0);
-          const angle = (user.lon + rotation) * Math.PI / 180;
-          const depth = Math.cos(angle);
-          const x = 50 + Math.sin(angle) * 43;
-          const y = 50 - user.lat * .48;
-          return (
-            <button
-              aria-label={isMeNode ? `${t.community_you_node}, mood glow ${user.moodLabel}` : `Anonymous member node, mood glow ${user.moodLabel}`}
-              key={user.id}
-              className={`globe-node mood-${user.moodGlow} ${isMeNode ? "is-me" : ""} ${selectedNode === user.id ? "selected" : ""}`}
-              style={{ left: `${x}%`, top: `${y}%`, opacity: depth < -.2 ? .38 : depth * .35 + .65, transform: "translate(-50%, -50%)", zIndex: isMeNode ? 45 : Math.round((depth + 1) * 10) }}
-              onPointerUp={(event) => {
-                if (!drag.current.moved) {
-                  drag.current.active = false;
-                  event.stopPropagation();
-                  setSelectedNode(user.id);
-                }
-              }}
-            >
-              {isMeNode && <small className="my-node-indicator">{t.community_you_node}</small>}
-              <span />
-            </button>
-          );
-        })}</div><span className="rotate-hint">{t.community_globe_pan_hint}</span></div>
+      <div className="globe-stage-shell">
+        <GlobeBreadcrumb
+          level={displayData.level}
+          countryName={focusedCountry || (displayData.level !== "world" ? myNodeResolved.country : null)}
+          stateName={focusedState || (displayData.level === "state" ? myNodeResolved.state : null)}
+          visibleCount={breadcrumbVisibleCount}
+          language={language}
+          onSelectLevel={handleBreadcrumbSelect}
+        />
 
-        {selectedUser && (selectedUser.isMe || selectedUser.id === 0 ? (
-          <div className="node-card user-node-card">
-            <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
-            <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="status-badge">{language === "Bahasa Melayu" ? "Nod Tanpa Nama Anda · Malaysia" : language === "中文" ? "您的匿名节点 · 马来西亚" : "Your Anonymous Node · Malaysia"}</span>
-            <strong>{t.community_your_light}</strong>
-            <p>
-              {language === "Bahasa Melayu"
-                ? `Ahli lain melihat daftar masuk emosi tanpa nama anda (${selectedUser.moodLabel.toLowerCase()}) tanpa identiti peribadi atau lokasi tepat. Anda mempunyai `
-                : language === "中文"
-                ? `其他人仅能看到您的匿名心情状态（${selectedUser.moodLabel.toLowerCase()}），零个人身份或具体位置暴露。您已收到来自同伴的 `
-                : `Others see your anonymous mood check-in (${selectedUser.moodLabel.toLowerCase()}) with zero personal identity or exact location. You have `}
-              <strong>{mySupportMessages.length}</strong>{" "}
-              {language === "Bahasa Melayu" ? "mesej sokongan daripada orang lain." : language === "中文" ? "条暖心留言。" : mySupportMessages.length === 1 ? "support message from others." : "support messages from others."}
-            </p>
-            <div>
-              <Button onClick={() => setView("myNode")}>{t.community_view_support_sent} ({mySupportMessages.length})</Button>
-              <Button variant="secondary" onClick={() => setSelectedNode(null)}>{t.common_close}</Button>
-            </div>
-          </div>
+        {globeMode === "list" ? (
+          <ListViewPanel
+            groups={listGroups}
+            level={displayData.level}
+            focusedCountry={focusedCountry}
+            focusedState={focusedState}
+            hiddenSelfNode={!discoverable ? myNodeObject : null}
+            hiddenSelfRegion={!discoverable ? { country: myNodeResolved.country, state: myNodeResolved.state } : null}
+            language={language}
+            onDrillCountry={handleDrillCountry}
+            onDrillState={handleDrillState}
+            onSelectNode={(user, country, state, isHiddenSelf = false) => {
+              setVisibilitySheetOpen(false);
+              setSelectedNodeInfo({ user, country, state, isHiddenSelf });
+            }}
+          />
+        ) : !use2DFallback ? (
+          <GlobeView
+            items={displayData.items}
+            hiddenSelf={displayData.hiddenSelf}
+            level={displayData.level}
+            selectedNodeId={selectedNodeInfo?.user.id ?? null}
+            cameraTarget={cameraTarget}
+            pauseAutoRotate={Boolean(selectedNodeInfo || visibilitySheetOpen)}
+            loading={Boolean(dbSyncing && normalizedGlobeUsers.length === 0)}
+            retryNonce={retryNonce}
+            language={language}
+            onZoomChange={(zoom) => handleMapZoomChange(zoom)}
+            onClusterTap={handleClusterTap}
+            onNodeTap={handleNodeTap}
+            onWebGlError={(reason) => {
+              setWebglErrorDetail(reason);
+              setUse2DFallback(true);
+            }}
+          />
         ) : (
-          <div className="node-card user-node-card">
-            <Button variant="ghost" className="node-close" onClick={() => setSelectedNode(null)}><Icon name="close" /></Button>
-            <span className={`anonymous-light mood-${selectedUser.moodGlow}`} />
-            <span className="status-badge">{language === "Bahasa Melayu" ? "Ahli Tanpa Nama" : language === "中文" ? "匿名成员" : "Anonymous Member"}</span>
-            <strong>{t.community_someone_here}</strong>
-            <p>
-              {language === "Bahasa Melayu"
-                ? `Cahaya ini menggambarkan daftar masuk emosi pilihan: ${selectedUser.moodLabel.toLowerCase()}. Tiada identiti peribadi atau lokasi tepat dikongsi.`
+          <Fallback2DMap
+            items={displayData.items}
+            hiddenSelf={displayData.hiddenSelf}
+            selectedNodeId={selectedNodeInfo?.user.id ?? null}
+            cameraTarget={cameraTarget}
+            fallbackReason={webglErrorDetail}
+            language={language}
+            onZoomChange={(zoom) => handleMapZoomChange(zoom)}
+            onClusterTap={handleClusterTap}
+            onNodeTap={handleNodeTap}
+            onRetry3D={() => {
+              setUse2DFallback(false);
+              setWebglErrorDetail(null);
+              setRetryNonce((n) => n + 1);
+            }}
+          />
+        )}
+
+        <GlobeControls
+          viewMode={globeMode}
+          discoverable={discoverable}
+          onToggleViewMode={() =>
+            setGlobeMode((prev) => (prev === "globe" ? "list" : "globe"))
+          }
+          onResetView={handleResetView}
+          onFindMyNode={handleFindMyNode}
+          onOpenVisibilitySheet={() => {
+            setSelectedNodeInfo(null);
+            setVisibilitySheetOpen(true);
+          }}
+          onOpenGuidelines={() => navigate("guidelines")}
+          canReset={mapZoom > 1.7 || Boolean(focusedCountry)}
+          language={language}
+        />
+
+        <NodeSheet
+          node={selectedNodeInfo?.user ?? null}
+          countryName={selectedNodeInfo?.country}
+          stateName={selectedNodeInfo?.state}
+          isMe={Boolean(selectedNodeInfo && (selectedNodeInfo.user.isMe || selectedNodeInfo.user.id === 0))}
+          isHiddenSelf={Boolean(selectedNodeInfo?.isHiddenSelf)}
+          mySupportCount={mySupportMessages.length}
+          language={language}
+          onClose={() => setSelectedNodeInfo(null)}
+          onOpenMyMessages={() => {
+            setSelectedNodeInfo(null);
+            setView("myNode");
+          }}
+          onOpenVisibilitySetting={() => {
+            setSelectedNodeInfo(null);
+            setVisibilitySheetOpen(true);
+          }}
+          onConnect={(node) => {
+            setSelectedNodeInfo(null);
+            openMember(node);
+          }}
+          onReport={(node) => {
+            // TODO: Wire to a persistent Firestore moderation/reports collection when backend endpoint is added.
+            notify(
+              language === "Bahasa Melayu"
+                ? `Terima kasih atas laporan anda untuk Ahli #${node.id}. Nod dihantar untuk semakan.`
                 : language === "中文"
-                ? `微光反映可选的心情状态：${selectedUser.moodLabel.toLowerCase()}。绝不共享任何个人身份或精确位置。`
-                : `The light reflects an optional mood check-in: ${selectedUser.moodLabel.toLowerCase()}. No personal identity or precise location is shared.`}
-            </p>
-            {!selectedUser.acceptsMessages && <div className="messages-off-notice"><Icon name="info" />{language === "Bahasa Melayu" ? "Ahli ini kelihatan tetapi tidak menerima mesej sokongan buat masa ini." : language === "中文" ? "该成员目前可见，但暂时关闭了接收支持留言。" : "This member is visible but is not receiving supportive messages right now."}</div>}
-            <div>
-              {selectedUser.acceptsMessages ? <Button onClick={() => openMember(selectedUser)}>{t.community_send_support}</Button> : <Button disabled>{language === "Bahasa Melayu" ? "Mesej sokongan dimatikan" : language === "中文" ? "支持留言已关闭" : "Support messages off"}</Button>}
-              <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih atas laporan anda. Nod ahli ini telah dihantar untuk semakan moderasi." : language === "中文" ? "感谢您的反馈。该成员节点已提交社区审核。" : "Thank you for reporting. This member node has been sent for moderation review.")}>{t.common_report}</Button>
-              <Button variant="ghost" onClick={() => { notify(language === "Bahasa Melayu" ? "Ahli tanpa nama disekat dalam sesi ini" : language === "中文" ? "已在此会话中屏蔽该匿名成员" : "Anonymous member blocked in this session"); setSelectedNode(null); }}>{t.common_block}</Button>
-            </div>
-          </div>
-        ))}
-        <div className="world-legend mood-legend"><span><i className="bright" />{t.community_mood_higher}</span><span><i className="soft" />{t.community_mood_okay}</span><span><i className="dim" />{t.community_mood_lower}</span><span><i className="neutral" />{t.community_mood_none}</span><Button variant="ghost" onClick={() => navigate("guidelines")}>{t.community_guidelines_btn}</Button></div>
-      </div>
-      <div className="globe-privacy-settings"><div><strong>{t.community_appear_globe}</strong><p>{t.community_appear_globe_desc}</p></div><Toggle on={discoverable} setOn={setDiscoverable} /></div>
-      <div className="globe-privacy-settings"><div><strong>{t.community_receive_support}</strong><p>{t.community_receive_support_desc}</p></div><Toggle on={acceptMessages} setOn={setAcceptMessages} /></div>
-      <div className="location-choice">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-          <div>
-            <strong>{t.community_regional_discovery}</strong>
-            <p>{t.community_regional_desc}</p>
-          </div>
-          {userCoords && (
-            <span className="distance-pill" style={{ whiteSpace: "nowrap" }}>
-              <Icon name="mapPin" /> {t.geo_approx_badge}
-            </span>
-          )}
-        </div>
+                  ? `感谢您的反馈，匿名成员 #${node.id} 已提交社区审核。`
+                  : `Thank you for reporting Member #${node.id}. Sent for moderation review.`,
+            );
+            setSelectedNodeInfo(null);
+          }}
+          onBlock={(node) => {
+            // TODO: Persist blocked node IDs once user blocklist backend endpoint is introduced.
+            setBlockedNodeIds((prev) => {
+              const next = new Set(prev);
+              next.add(node.id);
+              return next;
+            });
+            setSelectedNodeInfo(null);
+            notify(
+              language === "Bahasa Melayu"
+                ? "Ahli tanpa nama disekat dan disembunyikan dalam sesi ini"
+                : language === "中文"
+                  ? "已屏蔽该匿名成员并从此视图移除"
+                  : "Anonymous member blocked and hidden for this session",
+            );
+          }}
+        />
 
-        {detectingLocation && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 0" }}>
-            <span className="spinner mini" />
-            <span style={{ fontSize: "12px", color: "var(--muted)" }}>{t.geo_detecting}</span>
-          </div>
-        )}
-
-        {locationChoice === "none" && !detectingLocation && (
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
-            <Button onClick={handleEnableLocation}>
-              <Icon name="location" /> {t.community_enable_area}
-            </Button>
-            <Button variant="secondary" onClick={() => setLocationChoice("declined")}>
-              {t.community_manual_area}
-            </Button>
-          </div>
-        )}
-
-        {locationChoice === "allowed" && !detectingLocation && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
-            <div className="form-success" style={{ margin: 0 }}>
-              <Icon name="check" />
-              <div>
+        {visibilitySheetOpen && (
+          <div
+            className="globe-visibility-sheet-backdrop"
+            role="presentation"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setVisibilitySheetOpen(false);
+            }}
+          >
+            <div
+              className="globe-visibility-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t.community_appear_globe}
+            >
+              <div className="globe-sheet-handle" aria-hidden="true" />
+              <div className="globe-visibility-head">
                 <strong>
                   {language === "Bahasa Melayu"
-                    ? `Kawasan serantau: ${userCoords?.regionName || "Malaysia (Lembah Klang / Pusat)"}`
+                    ? "Keterlihatan Nod Anda"
                     : language === "中文"
-                      ? `区域已设为：${userCoords?.regionName || "马来西亚（中部 / 巴生谷）"}`
-                      : `Regional area: ${userCoords?.regionName || "Malaysia (Central / Klang Valley)"}`}
+                      ? "您的节点可见设置"
+                      : "Your Node Visibility"}
                 </strong>
-                <small style={{ display: "block", color: "var(--muted)", marginTop: "2px", fontSize: "10px" }}>
-                  {userCoords?.accuracy ? `~${userCoords.accuracy}m GPS accuracy · ` : ""}
-                  {t.geo_accuracy_notice}
+                <button
+                  type="button"
+                  className="globe-sheet-mini-icon"
+                  onClick={() => setVisibilitySheetOpen(false)}
+                  aria-label="Close"
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <div className="globe-visibility-row">
+                <div>
+                  <strong>{t.community_appear_globe}</strong>
+                  <p>{t.community_appear_globe_desc}</p>
+                </div>
+                <Toggle on={discoverable} setOn={handleSetDiscoverable} />
+              </div>
+              <div className="globe-visibility-row">
+                <div>
+                  <strong>{t.community_receive_support}</strong>
+                  <p>{t.community_receive_support_desc}</p>
+                </div>
+                <Toggle on={acceptMessages} setOn={handleSetAcceptMessages} />
+              </div>
+              <div className="globe-visibility-footer">
+                <small>
+                  {myNodeResolved.state}, {myNodeResolved.country}
                 </small>
+                <button
+                  type="button"
+                  className="globe-sheet-text-link"
+                  onClick={() => {
+                    setVisibilitySheetOpen(false);
+                    setView("myNode");
+                  }}
+                >
+                  {language === "Bahasa Melayu"
+                    ? "Tetapan kawasan penuh ›"
+                    : language === "中文"
+                      ? "完整区域设置 ›"
+                      : "Full node settings ›"}
+                </button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              <Button variant="secondary" onClick={handleEnableLocation}>
-                <Icon name="refresh" /> {t.geo_retry}
-              </Button>
-              <Button variant="ghost" onClick={handleClearLocation}>
-                {t.geo_clear}
-              </Button>
-              <Button variant="ghost" onClick={() => setLocationChoice("declined")}>
-                <Icon name="search" /> {t.geo_change_area}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {locationChoice === "declined" && !detectingLocation && (
-          <div style={{ marginTop: "8px" }}>
-            <AreaSearchPicker
-              userCoords={userCoords || null}
-              onSelectArea={handleSelectManualArea}
-              onDetectLocation={handleEnableLocation}
-              onClearLocation={handleClearLocation}
-              detectingLocation={detectingLocation}
-              isDenied={Boolean(locationError)}
-              errorMessage={locationError}
-              compact
-              title={locationError ? t.geo_denied_heading : undefined}
-              subtitle={locationError ? t.geo_denied_help_desc : undefined}
-            />
           </div>
         )}
       </div>
-      <div className="community-note"><Icon name="shield" />{t.community_safety_note}</div>
     </>}
     {view === "posts" && <>
       <div className="posts-heading"><div><span className="eyebrow">{t.community_posts_heading}</span><h2>{language === "Bahasa Melayu" ? "Berkongsi dengan lembut, bersama-sama." : language === "中文" ? "轻柔分享，一路相伴。" : "Shared gently, together."}</h2></div><Button variant="ghost" onClick={() => setView("globe")}>{t.community_back_globe}</Button></div>
@@ -5502,8 +5858,10 @@ function Community({
           <Button
             variant="secondary"
             onClick={() => {
-              setSelectedNode(0);
               setView("globe");
+              window.setTimeout(() => {
+                handleFindMyNode();
+              }, 80);
             }}
           >
             {t.community_locate_globe}
@@ -5511,12 +5869,108 @@ function Community({
         </div>
       </div>
 
+      {/* Node Privacy & Broad Regional Discovery settings live inside Your Anonymous Node */}
+      <div ref={privacySettingsRef} className="globe-privacy-settings">
+        <div>
+          <strong>{t.community_appear_globe}</strong>
+          <p>{t.community_appear_globe_desc}</p>
+        </div>
+        <Toggle on={discoverable} setOn={handleSetDiscoverable} />
+      </div>
+      <div className="globe-privacy-settings">
+        <div>
+          <strong>{t.community_receive_support}</strong>
+          <p>{t.community_receive_support_desc}</p>
+        </div>
+        <Toggle on={acceptMessages} setOn={handleSetAcceptMessages} />
+      </div>
+      <div className="location-choice">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+          <div>
+            <strong>{t.community_regional_discovery}</strong>
+            <p>{t.community_regional_desc}</p>
+          </div>
+          {userCoords && (
+            <span className="distance-pill" style={{ whiteSpace: "nowrap" }}>
+              <Icon name="mapPin" /> {t.geo_approx_badge}
+            </span>
+          )}
+        </div>
+
+        {detectingLocation && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 0" }}>
+            <span className="spinner mini" />
+            <span className="geo-detecting-label">{t.geo_detecting}</span>
+          </div>
+        )}
+
+        {locationChoice === "none" && !detectingLocation && (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+            <Button onClick={handleEnableLocation}>
+              <Icon name="location" /> {t.community_enable_area}
+            </Button>
+            <Button variant="secondary" onClick={() => setLocationChoice("declined")}>
+              {t.community_manual_area}
+            </Button>
+          </div>
+        )}
+
+        {locationChoice === "allowed" && !detectingLocation && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+            <div className="form-success" style={{ margin: 0 }}>
+              <Icon name="check" />
+              <div>
+                <strong>
+                  {language === "Bahasa Melayu"
+                    ? `Kawasan serantau: ${myCoarsenedLocation.state}, ${myCoarsenedLocation.country}`
+                    : language === "中文"
+                      ? `区域已设为：${myCoarsenedLocation.state} · ${myCoarsenedLocation.country}`
+                      : `Regional area: ${myCoarsenedLocation.state}, ${myCoarsenedLocation.country}`}
+                </strong>
+                <small className="geo-coarse-caption">
+                  {t.geo_accuracy_notice}
+                </small>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <Button variant="secondary" onClick={handleEnableLocation}>
+                <Icon name="refresh" /> {t.geo_retry}
+              </Button>
+              <Button variant="ghost" onClick={handleClearLocation}>
+                {t.geo_clear}
+              </Button>
+              <Button variant="ghost" onClick={() => setLocationChoice("declined")}>
+                <Icon name="search" /> {t.geo_change_area}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {locationChoice === "declined" && !detectingLocation && (
+          <div style={{ marginTop: "8px" }}>
+            <AreaSearchPicker
+              userCoords={userCoords || null}
+              onSelectArea={handleSelectManualArea}
+              onDetectLocation={handleEnableLocation}
+              onClearLocation={handleClearLocation}
+              detectingLocation={detectingLocation}
+              isDenied={Boolean(locationError)}
+              errorMessage={locationError}
+              compact
+              title={locationError ? t.geo_denied_heading : undefined}
+              subtitle={locationError ? t.geo_denied_help_desc : undefined}
+            />
+          </div>
+        )}
+      </div>
+      <div className="community-note"><Icon name="shield" />{t.community_safety_note}</div>
+
       {loadingMyMessages ? (
         <div className="empty mini-empty"><Icon name="chat" /><p>{language === "Bahasa Melayu" ? "Memuatkan mesej sokongan ke nod anda…" : language === "中文" ? "正在加载发送给您节点的温暖留言…" : "Loading support messages sent to your node…"}</p></div>
       ) : mySupportMessages.length === 0 ? (
         <div className="empty mini-empty">
           <Icon name="chat" />
-          <p>{language === "Bahasa Melayu" ? "Belum ada mesej sokongan dihantar ke nod anda. Pastikan \"Terima mesej sokongan\" diaktifkan di Glob!" : language === "中文" ? "暂无发送给您节点的支持留言。请确认已在星球开启“接收支持留言”！" : "No support messages sent to your node yet. Make sure \"Receive supportive messages\" is enabled on the Globe!"}</p>
+          <p>{language === "Bahasa Melayu" ? "Belum ada mesej sokongan dihantar ke nod anda. Pastikan \"Terima mesej sokongan\" diaktifkan!" : language === "中文" ? "暂无发送给您节点的支持留言。请确认已在上方开启“接收支持留言”！" : "No support messages sent to your node yet. Make sure \"Receive supportive messages\" is enabled above!"}</p>
         </div>
       ) : (
         <div className="community-thread my-node-bubble-list">
@@ -10033,6 +10487,8 @@ function TrustedContact({
 
 function CommunityMember({ back, user, notify }: { back: () => void; user: GlobeUser; notify: (s: string) => void }) {
   const { t, language } = useLanguage();
+  const memberMoodKey = resolveNodeMoodKey(user);
+  const memberMoodLabel = getLocalizedMoodLabel(memberMoodKey, language);
   const [composerMode, setComposerMode] = useState<"text" | "voice">("text");
   const [voice, setVoice] = useState<"idle" | "recording" | "ready">("idle");
   const [recordedVoice, setRecordedVoice] = useState<{ dataUrl: string; duration: number } | null>(null);
@@ -10094,7 +10550,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
             audioDuration: m.audioDuration,
             transcription: m.transcription,
             createdAt: m.createdAt,
-            toUserMood: m.toUserMood || user.moodLabel,
+            toUserMood: m.toUserMood || memberMoodLabel,
           }));
       }
       return [
@@ -10104,9 +10560,9 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           senderAnonymous: `Anonymous Member #${100 + user.id * 37}`,
           recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
           kind: "text",
-          text: `Saw your ${user.moodLabel.toLowerCase()} glow on the globe and wanted to send a warm note of encouragement 🌱 You are not alone.`,
+          text: `Saw your ${memberMoodLabel.toLowerCase()} glow on the globe and wanted to send a warm note of encouragement 🌱 You are not alone.`,
           createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-          toUserMood: user.moodLabel,
+          toUserMood: memberMoodLabel,
         },
         {
           id: `seed_${user.id}_1`,
@@ -10117,7 +10573,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           text: "Encouraging voice note · 0:08",
           audioDuration: 8,
           createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-          toUserMood: user.moodLabel,
+          toUserMood: memberMoodLabel,
         },
       ];
     };
@@ -10148,7 +10604,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
                 audioDuration: m.audioDuration,
                 transcription: m.transcription,
                 createdAt: m.createdAt,
-                toUserMood: m.toUserMood || user.moodLabel,
+                toUserMood: m.toUserMood || memberMoodLabel,
               };
             });
           setMessages(mapped);
@@ -10174,7 +10630,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       if (recorderRef.current) recorderRef.current.cancel();
       if (previewAudioRef.current) previewAudioRef.current.pause();
     };
-  }, [user.id, user.moodLabel]);
+  }, [user.id, memberMoodLabel]);
 
 
   const handleStartVoice = async () => {
@@ -10267,6 +10723,16 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
 
   const handleSendText = async (e?: FormEvent) => {
     if (e) e.preventDefault();
+    if (!user.acceptsMessages) {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Ahli ini tidak menerima mesej buat masa ini."
+          : language === "中文"
+            ? "该成员目前不接收留言。"
+            : "This person isn't accepting messages right now",
+      );
+      return;
+    }
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     if (!consent) {
@@ -10312,6 +10778,11 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       scrollToThreadBottom("smooth");
       notify("Support message sent 🌱");
     } catch (err) {
+      if (err instanceof Error && err.message.startsWith("RECIPIENT_MESSAGES_DISABLED:")) {
+        setText(trimmed);
+        notify("This person isn't accepting messages right now");
+        return;
+      }
       console.warn("Could not save to database, using optimistic delivery:", err);
       const newMsg: MemberMessage = {
         id: `local_${Date.now()}`,
@@ -10333,6 +10804,10 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
   };
 
   const confirmVoice = async () => {
+    if (!user.acceptsMessages) {
+      notify("This person isn't accepting messages right now");
+      return;
+    }
     if (!recordedVoice || sending) return;
     if (!consent) {
       notify("Please keep the supportive guidelines checkbox checked to send.");
@@ -10383,6 +10858,10 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       scrollToThreadBottom("smooth");
       notify("Audio encouragement sent 🎙️");
     } catch (err) {
+      if (err instanceof Error && err.message.startsWith("RECIPIENT_MESSAGES_DISABLED:")) {
+        notify("This person isn't accepting messages right now");
+        return;
+      }
       console.warn("Could not save voice to database, using optimistic delivery:", err);
       const newMsg: MemberMessage = {
         id: `local_${Date.now()}`,
@@ -10443,7 +10922,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     <div className="node-chat-page">
       <PageHeader
         title={`${language === "Bahasa Melayu" ? "Nod Tanpa Nama #" : language === "中文" ? "匿名节点 #" : "Anonymous Node #"}${user.id}`}
-        subtitle={`${language === "Bahasa Melayu" ? "Daftar masuk emosi: " : language === "中文" ? "心情状态: " : "Mood check-in: "}${user.moodLabel} · ${language === "Bahasa Melayu" ? "Bebas identiti" : language === "中文" ? "完全匿名" : "Identity-free"}`}
+        subtitle={`${language === "Bahasa Melayu" ? "Daftar masuk emosi: " : language === "中文" ? "心情状态: " : "Mood check-in: "}${memberMoodLabel} · ${language === "Bahasa Melayu" ? "Bebas identiti" : language === "中文" ? "完全匿名" : "Identity-free"}`}
         back={back}
         action={
           <div style={{ display: "flex", gap: "4px" }}>
@@ -10459,7 +10938,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
           <div>
             <span className="status-badge">{language === "Bahasa Melayu" ? `Ahli tanpa nama · Nod #${user.id}` : language === "中文" ? `匿名成员 · 节点 #${user.id}` : `Anonymous member · Node #${user.id}`}</span>
             <h1>{t.community_someone_here}</h1>
-            <strong>{language === "Bahasa Melayu" ? `Cahaya emosi semasa: ${user.moodLabel}` : language === "中文" ? `当前心情微光: ${user.moodLabel}` : `Current mood glow: ${user.moodLabel}`}</strong>
+            <strong>{language === "Bahasa Melayu" ? `Cahaya emosi semasa: ${memberMoodLabel}` : language === "中文" ? `当前心情微光: ${memberMoodLabel}` : `Current mood glow: ${memberMoodLabel}`}</strong>
             <p>{language === "Bahasa Melayu" ? "Mesej dihantar oleh orang lain atau anda muncul sebagai buih sembang tanpa nama di bawah." : language === "中文" ? "您或他人发送的支持留言将作为匿名气泡显示在下方。" : "Messages sent by others or by you appear as anonymous chat bubbles below."}</p>
           </div>
         </div>
@@ -10535,8 +11014,21 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
         )}
       </div>
 
-      {/* Fixed Bottom Composer Bar: Send Audio or Text (matching Chatbot input UI) */}
+      {/* Fixed Bottom Composer Bar: Send Audio or Text (enforcing acceptsMessages) */}
       <div className="node-chat-fixed chat-composer">
+        {!user.acceptsMessages ? (
+          <div className="messages-off-notice" role="status" style={{ margin: 0 }}>
+            <Icon name="info" />
+            <span>
+              {language === "Bahasa Melayu"
+                ? "Ahli ini tidak menerima mesej sokongan buat masa ini."
+                : language === "中文"
+                  ? "该成员当前未开启接收支持留言。"
+                  : "This person isn't accepting messages right now"}
+            </span>
+          </div>
+        ) : (
+        <>
         {micNotice && (
           <div className="voice-mic-notice-card" style={{ marginBottom: "8px" }}>
             <div className="voice-mic-notice-header">
@@ -10746,6 +11238,8 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
               </button>
             </div>
           </form>
+        )}
+        </>
         )}
       </div>
     </div>

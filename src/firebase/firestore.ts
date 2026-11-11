@@ -7,6 +7,8 @@ import {
   collection,
   getDocs,
   query,
+  where,
+  onSnapshot,
   orderBy,
   limit,
 } from "firebase/firestore";
@@ -142,6 +144,7 @@ export interface FirestoreConversation {
 export interface FirestoreGlobeUser {
   id: number;
   moodGlow: "bright" | "soft" | "dim" | "neutral";
+  moodKey?: string;
   moodLabel: string;
   discoverable: boolean;
   acceptsMessages: boolean;
@@ -883,40 +886,163 @@ export async function deleteUserData(uid: string): Promise<void> {
 // Community Globe Operations
 // ==========================================
 
-export async function listGlobeUsers(): Promise<FirestoreGlobeUser[]> {
+function mapGlobeDocToUser(docId: string, data: Partial<FirestoreGlobeUser>, myNodeDocId = "0"): FirestoreGlobeUser {
+  const id = typeof data.id === "number" ? data.id : Number(docId);
+  return {
+    id,
+    moodGlow: (data.moodGlow as FirestoreGlobeUser["moodGlow"]) || "neutral",
+    moodKey: typeof data.moodKey === "string" ? data.moodKey : undefined,
+    moodLabel: data.moodLabel || "none",
+    discoverable: Boolean(data.discoverable),
+    acceptsMessages: data.acceptsMessages !== false,
+    minLevel: typeof data.minLevel === "number" ? data.minLevel : 0,
+    lon: typeof data.lon === "number" ? data.lon : 101.52,
+    lat: typeof data.lat === "number" ? data.lat : 3.07,
+    isMe: Boolean(data.isMe || docId === myNodeDocId || id === 0),
+  };
+}
+
+/**
+ * Fetches ONLY discoverable globe nodes at the Firestore query layer
+ * (`where("discoverable", "==", true)`), plus the caller's own node document
+ * so the owner can see and toggle their own hidden state without exposing
+ * any hidden peers over the network.
+ */
+export async function listGlobeUsers(myNodeDocId = "0"): Promise<FirestoreGlobeUser[]> {
   const path = "globeUsers";
   try {
     const colRef = collection(db, "globeUsers");
-    const snap = await getDocs(colRef);
-    const globeDocs = snap.docs.filter((d) => {
-      const raw = d.data() as Record<string, unknown>;
-      return /^\d+$/.test(d.id) && !raw.recordType && typeof raw.moodGlow === "string";
-    });
-    if (globeDocs.length === 0) return DEFAULT_GLOBE_USERS;
-    const loaded: FirestoreGlobeUser[] = globeDocs
-      .map((d) => {
-        const data = d.data() as FirestoreGlobeUser;
-        const id = data.id ?? Number(d.id);
-        return {
-          id,
-          moodGlow: data.moodGlow,
-          moodLabel: data.moodLabel,
-          discoverable: data.discoverable,
-          acceptsMessages: data.acceptsMessages,
-          minLevel: data.minLevel,
-          lon: data.lon,
-          lat: data.lat,
-          isMe: Boolean(data.isMe || id === 0),
-        };
-      })
-      .sort((a, b) => a.id - b.id);
+    const visibleQuery = query(colRef, where("discoverable", "==", true));
+    const [visibleSnap, mySnap] = await Promise.all([
+      getDocs(visibleQuery),
+      getDoc(doc(db, "globeUsers", myNodeDocId)).catch(() => null),
+    ]);
 
-    if (!loaded.some((u) => u.id === 0 || u.isMe)) {
-      loaded.unshift({ ...DEFAULT_GLOBE_USERS[0], isMe: true });
+    const peerDocs = visibleSnap.docs.filter((d) => {
+      const raw = d.data() as Record<string, unknown>;
+      return /^\d+$/.test(d.id) && !raw.recordType && typeof raw.moodGlow === "string" && raw.discoverable === true;
+    });
+
+    if (peerDocs.length === 0 && (!mySnap || !mySnap.exists())) {
+      // Never return hidden nodes (e.g. discoverable === false) in fallback peer list
+      return DEFAULT_GLOBE_USERS.filter((u) => u.discoverable || u.id === 0 || u.isMe);
     }
-    return loaded;
+
+    const byId = new Map<number, FirestoreGlobeUser>();
+    for (const d of peerDocs) {
+      const mapped = mapGlobeDocToUser(d.id, d.data() as Partial<FirestoreGlobeUser>, myNodeDocId);
+      if (mapped.discoverable) {
+        byId.set(mapped.id, mapped);
+      }
+    }
+
+    if (mySnap && mySnap.exists()) {
+      const raw = mySnap.data() as Record<string, unknown>;
+      if (!raw.recordType && typeof raw.moodGlow === "string") {
+        const myNode = mapGlobeDocToUser(mySnap.id, raw as Partial<FirestoreGlobeUser>, myNodeDocId);
+        byId.set(myNode.id, { ...myNode, isMe: true });
+      }
+    } else if (!byId.has(0)) {
+      byId.set(0, { ...DEFAULT_GLOBE_USERS[0], isMe: true });
+    }
+
+    return Array.from(byId.values()).sort((a, b) => a.id - b.id);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+/**
+ * Real-time subscription to discoverable globe peers (`where("discoverable", "==", true)`)
+ * and the current user's own node so hide/show & mood updates sync live without restart.
+ */
+export function subscribeVisibleGlobeUsers(
+  onUpdate: (users: FirestoreGlobeUser[]) => void,
+  myNodeDocId = "0",
+): () => void {
+  const colRef = collection(db, "globeUsers");
+  const visibleQuery = query(colRef, where("discoverable", "==", true));
+
+  let latestPeers: FirestoreGlobeUser[] = [];
+  let latestMe: FirestoreGlobeUser | null = null;
+  let peersReady = false;
+
+  const emit = () => {
+    if (!peersReady && !latestMe) return;
+    const byId = new Map<number, FirestoreGlobeUser>();
+    for (const peer of latestPeers) {
+      if (peer.discoverable) {
+        byId.set(peer.id, peer);
+      }
+    }
+    if (latestMe) {
+      byId.set(latestMe.id, { ...latestMe, isMe: true });
+    } else if (!byId.has(0)) {
+      byId.set(0, { ...DEFAULT_GLOBE_USERS[0], isMe: true });
+    }
+    onUpdate(Array.from(byId.values()).sort((a, b) => a.id - b.id));
+  };
+
+  const unsubPeers = onSnapshot(
+    visibleQuery,
+    (snap) => {
+      peersReady = true;
+      latestPeers = snap.docs
+        .filter((d) => {
+          const raw = d.data() as Record<string, unknown>;
+          return /^\d+$/.test(d.id) && !raw.recordType && typeof raw.moodGlow === "string" && raw.discoverable === true;
+        })
+        .map((d) => mapGlobeDocToUser(d.id, d.data() as Partial<FirestoreGlobeUser>, myNodeDocId));
+      emit();
+    },
+    (err) => {
+      console.warn("[ONY Globe] Live peer listener notice:", err);
+    },
+  );
+
+  const unsubMe = onSnapshot(
+    doc(db, "globeUsers", myNodeDocId),
+    (snap) => {
+      if (snap.exists()) {
+        const raw = snap.data() as Record<string, unknown>;
+        if (!raw.recordType && typeof raw.moodGlow === "string") {
+          latestMe = mapGlobeDocToUser(snap.id, raw as Partial<FirestoreGlobeUser>, myNodeDocId);
+        }
+      }
+      emit();
+    },
+    (err) => {
+      console.warn("[ONY Globe] Own node listener notice:", err);
+    },
+  );
+
+  return () => {
+    unsubPeers();
+    unsubMe();
+  };
+}
+
+/**
+ * Persists updates to the user's existing globe node document in `globeUsers`.
+ */
+export async function updateGlobeUserNode(
+  nodeDocId: string | number,
+  patch: Partial<FirestoreGlobeUser>,
+): Promise<void> {
+  const idStr = String(nodeDocId);
+  const path = `globeUsers/${idStr}`;
+  try {
+    const ref = doc(db, "globeUsers", idStr);
+    await setDoc(
+      ref,
+      {
+        id: Number.isFinite(Number(idStr)) ? Number(idStr) : 0,
+        ...patch,
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
@@ -1546,11 +1672,31 @@ export async function createCommunityMessage(
 ): Promise<string> {
   const path = "communityMessages";
   try {
+    // Data-layer enforcement: verify recipient node exists and accepts messages
+    if (message.toUserId) {
+      const recipientRef = doc(db, "globeUsers", String(message.toUserId));
+      const recipientSnap = await getDoc(recipientRef).catch(() => null);
+      if (recipientSnap && recipientSnap.exists()) {
+        const recipientData = recipientSnap.data() as Partial<FirestoreGlobeUser>;
+        if (recipientData.acceptsMessages === false) {
+          throw new Error("RECIPIENT_MESSAGES_DISABLED: This person is not accepting supportive messages right now.");
+        }
+      } else {
+        const fallbackNode = DEFAULT_GLOBE_USERS.find((u) => String(u.id) === String(message.toUserId));
+        if (fallbackNode && fallbackNode.acceptsMessages === false) {
+          throw new Error("RECIPIENT_MESSAGES_DISABLED: This person is not accepting supportive messages right now.");
+        }
+      }
+    }
+
     const colRef = collection(db, "communityMessages");
     const newDocRef = doc(colRef);
     await setDoc(newDocRef, message);
     return newDocRef.id;
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("RECIPIENT_MESSAGES_DISABLED:")) {
+      throw error;
+    }
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
@@ -1560,18 +1706,18 @@ export async function createCommunityMessage(
 // ==========================================
 
 export const DEFAULT_GLOBE_USERS: FirestoreGlobeUser[] = [
-  { id: 0, moodGlow: "bright", moodLabel: "Calm", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 101, lat: 3, isMe: true },
-  { id: 1, moodGlow: "bright", moodLabel: "Good", discoverable: true, acceptsMessages: true, minLevel: 0, lon: -145, lat: 38 },
-  { id: 2, moodGlow: "soft", moodLabel: "Okay", discoverable: true, acceptsMessages: false, minLevel: 0, lon: -45, lat: 24 },
-  { id: 3, moodGlow: "dim", moodLabel: "Low", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 70, lat: -4 },
-  { id: 4, moodGlow: "neutral", moodLabel: "No check-in shared", discoverable: true, acceptsMessages: false, minLevel: 0, lon: 150, lat: 28 },
-  { id: 5, moodGlow: "bright", moodLabel: "Great", discoverable: true, acceptsMessages: false, minLevel: 1, lon: 96, lat: 12 },
-  { id: 6, moodGlow: "dim", moodLabel: "Very low", discoverable: true, acceptsMessages: true, minLevel: 1, lon: 118, lat: -12 },
-  { id: 7, moodGlow: "soft", moodLabel: "Okay", discoverable: true, acceptsMessages: true, minLevel: 2, lon: 132, lat: 22 },
-  { id: 8, moodGlow: "neutral", moodLabel: "No check-in shared", discoverable: true, acceptsMessages: true, minLevel: 2, lon: 82, lat: -25 },
-  { id: 9, moodGlow: "bright", moodLabel: "Good", discoverable: true, acceptsMessages: true, minLevel: 3, lon: 108, lat: 32 },
-  { id: 10, moodGlow: "dim", moodLabel: "Low", discoverable: true, acceptsMessages: false, minLevel: 3, lon: 145, lat: -4 },
-  { id: 11, moodGlow: "soft", moodLabel: "Okay", discoverable: false, acceptsMessages: true, minLevel: 3, lon: 118, lat: 18 },
+  { id: 0, moodGlow: "bright", moodKey: "calm", moodLabel: "calm", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 101.52, lat: 3.07, isMe: true },
+  { id: 1, moodGlow: "bright", moodKey: "good", moodLabel: "good", discoverable: true, acceptsMessages: true, minLevel: 0, lon: -122.42, lat: 37.77 },
+  { id: 2, moodGlow: "soft", moodKey: "okay", moodLabel: "okay", discoverable: true, acceptsMessages: false, minLevel: 0, lon: -74.01, lat: 40.71 },
+  { id: 3, moodGlow: "dim", moodKey: "low", moodLabel: "low", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 72.88, lat: 19.08 },
+  { id: 4, moodGlow: "neutral", moodKey: "none", moodLabel: "none", discoverable: true, acceptsMessages: false, minLevel: 0, lon: 139.69, lat: 35.69 },
+  { id: 5, moodGlow: "bright", moodKey: "great", moodLabel: "great", discoverable: true, acceptsMessages: false, minLevel: 1, lon: 100.5, lat: 13.76 },
+  { id: 6, moodGlow: "dim", moodKey: "difficult", moodLabel: "difficult", discoverable: true, acceptsMessages: true, minLevel: 1, lon: 106.85, lat: -6.21 },
+  { id: 7, moodGlow: "soft", moodKey: "okay", moodLabel: "okay", discoverable: true, acceptsMessages: true, minLevel: 2, lon: 126.98, lat: 37.57 },
+  { id: 8, moodGlow: "neutral", moodKey: "none", moodLabel: "none", discoverable: true, acceptsMessages: true, minLevel: 2, lon: 151.21, lat: -33.87 },
+  { id: 9, moodGlow: "bright", moodKey: "good", moodLabel: "good", discoverable: true, acceptsMessages: true, minLevel: 3, lon: 113.26, lat: 23.13 },
+  { id: 10, moodGlow: "dim", moodKey: "low", moodLabel: "low", discoverable: true, acceptsMessages: false, minLevel: 3, lon: 103.82, lat: 1.35 },
+  { id: 11, moodGlow: "soft", moodKey: "okay", moodLabel: "okay", discoverable: false, acceptsMessages: true, minLevel: 3, lon: 120.98, lat: 14.6 },
 ];
 
 export const DEFAULT_COMMUNITY_POSTS: FirestoreCommunityPost[] = [
@@ -2225,19 +2371,27 @@ export async function seedInitialDatabaseData(): Promise<{
     ).catch(() => {});
   }
 
-  // 1. Globe Users (always ensure node 0 / "You" exists)
+  // 1. Globe Users (seed only missing docs so user privacy toggles on node 0 are never overwritten)
   let globeUsers = await listGlobeUsers().catch(() => []);
   if (globeUsers.length <= 1) {
     for (const user of DEFAULT_GLOBE_USERS) {
       const docRef = doc(db, "globeUsers", String(user.id));
-      await setDoc(docRef, user, { merge: true }).catch((e) =>
-        console.warn("[ONY Seed] globeUser seed warning:", e),
-      );
+      const existing = await getDoc(docRef).catch(() => null);
+      if (!existing || !existing.exists()) {
+        await setDoc(docRef, user, { merge: true }).catch((e) =>
+          console.warn("[ONY Seed] globeUser seed warning:", e),
+        );
+      }
     }
-    globeUsers = await listGlobeUsers().catch(() => DEFAULT_GLOBE_USERS);
+    globeUsers = await listGlobeUsers().catch(() =>
+      DEFAULT_GLOBE_USERS.filter((u) => u.discoverable || u.id === 0 || u.isMe),
+    );
   } else {
     const myNodeRef = doc(db, "globeUsers", "0");
-    await setDoc(myNodeRef, DEFAULT_GLOBE_USERS[0], { merge: true }).catch(() => {});
+    const myExisting = await getDoc(myNodeRef).catch(() => null);
+    if (!myExisting || !myExisting.exists()) {
+      await setDoc(myNodeRef, DEFAULT_GLOBE_USERS[0], { merge: true }).catch(() => {});
+    }
   }
 
   // 2. Community Posts
