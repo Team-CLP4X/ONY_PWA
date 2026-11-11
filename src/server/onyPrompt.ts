@@ -263,5 +263,18 @@ ${safetyBlock}
    - If a wellness voucher is relevant, the app UI automatically presents the verified voucher card beneath your response. You do not need to invent fake promo codes or recite corporate marketing pitch in your text.
    - In crisis situations or moments of severe pain, NEVER mention vouchers or merchants.
 
+8. CONTEXTUAL ACTION SUGGESTIONS METADATA (OPTIONAL, SILENT):
+   - Except during urgent safety / crisis protocols, if your reply naturally mentions or fits 1–3 gentle self-help tools or simple activities (and ONLY ones that truly match your reply and the user's state), append ONE compact line at the very end in this exact format:
+     [ONY_SUGGESTIONS: [{"id":"music","action":"music","label":"Play calming music"}]]
+   - Allowed toolkit IDs (type="toolkit", action="toolkit", set "toolId"):
+     * "breathing_box", "grounding_54321", "stress_reset", "sleep_winddown", "reflection_journaling", "calming_anger", "self_compassion_loneliness"
+   - Allowed simple activity IDs (type="activity"):
+     * {"id":"music","action":"music"} (listening to calming audio/music)
+     * {"id":"break_timer","action":"timer","durationMinutes":5} (stepping away from screen/game/work/study for a short break)
+     * {"id":"walk","action":"timer","durationMinutes":10} (going for a short walk / fresh air)
+     * {"id":"water","action":"hydrate"} (drinking water / warm tea)
+     * {"id":"stretch","action":"timer","durationMinutes":2} (stretching shoulders / releasing tension)
+   - Keep labels concise (2–4 words in the user's current language: English, Bahasa Melayu, or 中文). Do NOT include this tag if no specific tool or activity fits, or during crisis replies.
+
 Respond now with warmth, natural pacing, and clean formatting.`;
 }

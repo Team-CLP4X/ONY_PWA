@@ -18,6 +18,7 @@ import {
   hashAppLockPin,
   DEFAULT_USER_SETTINGS,
   type FontSizeScale,
+  type ChatViewMode,
   type UserSettingsDoc,
 } from "../theme/ThemeContext";
 import {
@@ -1025,14 +1026,23 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
     setFontSizeScale,
     fontSizePercent,
     setFontScalePercent,
+    chatViewMode,
+    setChatViewMode,
     tokens,
   } = useTheme();
-
-  const { updateSettings } = useSettings();
 
   const handleSelectMode = (mode: "light" | "dark" | "system") => {
     setThemeMode(mode);
     notify(`Switched to ${mode} mode`);
+  };
+
+  const handleSelectChatViewMode = (mode: ChatViewMode) => {
+    setChatViewMode(mode);
+    notify(
+      mode === "companion"
+        ? "Chat view set to Companion mode"
+        : "Chat view set to Classic chat mode",
+    );
   };
 
   const handleSelectPalette = (id: ThemeId) => {
@@ -1110,6 +1120,70 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
               <strong className="theme-mode-name">System</strong>
               <small className="theme-mode-sub">Matches your device ({effectiveMode})</small>
               {themeMode === "system" && <div className="theme-mode-check"><SettingsIcon name="check" /></div>}
+            </button>
+          </div>
+        </SettingsSection>
+
+        {/* Chat View Mode Selector */}
+        <SettingsSection title="CHAT DISPLAY MODE">
+          <p
+            style={{
+              margin: "0 0 12px 0",
+              fontSize: "var(--font-body-sm, 13px)",
+              color: "var(--theme-text-secondary)",
+            }}
+          >
+            Choose how ONY appears while chatting. You can switch anytime without losing your conversation.
+          </p>
+          <div className="appearance-chat-mode-grid">
+            <button
+              type="button"
+              className={`theme-mode-card ${chatViewMode === "companion" ? "active" : ""}`}
+              onClick={() => handleSelectChatViewMode("companion")}
+              aria-pressed={chatViewMode === "companion"}
+              style={{ minHeight: "44px" }}
+            >
+              <div
+                className="theme-mode-icon-circle"
+                style={{
+                  backgroundColor: "var(--theme-icon-container-bg)",
+                  color: "var(--theme-primary)",
+                }}
+              >
+                <SettingsIcon name="user" />
+              </div>
+              <strong className="theme-mode-name">Companion View</strong>
+              <small className="theme-mode-sub">Centered plushie & speech bubble</small>
+              {chatViewMode === "companion" && (
+                <div className="theme-mode-check">
+                  <SettingsIcon name="check" />
+                </div>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`theme-mode-card ${chatViewMode === "classic" ? "active" : ""}`}
+              onClick={() => handleSelectChatViewMode("classic")}
+              aria-pressed={chatViewMode === "classic"}
+              style={{ minHeight: "44px" }}
+            >
+              <div
+                className="theme-mode-icon-circle"
+                style={{
+                  backgroundColor: "var(--theme-icon-container-bg)",
+                  color: "var(--theme-primary)",
+                }}
+              >
+                <SettingsIcon name="messageCircle" />
+              </div>
+              <strong className="theme-mode-name">Classic Chat</strong>
+              <small className="theme-mode-sub">Full scrolling message thread</small>
+              {chatViewMode === "classic" && (
+                <div className="theme-mode-check">
+                  <SettingsIcon name="check" />
+                </div>
+              )}
             </button>
           </div>
         </SettingsSection>

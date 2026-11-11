@@ -16,6 +16,7 @@
         "responseLength": { "type": "string", "enum": ["Short", "Balanced", "Detailed"] },
         "memoryConsent": { "type": "string", "enum": ["allow", "control"] },
         "useActiveMemories": { "type": "boolean" },
+        "chatViewMode": { "type": "string", "enum": ["companion", "classic"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -346,6 +347,7 @@
         "themeMode": { "type": "string", "enum": ["light", "dark", "system"] },
         "fontSizeScale": { "type": "string", "enum": ["small", "default", "large", "extraLarge"] },
         "fontSizePercent": { "type": "number" },
+        "chatViewMode": { "type": "string", "enum": ["companion", "classic"] },
         "language": { "type": "string" },
         "companionPreferences": { "type": "object" },
         "notificationPreferences": { "type": "object" },

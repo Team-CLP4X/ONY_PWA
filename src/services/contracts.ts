@@ -24,6 +24,25 @@ export interface ApprovedContext {
   memories?: string[];
 }
 
+export type ChatSuggestionType = "toolkit" | "activity";
+export type ChatSuggestionAction =
+  | "toolkit"
+  | "music"
+  | "timer"
+  | "hydrate"
+  | "follow_up";
+
+export interface ChatSuggestion {
+  id: string;
+  type: ChatSuggestionType;
+  action: ChatSuggestionAction;
+  label: string;
+  icon?: string;
+  toolId?: string;
+  durationMinutes?: number;
+  followUpPrompt?: string;
+}
+
 export interface AIConversationRequest {
   conversationId: string;
   message: string;
@@ -33,6 +52,7 @@ export interface AIConversationRequest {
   conversationStyle?: ConversationStyle | string;
   responseLength?: ResponseLength | string;
   approvedContext: ApprovedContext;
+  recentSuggestionIds?: string[];
 }
 
 export interface MarketplaceRecommendation {
@@ -57,6 +77,7 @@ export interface AIConversationResponse {
   recommendedVoucher?: MarketplaceRecommendation | null;
   recommendedVouchers?: MarketplaceRecommendation[];
   copingActivity?: string | null;
+  suggestions?: ChatSuggestion[];
 }
 
 export interface AIServiceErrorPayload {

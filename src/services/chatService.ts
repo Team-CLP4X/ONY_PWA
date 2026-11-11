@@ -7,6 +7,7 @@ import type {
 } from "./contracts";
 
 import { getCurrentIdToken } from "../firebase/auth";
+import { parseAiSuggestionsFromReply } from "./chatSuggestions";
 
 const MAX_CLIENT_HISTORY_TURNS = 10;
 const MAX_MESSAGE_LENGTH = 2000;
@@ -119,10 +120,12 @@ class OnyBackendChatService implements AIService {
             ? "我就在这静静陪着你，不用着急，等准备好了再慢慢跟我说。"
             : "I'm listening quietly. Take all the time you need, and share whenever you feel ready.";
 
-      const messageText =
+      const rawText =
         data && typeof data.message === "string" && data.message.trim().length > 0
           ? data.message.trim()
           : defaultWarmReply;
+      const { cleanReply } = parseAiSuggestionsFromReply(rawText);
+      const messageText = cleanReply || rawText;
 
       const recommendedVouchers = Array.isArray(data?.recommendedVouchers)
         ? data.recommendedVouchers
@@ -138,6 +141,7 @@ class OnyBackendChatService implements AIService {
         recommendedVoucher: recommendedVouchers[0] || null,
         recommendedVouchers,
         copingActivity: data?.copingActivity || null,
+        suggestions: Array.isArray(data?.suggestions) ? data.suggestions : undefined,
       };
     } catch (error) {
       if (error instanceof ChatServiceError) {

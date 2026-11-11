@@ -30,86 +30,90 @@ export function SuggestedToolkitCard({
     <div
       className="suggested-toolkit-card"
       style={{
-        borderRadius: "18px",
-        padding: "12px 14px",
+        borderRadius: "16px",
+        padding: "10px 12px",
         background: isDark
-          ? "color-mix(in srgb, var(--theme-primary, #F28C78) 14%, var(--theme-surface, #1e1919))"
+          ? "color-mix(in srgb, var(--theme-primary, #F28C78) 16%, var(--theme-surface, #1e1919))"
           : "var(--theme-surface-elevated, #FFF0EC)",
-        border: "1.5px solid color-mix(in srgb, var(--theme-primary, #F28C78) 35%, transparent)",
-        boxShadow: "0 4px 14px color-mix(in srgb, var(--theme-primary, #F28C78) 16%, transparent)",
+        border: "1.5px solid color-mix(in srgb, var(--theme-primary, #F28C78) 38%, var(--theme-border))",
+        boxShadow: "0 4px 14px color-mix(in srgb, var(--theme-primary, #F28C78) 14%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        gap: "12px",
-        margin: "8px 0 12px",
+        gap: "10px",
+        margin: "0",
         position: "relative",
+        width: "100%",
+        boxSizing: "border-box",
       }}
       role="region"
-      aria-label="Suggested self-help tool"
+      aria-label={isBm ? "Alat bantuan dicadangkan" : isZh ? "推荐自助工具" : "Suggested self-help tool"}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0 }}>
         <div
           style={{
-            width: "36px",
-            height: "36px",
-            borderRadius: "12px",
+            width: "34px",
+            height: "34px",
+            borderRadius: "10px",
             background: "var(--theme-primary, #F28C78)",
-            color: "#ffffff",
+            color: "var(--theme-on-primary, #ffffff)",
             display: "grid",
             placeItems: "center",
             flexShrink: 0,
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
           </svg>
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "10.5px", fontWeight: 800, textTransform: "uppercase", color: "var(--theme-primary, #F28C78)" }}>
+            <span style={{ fontSize: "var(--font-micro, 10px)", fontWeight: 800, textTransform: "uppercase", color: "var(--theme-primary-dark, var(--theme-primary))" }}>
               ✨ {isBm ? "Dicadangkan untuk Anda" : isZh ? "为您推荐" : "Suggested for you"}
             </span>
             <span
               style={{
-                fontSize: "10px",
+                fontSize: "var(--font-micro, 10px)",
                 fontWeight: 700,
-                padding: "2px 6px",
+                padding: "1px 6px",
                 borderRadius: "100px",
-                background: "var(--theme-surface, #ffffff)",
-                color: "var(--theme-text-secondary, #6b645f)",
+                background: "var(--theme-surface)",
+                color: "var(--theme-text-secondary)",
+                border: "1px solid var(--theme-border-subtle, var(--theme-border))",
               }}
             >
               ⏱️ {guide.duration}
             </span>
           </div>
 
-          <strong style={{ fontSize: "13px", fontWeight: 800, color: "var(--theme-text-primary, #2d2424)", display: "block" }}>
+          <strong style={{ fontSize: "var(--font-body-sm, 13px)", fontWeight: 800, color: "var(--theme-text-primary)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {title}
           </strong>
 
-          <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--theme-text-secondary, #6b645f)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <p style={{ margin: "1px 0 0", fontSize: "var(--font-caption, 11.5px)", color: "var(--theme-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {summary}
           </p>
         </div>
       </div>
 
       {/* Actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
         <button
           type="button"
           onClick={() => onOpenGuide(guide.id)}
           style={{
-            padding: "8px 14px",
+            padding: "8px 12px",
             borderRadius: "100px",
             border: "none",
             background: "var(--theme-primary, #F28C78)",
-            color: "#ffffff",
-            fontSize: "12px",
+            color: "var(--theme-on-primary, #ffffff)",
+            fontSize: "var(--font-caption, 12px)",
             fontWeight: 800,
             cursor: "pointer",
-            boxShadow: "0 2px 8px color-mix(in srgb, var(--theme-primary, #F28C78) 35%, transparent)",
-            minHeight: "36px",
+            boxShadow: "0 2px 8px color-mix(in srgb, var(--theme-primary, #F28C78) 32%, transparent)",
+            minHeight: "44px",
+            whiteSpace: "nowrap",
           }}
         >
           {isBm ? "Cuba Alat" : isZh ? "去试试" : "Try Tool"}
@@ -120,13 +124,15 @@ export function SuggestedToolkitCard({
           onClick={onDismiss}
           aria-label="Dismiss recommendation"
           style={{
-            width: "30px",
-            height: "30px",
+            width: "44px",
+            height: "44px",
+            minWidth: "44px",
+            minHeight: "44px",
             borderRadius: "50%",
             border: "none",
             background: "transparent",
-            color: "var(--theme-text-secondary, #6b645f)",
-            fontSize: "16px",
+            color: "var(--theme-text-secondary)",
+            fontSize: "var(--font-body, 14px)",
             cursor: "pointer",
             display: "grid",
             placeItems: "center",

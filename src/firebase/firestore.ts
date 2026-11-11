@@ -75,6 +75,7 @@ export interface UserProfileData {
   responseLength?: string;
   memoryConsent?: string;
   useActiveMemories?: boolean;
+  chatViewMode?: "companion" | "classic";
   onboardingCompleted?: boolean;
   createdAt?: string;
   updatedAt?: string;

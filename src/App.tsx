@@ -14,9 +14,12 @@ import {
 } from "react";
 import logo from "./assets/ony-logo.png";
 import { chatService, ChatServiceError } from "./services/chatService";
-import { FormattedChatMessage } from "./components/FormattedChatMessage";
-import { ContextualVoucherCard } from "./components/ContextualVoucherCard";
-import type { SafetyAction, MarketplaceRecommendation } from "./services/contracts";
+import type {
+  ChatSuggestion,
+  MarketplaceRecommendation,
+  SafetyAction,
+} from "./services/contracts";
+import { buildContextualSuggestions } from "./services/chatSuggestions";
 import type { User } from "firebase/auth";
 import { auth } from "./firebase/config";
 import {
@@ -158,8 +161,18 @@ import {
   applyAppearanceToDom,
 } from "./components/SettingsComponents";
 import { ToolkitPage } from "./components/ToolkitPage";
-import { SuggestedToolkitCard } from "./components/SuggestedToolkitCard";
-import { ThemeProvider, useTheme } from "./theme/ThemeContext";
+import {
+  ChatHeader,
+  CompanionStage,
+  ChatHistorySheet,
+  ClassicMessageList,
+  ChatInputBar,
+  ChatOverflowSheet,
+  ChatTonePickerSheet,
+  AiDisclaimerSheet,
+  type ActiveBreakTimerState,
+} from "./components/ChatComponents";
+import { ThemeProvider, useTheme, type ChatViewMode } from "./theme/ThemeContext";
 import type { ThemeId } from "./theme/palettes";
 import {
   CompanionAvatar as VectorCompanionAvatar,
@@ -236,6 +249,8 @@ type Message = {
   voucher?: MarketplaceRecommendation | null;
   vouchers?: MarketplaceRecommendation[];
   copingActivity?: string | null;
+  suggestions?: ChatSuggestion[];
+  shownSuggestionIds?: string[];
   dismissedVoucher?: boolean;
 };
 type Conversation = { id: number; title: string; category: string; day: "Today" | "Yesterday"; messages: Message[]; folderId?: number; archived?: boolean; reportAllowed?: boolean };
@@ -950,6 +965,8 @@ function AppInner() {
   const [preloadedChatTopic, setPreloadedChatTopic] = useState<string | undefined>(undefined);
   const [isWritingJournalBook, setIsWritingJournalBook] = useState(false);
   const [isJournalSheetOpen, setIsJournalSheetOpen] = useState(false);
+  const [isVirtualKeyboardOpen, setIsVirtualKeyboardOpen] = useState(false);
+  const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(null);
   const [history, setHistory] = useState<Screen[]>([]);
   const [toast, setToast] = useState("");
   const navigate = (next: Screen) => { setHistory((h) => [...h, screen]); setScreen(next); };
@@ -972,6 +989,21 @@ function AppInner() {
 
   useEffect(() => {
     applyAppearanceToDom(loadStoredAppearance());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    let baseline = Math.max(window.innerHeight, vv.height);
+    const syncViewport = () => {
+      baseline = Math.max(baseline, window.innerHeight);
+      const ratio = vv.height / Math.max(baseline, 1);
+      const kbOpen = ratio < 0.78;
+      setIsVirtualKeyboardOpen(kbOpen);
+      setVisualViewportHeight(kbOpen ? Math.round(vv.height) : null);
+    };
+    vv.addEventListener("resize", syncViewport);
+    return () => vv.removeEventListener("resize", syncViewport);
   }, []);
 
   const handleToggleSound = (targetTrackId?: string) => {
@@ -1842,7 +1874,14 @@ function AppInner() {
       }}
     >
       <div className={`app-shell theme-${theme}`}>
-        <div className="phone">
+        <div
+          className={`phone ${isVirtualKeyboardOpen ? "virtual-keyboard-open" : ""}`}
+          style={
+            visualViewportHeight
+              ? ({ "--vvh": `${visualViewportHeight}px` } as CSSProperties)
+              : undefined
+          }
+        >
           <div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
           {screen === "main" ? (
             <>
@@ -2166,7 +2205,7 @@ function AppInner() {
             language={language}
           />
         )}
-        {((!isWritingJournalBook && !isJournalSheetOpen) || tab !== "memory") && (
+        {!isVirtualKeyboardOpen && ((!isWritingJournalBook && !isJournalSheetOpen) || tab !== "memory") && (
           <BottomNav tab={tab} setTab={goTab} />
         )}
         {toast && <div className="toast"><Icon name="check" />{toast}</div>}
@@ -3095,9 +3134,76 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const [chatError, setChatError] = useState<string | null>(null);
   const [failedUserText, setFailedUserText] = useState<string | null>(null);
   const [serverSafetyAction, setServerSafetyAction] = useState<SafetyAction>("support");
-  const [dismissedToolkitSuggest, setDismissedToolkitSuggest] = useState(false);
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<string[]>([]);
+  const [activeBreakTimer, setActiveBreakTimer] = useState<ActiveBreakTimerState | null>(null);
+
+  // Redesigned Chat UI states
+  const { chatViewMode, setChatViewMode } = useTheme();
+  const [showHistorySheet, setShowHistorySheet] = useState(false);
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
+  const [showTonePicker, setShowTonePicker] = useState(false);
+  const [showAiDisclaimer, setShowAiDisclaimer] = useState(false);
+  const [isUserTyping, setIsUserTyping] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [recentUserEcho, setRecentUserEcho] = useState<{
+    id: number;
+    text: string;
+    fading: boolean;
+  } | null>(null);
+  const typingIdleTimerRef = useRef<number | null>(null);
+  const echoClearTimerRef = useRef<number | null>(null);
+
   const { t } = useLanguage();
   const { unreadCount, openNotifications } = useNotifications();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    const baselineHeight = window.innerHeight;
+    const updateViewport = () => {
+      if (!vv) return;
+      const ratio = vv.height / Math.max(window.innerHeight, baselineHeight);
+      setKeyboardOpen(ratio < 0.78);
+    };
+    if (vv) {
+      vv.addEventListener("resize", updateViewport);
+      return () => vv.removeEventListener("resize", updateViewport);
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typingIdleTimerRef.current) window.clearTimeout(typingIdleTimerRef.current);
+      if (echoClearTimerRef.current) window.clearTimeout(echoClearTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    setDismissedSuggestionIds([]);
+  }, [activeChatId]);
+
+  useEffect(() => {
+    if (!activeBreakTimer || activeBreakTimer.paused) return;
+    const intervalId = window.setInterval(() => {
+      setActiveBreakTimer((prev) => {
+        if (!prev || prev.paused) return prev;
+        if (prev.secondsLeft <= 1) {
+          playSoothingChime();
+          notify(
+            language === "Bahasa Melayu"
+              ? "Masa rehat selesai. Selamat kembali bersama ONY!"
+              : language === "中文"
+                ? "休息时间到啦，欢迎慢慢回来~"
+                : "Break complete. Welcome back when you're ready.",
+          );
+          return null;
+        }
+        return { ...prev, secondsLeft: prev.secondsLeft - 1 };
+      });
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [activeBreakTimer, language, notify]);
 
   useEffect(() => {
     if (preloadedTopic) {
@@ -3253,6 +3359,12 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         ? memories.filter((m) => m.active && m.kind !== "image")
         : [];
 
+    const previousOnyMessage = [...priorMessages].reverse().find((m) => m.from === "ony");
+    const previousTurnSuggestionIds =
+      previousOnyMessage?.shownSuggestionIds ||
+      previousOnyMessage?.suggestions?.map((s) => s.id) ||
+      [];
+
     try {
       const response = await chatService.sendMessage({
         conversationId: String(activeIdRef.current || "new"),
@@ -3271,6 +3383,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
           consentVersion: "1.0",
           memories: activeConsentedMemories.slice(0, 5).map((m) => m.text),
         },
+        recentSuggestionIds: previousTurnSuggestionIds,
       });
 
       setServerSafetyAction(response.safetyAction);
@@ -3278,6 +3391,19 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         ? response.recommendedVouchers
         : (response.recommendedVoucher ? [response.recommendedVoucher] : []);
 
+      const computedTurnSuggestions =
+        response.suggestions && response.suggestions.length > 0
+          ? response.suggestions.filter((s) => !previousTurnSuggestionIds.includes(s.id)).slice(0, 3)
+          : buildContextualSuggestions({
+              replyText: response.message,
+              userMessage: textToSend,
+              recentShownIds: previousTurnSuggestionIds,
+              language,
+              safetyAction: response.safetyAction,
+              maxCount: 3,
+            });
+
+      setDismissedSuggestionIds([]);
       setMessages((m) => [
         ...m,
         {
@@ -3286,6 +3412,8 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
           voucher: vouchersList[0] || null,
           vouchers: vouchersList,
           copingActivity: response.copingActivity || null,
+          suggestions: computedTurnSuggestions,
+          shownSuggestionIds: computedTurnSuggestions.map((s) => s.id),
         },
       ]);
       scrollToBottom("smooth");
@@ -3311,6 +3439,12 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
       setFailedUserText(textToSend);
     } finally {
       setTyping(false);
+      // Fade & collapse the temporary user bubble once ONY begins responding
+      setRecentUserEcho((prev) => (prev ? { ...prev, fading: true } : null));
+      if (echoClearTimerRef.current) window.clearTimeout(echoClearTimerRef.current);
+      echoClearTimerRef.current = window.setTimeout(() => {
+        setRecentUserEcho(null);
+      }, 650);
     }
   };
 
@@ -3325,13 +3459,21 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
     setSavedMemoryId(null);
     setChatError(null);
     setFailedUserText(null);
+    setDismissedSuggestionIds([]);
+    setIsUserTyping(false);
     const lower = trimmed.toLowerCase();
     if (lower === "show my memories") { goTab("memory"); setInput(""); return; }
     if (lower === "open community") { goTab("community"); setInput(""); return; }
 
+    if (echoClearTimerRef.current) window.clearTimeout(echoClearTimerRef.current);
+    setRecentUserEcho({ id: Date.now(), text: trimmed, fading: false });
+
     const priorMessages = [...messages];
     setMessages((m) => [...m, { from: "user", text: trimmed }]);
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
     scrollToBottom("smooth");
     void sendToBackend(trimmed, priorMessages);
   };
@@ -3449,23 +3591,122 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const jobContext = ["job", "work opportunity", "internship", "career"].some((phrase) => latestLower.includes(phrase));
   const relationshipContext = ["relationship", "partner", "boyfriend", "girlfriend", "friendship"].some((phrase) => latestLower.includes(phrase));
 
-  const showSuggestedToolkit =
-    !safetyContext &&
-    (anxietyContext ||
-      ["breathe", "ground", "panic", "sleep", "stress", "restless", "angry", "lonely", "tarik nafas", "sesak", "tidur", "sunyi", "marah", "焦虑", "慌", "呼吸", "睡不着", "难受"].some((w) => latestLower.includes(w)));
+  const turnSuggestions = useMemo<ChatSuggestion[]>(() => {
+    if (messages.length === 0 || typing || safetyContext) return [];
 
-  const suggestedGuideId =
-    latestLower.includes("sleep") || latestLower.includes("tidur") || latestLower.includes("睡")
-      ? "sleep_winddown"
-      : latestLower.includes("ground") || latestLower.includes("panic") || latestLower.includes("bumi") || latestLower.includes("着陆")
-      ? "grounding_54321"
-      : latestLower.includes("journal") || latestLower.includes("write") || latestLower.includes("tulis") || latestLower.includes("日记")
-      ? "reflection_journaling"
-      : latestLower.includes("angry") || latestLower.includes("marah") || latestLower.includes("愤怒")
-      ? "calming_anger"
-      : latestLower.includes("lonely") || latestLower.includes("sunyi") || latestLower.includes("孤单")
-      ? "self_compassion_loneliness"
-      : "breathing_box";
+    let latestOnyIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].from === "ony") {
+        latestOnyIdx = i;
+        break;
+      }
+    }
+    if (latestOnyIdx < 0) return [];
+
+    const latestOnyMsg = messages[latestOnyIdx];
+    let precedingUserText = "";
+    for (let i = latestOnyIdx - 1; i >= 0; i--) {
+      if (messages[i].from === "user") {
+        precedingUserText = messages[i].text;
+        break;
+      }
+    }
+
+    let previousOnyIds: string[] = [];
+    for (let i = latestOnyIdx - 1; i >= 0; i--) {
+      if (messages[i].from === "ony") {
+        previousOnyIds =
+          messages[i].shownSuggestionIds ||
+          messages[i].suggestions?.map((s) => s.id) ||
+          [];
+        break;
+      }
+    }
+
+    const baseSuggestions =
+      latestOnyMsg.suggestions !== undefined
+        ? latestOnyMsg.suggestions
+        : buildContextualSuggestions({
+            replyText: latestOnyMsg.text,
+            userMessage: precedingUserText,
+            recentShownIds: previousOnyIds,
+            language,
+            safetyAction: serverSafetyAction,
+            maxCount: 3,
+          });
+
+    return baseSuggestions
+      .filter((s) => !dismissedSuggestionIds.includes(s.id))
+      .slice(0, 3);
+  }, [messages, typing, safetyContext, language, serverSafetyAction, dismissedSuggestionIds]);
+
+  const handleSelectSuggestion = (suggestion: ChatSuggestion) => {
+    if (suggestion.action === "toolkit") {
+      if (onOpenToolkitGuide) {
+        onOpenToolkitGuide(suggestion.toolId || "breathing_box");
+      } else {
+        navigate("resources");
+      }
+      return;
+    }
+
+    if (suggestion.action === "music") {
+      if (!soundOn) {
+        setSoundOn(true);
+        notify(
+          language === "Bahasa Melayu"
+            ? "Memainkan muzik tenang 🎵"
+            : language === "中文"
+              ? "正在播放舒缓音乐 🎵"
+              : "Playing calming music 🎵",
+        );
+      } else if (onOpenMusicModal) {
+        onOpenMusicModal();
+      }
+      return;
+    }
+
+    if (suggestion.action === "timer") {
+      const mins = suggestion.durationMinutes && suggestion.durationMinutes > 0 ? suggestion.durationMinutes : 5;
+      setActiveBreakTimer({
+        id: suggestion.id,
+        label: suggestion.label,
+        secondsLeft: mins * 60,
+        totalSeconds: mins * 60,
+        paused: false,
+      });
+      setDismissedSuggestionIds((prev) => (prev.includes(suggestion.id) ? prev : [...prev, suggestion.id]));
+      notify(
+        language === "Bahasa Melayu"
+          ? `Pemasa ${mins} minit dimulakan`
+          : language === "中文"
+            ? `已开启 ${mins} 分钟休息计时`
+            : `${mins}-min timer started`,
+      );
+      return;
+    }
+
+    if (suggestion.action === "hydrate") {
+      playSoothingChime();
+      setDismissedSuggestionIds((prev) => (prev.includes(suggestion.id) ? prev : [...prev, suggestion.id]));
+      notify(
+        language === "Bahasa Melayu"
+          ? "Minum air perlahan-lahan ya 💧"
+          : language === "中文"
+            ? "慢慢喝口温水歇一歇 💧"
+            : "Take a slow, refreshing sip of water 💧",
+      );
+      return;
+    }
+
+    if (suggestion.action === "follow_up") {
+      reply(suggestion.followUpPrompt || suggestion.label);
+    }
+  };
+
+  const handleDismissSuggestion = (suggestionId: string) => {
+    setDismissedSuggestionIds((prev) => (prev.includes(suggestionId) ? prev : [...prev, suggestionId]));
+  };
   const saveContextMemory = () => {
     const id = Date.now();
     setMemories([{ id, text: latestUserText, category: "Things That Help Me", active: true, kind: "text", reason: language === "Bahasa Melayu" ? "Anda memilih untuk mengingati perkara ini semasa perbualan ONY." : language === "中文" ? "您选择在与 ONY 对话期间记住这一点。" : "You chose to remember this during an ONY conversation." }, ...memories]);
@@ -3479,10 +3720,18 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
+    const val = e.target.value;
+    setInput(val);
+    setIsUserTyping(val.trim().length > 0);
+    if (typingIdleTimerRef.current) window.clearTimeout(typingIdleTimerRef.current);
+    if (val.trim().length > 0) {
+      typingIdleTimerRef.current = window.setTimeout(() => {
+        setIsUserTyping(false);
+      }, 2400);
+    }
     const target = e.target;
     target.style.height = "auto";
-    const nextHeight = Math.min(Math.max(target.scrollHeight, 38), 120);
+    const nextHeight = Math.min(target.scrollHeight, 120);
     target.style.height = `${nextHeight}px`;
   };
 
@@ -3503,6 +3752,9 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
     const newId = Date.now();
     activeIdRef.current = newId;
     setActiveChatId(newId);
+    setRecentUserEcho(null);
+    setDismissedSuggestionIds([]);
+    setActiveBreakTimer(null);
     setConversations((items) => [
       {
         id: newId,
@@ -3518,682 +3770,515 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
     notify(language === "Bahasa Melayu" ? "Perbualan baru dimulakan" : language === "中文" ? "已开启新对话" : "Started new conversation");
   };
 
-  return <div className="chat-page">
-    <div className="chat-scroll" ref={chatScrollRef}>
-      <header className="chat-native-header" role="banner">
-        <div className="chat-header-identity">
-          <div className="chat-avatar-wrapper">
-            <CompanionAvatar
-              companion={companion}
-              size="sm"
-              mood={typing ? "listening" : "idle"}
-            />
-            <span className="online-presence-dot" aria-label="Available" />
-          </div>
-          <div className="chat-identity-info">
-            <div className="chat-identity-name-row">
-              <span className="chat-companion-name">ONY</span>
-              {setPersona ? (
-                <button
-                  type="button"
-                  className="chat-persona-badge-btn"
-                  onClick={() => {
-                    const personaList: Persona[] = ["gentle", "friendly", "calm"];
-                    const curIdx = personaList.indexOf(persona);
-                    const nextPersona = personaList[(curIdx + 1) % personaList.length];
-                    setPersona(nextPersona);
-                    const details = getPersonaDetails(nextPersona, personaOptions.find((item) => item.id === nextPersona)?.name || "", "", "", language);
-                    notify(language === "Bahasa Melayu" ? `Nada ditukar kepada: ${details.name}` : language === "中文" ? `已切换语气：${details.name}` : `Tone switched to: ${details.name}`);
-                  }}
-                  title={language === "Bahasa Melayu" ? "Klik untuk tukar nada respons" : language === "中文" ? "点击切换对话语气" : "Click to switch conversational tone"}
-                  aria-label={language === "Bahasa Melayu" ? "Tukar nada respons" : language === "中文" ? "切换对话语气" : "Switch conversational tone"}
-                >
-                  <span className="chat-persona-badge-dot" />
-                  <span>{getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}</span>
-                  <span className="chat-persona-badge-switch-hint">⇄</span>
-                </button>
-              ) : (
-                <span className="chat-persona-badge">
-                  {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
-                </span>
-              )}
-            </div>
-            <span className="chat-companion-status">
-              {language === "Bahasa Melayu" ? "Sedia mendengar & menemani" : language === "中文" ? "温暖陪伴 · 随时倾听" : "Always here to listen"}
-            </span>
-          </div>
-        </div>
+  const handleDismissVoucher = (msgIndex: number) => {
+    setMessages((prev) =>
+      prev.map((msg, idx) =>
+        idx === msgIndex ? { ...msg, dismissedVoucher: true } : msg,
+      ),
+    );
+  };
 
-        <div className="chat-header-actions">
+  const handleSwitchChatViewMode = (nextMode: ChatViewMode) => {
+    if (chatViewMode === nextMode) return;
+    setChatViewMode(nextMode);
+    notify(
+      nextMode === "companion"
+        ? language === "Bahasa Melayu"
+          ? "Bertukar ke Paparan Teman"
+          : language === "中文"
+            ? "已切换为伴侣互动模式"
+            : "Switched to Companion view"
+        : language === "Bahasa Melayu"
+          ? "Bertukar ke Sembang Klasik"
+          : language === "中文"
+            ? "已切换为经典对话模式"
+            : "Switched to Classic chat",
+    );
+  };
+
+  const handleToggleAutoSpeak = () => {
+    const next = !autoSpeak;
+    setAutoSpeak(next);
+    notify(
+      next
+        ? language === "Bahasa Melayu"
+          ? "Suara ONY diaktifkan · Jawapan akan dibaca"
+          : language === "中文"
+            ? "ONY 语音播报已开启 · 将朗读回复"
+            : "ONY voice on · Replies will be read aloud"
+        : language === "Bahasa Melayu"
+          ? "Suara ONY dimatikan"
+          : language === "中文"
+            ? "ONY 语音播报已关闭"
+            : "ONY voice off",
+    );
+  };
+
+  const headerCompanionMood: CompanionExpression =
+    speakingMsgId !== null
+      ? "speaking"
+      : typing || isUserTyping
+        ? "listening"
+        : "idle";
+
+  const classicMessageLabels = {
+    dismiss: t.common_dismiss,
+    retry: t.common_retry,
+    getHelp: t.chat_action_get_help,
+    findSupport: t.chat_action_find_support,
+    contactTrusted: t.chat_action_contact_trusted,
+    viewResources: t.chat_action_view_resources,
+    rememberThis: t.chat_action_remember_this,
+    savedVault: t.chat_action_saved_vault,
+    undo: t.common_undo,
+    breathing: t.chat_action_breathing,
+    calmingMusic: t.chat_action_calming_music,
+    studyPlan: t.chat_action_study_plan,
+    takeBreak: t.chat_action_take_break,
+    talkAboutIt: t.chat_action_talk_about_it,
+    findJobs: t.chat_action_find_jobs,
+    jobPrefs: t.chat_action_job_prefs,
+    tellMore: t.chat_action_tell_more,
+    helpReflect: t.chat_action_help_reflect,
+    listenLabel: t.chat_voice_listen,
+    stopSpeakingLabel: t.chat_voice_stop_speaking,
+  };
+
+  return (
+    <div className={`chat-page mode-${chatViewMode} ${keyboardOpen ? "keyboard-open" : ""}`}>
+      {/* Clean uncluttered header with max 3 action icons on right */}
+      <ChatHeader
+        companion={companion}
+        companionMood={headerCompanionMood}
+        language={language}
+        todayMoodEntry={todayMoodEntry}
+        unreadCount={unreadCount}
+        onOpenHistory={() => setShowHistorySheet(true)}
+        onOpenMood={() => navigate(todayMoodEntry ? "trend" : "mood")}
+        onOpenOverflow={() => setShowOverflowMenu(true)}
+      />
+
+      {/* Mode A: COMPANION MODE (default) */}
+      {chatViewMode === "companion" ? (
+        <CompanionStage
+          companion={companion}
+          persona={persona}
+          messages={messages}
+          typing={typing}
+          isUserTyping={isUserTyping}
+          speakingMsgId={speakingMsgId}
+          keyboardOpen={keyboardOpen}
+          language={language}
+          welcomeGreeting={onyxGreeting.greeting}
+          welcomeQuestion={onyxGreeting.question}
+          starterCards={suggestedCards}
+          isLimitReached={isLimitReached}
+          recentUserEcho={recentUserEcho}
+          chatError={chatError}
+          failedUserText={failedUserText}
+          safetyContext={safetyContext}
+          serverSafetyAction={serverSafetyAction}
+          memoryContext={memoryContext}
+          savedMemoryId={savedMemoryId}
+          anxietyContext={anxietyContext}
+          studyContext={studyContext}
+          jobContext={jobContext}
+          relationshipContext={relationshipContext}
+          onSelectStarter={(prompt) => {
+            if (!isLimitReached) {
+              reply(prompt);
+            } else {
+              navigate("subscription");
+            }
+          }}
+          onToggleSpeakMessage={toggleSpeakMessage}
+          onOpenMerchant={onOpenMerchant}
+          onDismissVoucher={handleDismissVoucher}
+          onDismissError={() => setChatError(null)}
+          onRetryLastMessage={retryLastMessage}
+          onNavigate={(screen) => navigate(screen as Screen)}
+          onSaveContextMemory={saveContextMemory}
+          onUndoContextMemory={undoContextMemory}
+          onOpenToolkitGuide={onOpenToolkitGuide}
+          onSendQuickReply={reply}
+          onOpenHistory={() => setShowHistorySheet(true)}
+        />
+      ) : (
+        /* Mode B: CLASSIC MODE (standard scrolling message feed) */
+        <div className="chat-scroll" ref={chatScrollRef}>
           {messages.length > 0 && (
-            <button
-              type="button"
-              className="top-header-icon-btn new-chat-btn"
-              onClick={handleNewChat}
-              title={language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "开启新对话" : "New conversation"}
-              aria-label={language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "开启新对话" : "New conversation"}
-            >
-              <Icon name="plus" />
-            </button>
-          )}
-          <button
-            type="button"
-            className="top-header-icon-btn"
-            onClick={() => navigate("chatHistory")}
-            title={t.chat_chats_btn}
-            aria-label={t.chat_chats_btn}
-          >
-            <Icon name="chat" />
-          </button>
-          <button
-            type="button"
-            className="top-header-icon-btn mood-btn"
-            onClick={() => navigate(todayMoodEntry ? "trend" : "mood")}
-            title={todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
-            aria-label={todayMoodEntry ? `${todayMoodEntry.emoji} ${todayMoodEntry.label}` : t.mood_modal_title}
-          >
-            {todayMoodEntry ? (
-              <span className="header-mood-emoji">{todayMoodEntry.emoji}</span>
-            ) : (
-              <>
-                <Icon name="calendarCheck" />
-                <span className="checkin-pending-dot" aria-hidden="true" />
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            className="top-header-icon-btn help-btn"
-            onClick={() => navigate("help")}
-            title={t.profile_menu_help}
-            aria-label={t.profile_menu_help}
-          >
-            <Icon name="helpCircle" />
-          </button>
-          <button
-            type="button"
-            className="top-notification-btn chat-notif-btn"
-            onClick={openNotifications}
-            aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
-            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
-          >
-            <Icon name="bell" />
-            {unreadCount > 0 && <span className="notification-red-dot" aria-hidden="true" />}
-          </button>
-        </div>
-      </header>
-
-      <div className="chat-history-entry">
-        <Button variant="ghost" className={`tts-toggle ${autoSpeak ? "active" : ""}`} onClick={() => { const next = !autoSpeak; setAutoSpeak(next); notify(next ? (language === "Bahasa Melayu" ? "Suara ONY diaktifkan · Jawapan akan dibaca" : language === "中文" ? "ONY 语音播报已开启 · 将朗读回复" : "ONY voice on · Replies will be read aloud") : (language === "Bahasa Melayu" ? "Suara ONY dimatikan" : language === "中文" ? "ONY 语音播报已关闭" : "ONY voice off")); }} title={language === "Bahasa Melayu" ? "Tukar respons suara automatik" : language === "中文" ? "切换自动语音播报" : "Toggle auto voice response"}><Icon name={autoSpeak ? "volume" : "volumeOff"} />{autoSpeak ? t.chat_voice_on : t.chat_voice_off}</Button>
-        <div className="chat-trust-links">
-          <Button variant="ghost" onClick={() => navigate("safety")}>{t.chat_safety_protocols}</Button>
-          <Button variant="ghost" onClick={() => navigate("resources")}>{t.chat_resources}</Button>
-        </div>
-      </div>
-    {messages.length > 0 && <div className="memory-note"><Icon name="memory" /><span>{memoryConsent === "allow" && useActiveMemories ? t.chat_memory_active_badge : t.chat_memory_paused_badge}</span><Button variant="ghost" onClick={() => goTab("memory")}>{t.chat_view_btn}</Button></div>}
-    {messages.length === 0 && (
-      <div className="chat-welcome-hero">
-        {/* Big Chatbot Profile Avatar in Middle */}
-        <div className="chat-hero-avatar-stage">
-          <div className="chat-hero-halo-aura" aria-hidden="true" />
-          <div className="chat-hero-avatar-bubble">
-            <CompanionAvatar
-              companion={companion}
-              size="xl"
-              mood={typing ? "speaking" : "idle"}
-              showGlow
-              interactive
-            />
-            <span className="chat-hero-presence-badge" aria-label="Available & online">
-              <span className="chat-hero-presence-pulse" />
-            </span>
-          </div>
-        </div>
-
-        {/* Companion Persona & Live Status */}
-        <div className="chat-hero-meta-row">
-          <span className="chat-hero-status-tag">
-            <span className="live-dot" aria-hidden="true" />
-            {language === "Bahasa Melayu" ? "ONY · 24/7 Sedia Mendengar" : language === "中文" ? "ONY · 24/7 随时倾听" : "ONY · 24/7 Active & Listening"}
-          </span>
-          <span className="chat-hero-persona-tag">
-            {getPersonaDetails(persona, personaOptions.find((item) => item.id === persona)?.name || "", "", "", language).name}
-          </span>
-        </div>
-
-        {/* Time Greeting Header & Inquiry ("ask good evening smth") */}
-        <div className="chat-hero-copy">
-          <h1 className="chat-hero-greeting-heading">{onyxGreeting.greeting}</h1>
-          <p className="chat-hero-question-line">{onyxGreeting.question}</p>
-          <p className="chat-hero-safety-line">{onyxGreeting.subtitle}</p>
-        </div>
-
-        {/* Interactive Conversational Tone Switcher */}
-        {setPersona && (
-          <div className="chat-tone-pill-selector" role="radiogroup" aria-label="Select ONY conversational tone">
-            <span className="chat-tone-label">
-              {language === "Bahasa Melayu" ? "Pilih Nada & Gaya Respons" : language === "中文" ? "选择对话语气风格" : "Conversation Tone"}
-            </span>
-            <div className="chat-tone-pills">
-              {personaOptions.map((opt) => {
-                const details = getPersonaDetails(opt.id, opt.name, opt.note, opt.preview, language);
-                const isActive = persona === opt.id;
-                const icon = opt.id === "gentle" ? "🌸" : opt.id === "friendly" ? "💬" : "🌿";
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={isActive}
-                    className={`chat-tone-pill ${isActive ? "active" : ""}`}
-                    onClick={() => {
-                      if (persona !== opt.id) {
-                        setPersona(opt.id);
-                        notify(language === "Bahasa Melayu" ? `Nada ditukar kepada: ${details.name}` : language === "中文" ? `已切换语气：${details.name}` : `Tone switched to: ${details.name}`);
-                      }
-                    }}
-                    title={details.note}
-                  >
-                    <span className="chat-tone-emoji">{icon}</span>
-                    <span className="chat-tone-pill-text">{details.name}</span>
-                    {isActive && <span className="chat-tone-active-dot" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Calming Ambience Audio Quick Action */}
-        <div className="chat-hero-ambience-strip">
-          <div
-            className={`hero-ambience-toggle ${soundOn ? "active" : ""}`}
-            onClick={() => setSoundOn(!soundOn)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setSoundOn(!soundOn);
-              }
-            }}
-            aria-label={soundOn ? "Pause calming audio" : "Play calming audio"}
-          >
-            <span className="hero-ambience-eq-icon">
-              {soundOn ? (
-                <span className="calming-mini-eq">
-                  <span className="eq-bar bar-1"></span>
-                  <span className="eq-bar bar-2"></span>
-                  <span className="eq-bar bar-3"></span>
-                </span>
-              ) : (
-                <Icon name="music" />
-              )}
-            </span>
-            <span className="hero-ambience-text">
-              <strong>
-                {soundOn
-                  ? (language === "Bahasa Melayu" ? "Muzik Dimainkan: " : language === "中文" ? "正在播放: " : "Playing: ") +
-                    (currentTrack
-                      ? (language === "Bahasa Melayu" ? currentTrack.titleBm : language === "中文" ? currentTrack.titleZh : currentTrack.title)
-                      : (language === "Bahasa Melayu" ? "Muzik Tenang" : language === "中文" ? "舒缓白噪音" : "Calming Ambience"))
-                  : (language === "Bahasa Melayu" ? "Pasang Muzik Tenang (432Hz / Hujan / Ombak)" : language === "中文" ? "开启疗愈音乐 (432Hz / 寺庙雨 / 潮汐)" : "Play Calming Music & Ambience")}
-              </strong>
-              <small>
-                {soundOn
-                  ? (language === "Bahasa Melayu" ? "Ketik untuk jeda · Tukar trek di butang kanan" : language === "中文" ? "轻点暂停 · 点击右侧挑选曲目" : "Tap to pause · Tap button to switch tracks")
-                  : (language === "Bahasa Melayu" ? "Terbukti redakan kegelisahan & tekanan" : language === "中文" ? "缓解焦虑紧绷、神经减压与助眠" : "Acoustic frequencies for anxiety & stress relief")}
-              </small>
-            </span>
-            {onOpenMusicModal && (
-              <span
-                role="button"
-                tabIndex={0}
-                className="hero-ambience-browse-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenMusicModal();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    onOpenMusicModal();
-                  }
-                }}
-                title={language === "Bahasa Melayu" ? "Pilih senarai muzik" : language === "中文" ? "浏览疗愈曲库" : "Browse calming playlist"}
-              >
-                <Icon name="sparkles" />
-                <span>{language === "Bahasa Melayu" ? "Tukar" : language === "中文" ? "选曲" : "Tracks"}</span>
+            <div className="memory-note">
+              <Icon name="memory" />
+              <span>
+                {memoryConsent === "allow" && useActiveMemories
+                  ? t.chat_memory_active_badge
+                  : t.chat_memory_paused_badge}
               </span>
-            )}
-          </div>
-        </div>
+              <Button variant="ghost" onClick={() => goTab("memory")}>
+                {t.chat_view_btn}
+              </Button>
+            </div>
+          )}
 
-        {/* Suggested Conversation Starters ("den only suggested something") */}
-        <div className="chat-hero-suggestions-wrap">
-          <div className="chat-hero-suggestions-title-row">
-            <span className="chat-hero-suggestions-title">
-              <Icon name="sparkles" />
-              {language === "Bahasa Melayu"
-                ? "Cadangan topik perbualan"
-                : language === "中文"
-                  ? "推荐开启暖心话题"
-                  : "Suggested conversation starters"}
-            </span>
-            <span className="chat-hero-suggestions-hint">
-              {language === "Bahasa Melayu"
-                ? "Ketik untuk mula"
-                : language === "中文"
-                  ? "轻点直接开启"
-                  : "Tap to begin"}
-            </span>
-          </div>
-
-          <div className="chat-hero-suggestions-grid">
-            {suggestedCards.map((card) => (
-              <button
-                key={card.prompt}
-                type="button"
-                className="hero-suggestion-card"
-                disabled={typing || isLimitReached}
-                onClick={() => {
-                  if (!isLimitReached) {
-                    reply(card.prompt);
-                  } else {
-                    navigate("subscription");
-                  }
-                }}
-              >
-                <div className="suggestion-card-left">
-                  <span className="suggestion-card-icon" aria-hidden="true">
-                    <Icon name={card.icon} />
+          {messages.length === 0 && (
+            <div className="chat-welcome-hero">
+              <div className="chat-hero-avatar-stage">
+                <div className="chat-hero-halo-aura" aria-hidden="true" />
+                <div className="chat-hero-avatar-bubble">
+                  <CompanionAvatar
+                    companion={companion}
+                    size="xl"
+                    mood={typing ? "speaking" : isUserTyping ? "listening" : "idle"}
+                    showGlow
+                    interactive
+                  />
+                  <span className="chat-hero-presence-badge" aria-label="Available & online">
+                    <span className="chat-hero-presence-pulse" />
                   </span>
-                  <div className="suggestion-card-texts">
-                    <strong className="suggestion-card-label">{card.label}</strong>
-                    <p className="suggestion-card-prompt">"{card.prompt}"</p>
-                  </div>
                 </div>
-                <span className="suggestion-card-arrow" aria-hidden="true">
-                  <Icon name="chevron" />
+              </div>
+
+              <div className="chat-hero-meta-row">
+                <span className="chat-hero-status-tag">
+                  <span className="live-dot" aria-hidden="true" />
+                  {language === "Bahasa Melayu"
+                    ? "ONY · 24/7 Sedia Mendengar"
+                    : language === "中文"
+                      ? "ONY · 24/7 随时倾听"
+                      : "ONY · 24/7 Active & Listening"}
                 </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    )}
-    {messages.length > 0 && <div className="messages">
-      {messages.map((m, i) => <div key={i} className={`message-row ${m.from}`} >
-        {m.from === "ony" && <CompanionAvatar companion={companion} size="sm" mood="idle" />}
-        <div className="message-col">
-          <div className="message">
-            <FormattedChatMessage text={m.text} isUser={m.from === "user"} />
-          </div>
-          {m.from === "ony" && !m.dismissedVoucher && (
-            <div className="chat-vouchers-container" style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%", marginTop: "6px" }}>
-              {((m.vouchers && m.vouchers.length > 0) ? m.vouchers : (m.voucher ? [m.voucher] : [])).map((voucherItem, vIdx) => (
-                <ContextualVoucherCard
-                  key={voucherItem.id || voucherItem.merchantName || vIdx}
-                  voucher={voucherItem}
-                  language={language}
-                  onExplore={() => {
-                    if (onOpenMerchant) {
-                      onOpenMerchant(voucherItem.merchantName);
-                    } else {
-                      navigate("merchant");
+              </div>
+
+              <div className="chat-hero-copy">
+                <h1 className="chat-hero-greeting-heading">{onyxGreeting.greeting}</h1>
+                <p className="chat-hero-question-line">{onyxGreeting.question}</p>
+                <p className="chat-hero-safety-line">{onyxGreeting.subtitle}</p>
+              </div>
+
+              {/* Calming Ambience Audio Quick Action */}
+              <div className="chat-hero-ambience-strip">
+                <div
+                  className={`hero-ambience-toggle ${soundOn ? "active" : ""}`}
+                  onClick={() => setSoundOn(!soundOn)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSoundOn(!soundOn);
                     }
                   }}
-                  onDismiss={() => {
-                    setMessages((prev) =>
-                      prev.map((msg, idx) =>
-                        idx === i ? { ...msg, dismissedVoucher: true } : msg
-                      )
-                    );
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        {m.from === "ony" && (
-          <button
-            type="button"
-            className={`tts-btn ${speakingMsgId === `ony-msg-${i}` ? "speaking" : ""}`}
-            onClick={() => toggleSpeakMessage(m.text, `ony-msg-${i}`)}
-            title={speakingMsgId === `ony-msg-${i}` ? t.chat_voice_stop_speaking : t.chat_voice_listen}
-            aria-label={speakingMsgId === `ony-msg-${i}` ? t.chat_voice_stop_speaking : t.chat_voice_listen}
-          >
-            <Icon name={speakingMsgId === `ony-msg-${i}` ? "volumeOff" : "volume"} />
-          </button>
-        )}
-      </div>)}
-      {typing && <div className="message-row ony"><CompanionAvatar companion={companion} size="sm" mood="speaking" /><div className="message typing"><i /><i /><i /></div></div>}
-      {chatError && !typing && <div className="chat-error-banner" role="alert">
-        <div><Icon name="info" /><span>{chatError}</span></div>
-        <div className="chat-error-actions">
-          <Button variant="ghost" onClick={() => setChatError(null)}>{t.common_dismiss}</Button>
-          {failedUserText && <Button variant="secondary" onClick={retryLastMessage}>{t.common_retry}</Button>}
-        </div>
-      </div>}
-      {!typing && (
-        <>
-          {showSuggestedToolkit && !dismissedToolkitSuggest && (
-            <div style={{ padding: "0 12px", width: "100%" }}>
-              <SuggestedToolkitCard
-                guideId={suggestedGuideId}
-                onOpenGuide={(gId) => {
-                  if (onOpenToolkitGuide) {
-                    onOpenToolkitGuide(gId);
-                  } else {
-                    navigate("resources");
-                  }
-                }}
-                onDismiss={() => setDismissedToolkitSuggest(true)}
-                lang={language}
-              />
-            </div>
-          )}
-          <div className="context-actions">
-            {safetyContext && (
-              <>
-                <Button variant="danger" onClick={() => navigate("safety")}>
-                  {t.chat_action_get_help}
-                </Button>
-                <Button variant="secondary" onClick={() => navigate("professional")}>
-                  {t.chat_action_find_support}
-                </Button>
-                <Button variant="secondary" onClick={() => navigate("trusted")}>
-                  {t.chat_action_contact_trusted}
-                </Button>
-              </>
-            )}
-            {!safetyContext && serverSafetyAction === "offer_human_support" && (
-              <>
-                <Button variant="secondary" onClick={() => navigate("professional")}>
-                  {t.chat_action_find_support}
-                </Button>
-                <Button variant="secondary" onClick={() => navigate("resources")}>
-                  <Icon name="memory" />
-                  {t.chat_action_view_resources}
-                </Button>
-              </>
-            )}
-            {!safetyContext && memoryContext && (
-              savedMemoryId === null ? (
-                <Button variant="secondary" onClick={saveContextMemory}>
-                  <Icon name="memory" />
-                  {t.chat_action_remember_this}
-                </Button>
-              ) : (
-                <div className="memory-saved">
-                  <Icon name="check" />
-                  <span>{t.chat_action_saved_vault}</span>
-                  <Button variant="ghost" onClick={undoContextMemory}>
-                    {t.common_undo}
-                  </Button>
-                </div>
-              )
-            )}
-            {!safetyContext && anxietyContext && (
-              <>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    onOpenToolkitGuide
-                      ? onOpenToolkitGuide("breathing_box")
-                      : navigate("resources")
-                  }
+                  aria-label={soundOn ? "Pause calming audio" : "Play calming audio"}
                 >
-                  <Icon name="wind" />
-                  {t.chat_action_breathing}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    onOpenToolkitGuide
-                      ? onOpenToolkitGuide("grounding_54321")
-                      : navigate("resources")
-                  }
-                >
-                  <Icon name="memory" />
-                  {language === "Bahasa Melayu"
-                    ? "Teknik Pembumian 5-4-3-2-1"
-                    : language === "中文"
-                    ? "5-4-3-2-1 身心着陆法"
-                    : "5-4-3-2-1 Grounding"}
-                </Button>
-                <Button variant="secondary" onClick={() => navigate("wellbeing")}>
-                  {t.chat_action_calming_music}
-                </Button>
-              </>
-            )}
-            {!safetyContext && studyContext && (
-              <>
-                <Button variant="secondary" onClick={() => reply(t.chat_action_study_plan)}>
-                  {t.chat_action_study_plan}
-                </Button>
-                <Button variant="secondary" onClick={() => notify(t.chat_action_take_break)}>
-                  {t.chat_action_take_break}
-                </Button>
-                <Button variant="secondary" onClick={() => reply(t.chat_action_talk_about_it)}>
-                  {t.chat_action_talk_about_it}
-                </Button>
-              </>
-            )}
-            {!safetyContext && jobContext && (
-              <>
-                <Button variant="secondary" onClick={() => navigate("jobs")}>
-                  {t.chat_action_find_jobs}
-                </Button>
-                <Button variant="secondary" onClick={() => navigate("jobPrefs")}>
-                  {t.chat_action_job_prefs}
-                </Button>
-              </>
-            )}
-            {!safetyContext && relationshipContext && (
-              <>
-                <Button variant="secondary" onClick={() => reply(t.chat_action_tell_more)}>
-                  {t.chat_action_tell_more}
-                </Button>
-                <Button variant="secondary" onClick={() => reply(t.chat_action_help_reflect)}>
-                  {t.chat_action_help_reflect}
-                </Button>
-              </>
-            )}
-          </div>
-        </>
-      )}
-      <div ref={messagesEndRef} className="chat-bottom-spacer" />
-    </div>}
-    </div>
-    <div className="chat-composer">
-      <Button variant="ghost" className="ai-notice" onClick={() => navigate("resources")}><Icon name="info" />{t.chat_ai_notice}</Button>
-      {isLimitReached ? (
-        <div className="chat-limit-banner">
-          <div className="limit-banner-text">
-            <strong><Icon name="shield" /> {t.chat_limit_title} ({freeUsage}/{freeLimit})</strong>
-            <p>{t.chat_limit_desc}</p>
-          </div>
-          <Button variant="primary" className="full upgrade-btn" onClick={() => navigate("subscription")}>
-            {t.chat_limit_unlock_btn}
-          </Button>
-        </div>
-      ) : (
-        <>
-          {micNotice && (
-            <div className="voice-mic-notice-card">
-              <div className="voice-mic-notice-header">
-                <Icon name="info" />
-                <span>{micNotice}</span>
-                <button
-                  type="button"
-                  className="notice-dismiss-btn"
-                  onClick={() => setMicNotice(null)}
-                  aria-label="Dismiss notice"
-                >
-                  <Icon name="close" />
-                </button>
-              </div>
-              <div className="voice-prompt-chips">
-                {[
-                  t.chat_voice_prompt_overwhelmed,
-                  t.chat_voice_prompt_breathing,
-                  t.chat_voice_prompt_talk,
-                ].map((phrase) => (
-                  <button key={phrase} type="button" onClick={() => handleUsePromptSuggestion(phrase)}>
-                    💬 "{phrase}"
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {inputMode === "voice" || voiceState === "listening" || voiceState === "recording" ? (
-            <div className={`chat-input-bar voice-mode state-${voiceState}`}>
-              <button
-                type="button"
-                className="composer-icon-btn keyboard-toggle-btn"
-                onClick={() => {
-                  stopVoiceListening(false);
-                  setInputMode("text");
-                }}
-                title={t.chat_mode_text}
-                aria-label="Switch to typing keyboard"
-              >
-                <Icon name="keyboard" />
-              </button>
-
-              <div
-                className="voice-recording-track"
-                onClick={() => {
-                  if (voiceState === "idle" || voiceState === "sent") {
-                    void startVoiceListening();
-                  } else {
-                    handleVoice();
-                  }
-                }}
-              >
-                <button
-                  type="button"
-                  className={`voice-mic-pill ${voiceState === "listening" || voiceState === "recording" ? "recording" : ""}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleVoice();
-                  }}
-                  aria-label={voiceState === "listening" ? "Stop and send speech" : "Tap to speak"}
-                  title={voiceState === "listening" ? t.chat_voice_stop : t.chat_voice_start}
-                >
-                  <Icon name={voiceState === "listening" || voiceState === "recording" ? "mic" : voiceState === "sent" ? "check" : "mic"} />
-                </button>
-
-                {voiceState === "listening" && (
-                  <div className="voice-live-waves mini" aria-hidden="true">
-                    <span style={{ height: `${Math.max(4, voiceVolume * 18)}px` }} />
-                    <span style={{ height: `${Math.max(6, voiceVolume * 26)}px` }} />
-                    <span style={{ height: `${Math.max(5, voiceVolume * 22)}px` }} />
-                    <span style={{ height: `${Math.max(8, voiceVolume * 30)}px` }} />
-                    <span style={{ height: `${Math.max(4, voiceVolume * 16)}px` }} />
-                  </div>
-                )}
-
-                <div className="voice-text-stream">
-                  {voiceTranscript || voiceInterim ? (
-                    <span className="transcript-live">
-                      {voiceTranscript}
-                      {voiceInterim && <span className="transcript-interim"> {voiceInterim}</span>}
-                    </span>
-                  ) : (
-                    <span className="voice-status-hint">
-                      {voiceState === "listening"
-                        ? t.chat_voice_listening
-                        : voiceState === "sent"
-                        ? t.chat_voice_sent
-                        : t.chat_voice_tap_mic}
+                  <span className="hero-ambience-eq-icon">
+                    {soundOn ? (
+                      <span className="calming-mini-eq">
+                        <span className="eq-bar bar-1"></span>
+                        <span className="eq-bar bar-2"></span>
+                        <span className="eq-bar bar-3"></span>
+                      </span>
+                    ) : (
+                      <Icon name="music" />
+                    )}
+                  </span>
+                  <span className="hero-ambience-text">
+                    <strong>
+                      {soundOn
+                        ? (language === "Bahasa Melayu" ? "Muzik Dimainkan: " : language === "中文" ? "正在播放: " : "Playing: ") +
+                          (currentTrack
+                            ? (language === "Bahasa Melayu" ? currentTrack.titleBm : language === "中文" ? currentTrack.titleZh : currentTrack.title)
+                            : (language === "Bahasa Melayu" ? "Muzik Tenang" : language === "中文" ? "舒缓白噪音" : "Calming Ambience"))
+                        : (language === "Bahasa Melayu" ? "Pasang Muzik Tenang (432Hz / Hujan / Ombak)" : language === "中文" ? "开启疗愈音乐 (432Hz / 寺庙雨 / 潮汐)" : "Play Calming Music & Ambience")}
+                    </strong>
+                    <small>
+                      {soundOn
+                        ? (language === "Bahasa Melayu" ? "Ketik untuk jeda · Tukar trek di butang kanan" : language === "中文" ? "轻点暂停 · 点击右侧挑选曲目" : "Tap to pause · Tap button to switch tracks")
+                        : (language === "Bahasa Melayu" ? "Terbukti redakan kegelisahan & tekanan" : language === "中文" ? "缓解焦虑紧绷、神经减压与助眠" : "Acoustic frequencies for anxiety & stress relief")}
+                    </small>
+                  </span>
+                  {onOpenMusicModal && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="hero-ambience-browse-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenMusicModal();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onOpenMusicModal();
+                        }
+                      }}
+                      title={language === "Bahasa Melayu" ? "Pilih senarai muzik" : language === "中文" ? "浏览疗愈曲库" : "Browse calming playlist"}
+                    >
+                      <Icon name="sparkles" />
+                      <span>{language === "Bahasa Melayu" ? "Tukar" : language === "中文" ? "选曲" : "Tracks"}</span>
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="composer-actions">
-                <button
-                  type="button"
-                  className="composer-icon-btn cancel-btn"
-                  onClick={() => {
-                    stopVoiceListening(false);
-                    setInputMode("text");
-                  }}
-                  title={t.common_cancel}
-                  aria-label={t.common_cancel}
-                >
-                  <Icon name="close" />
-                </button>
-                <button
-                  type="button"
-                  className={`composer-icon-btn send-btn ${(voiceTranscript.trim() || voiceInterim.trim()) ? "ready" : ""}`}
-                  disabled={typing || (!voiceTranscript.trim() && !voiceInterim.trim())}
-                  onClick={() => {
-                    stopVoiceListening(true);
-                    setInputMode("text");
-                  }}
-                  title={t.chat_voice_send_btn}
-                  aria-label={t.chat_voice_send_btn}
-                >
-                  <Icon name="send" />
-                </button>
+              <div className="chat-hero-suggestions-wrap">
+                <div className="chat-hero-suggestions-title-row">
+                  <span className="chat-hero-suggestions-title">
+                    <Icon name="sparkles" />
+                    {language === "Bahasa Melayu"
+                      ? "Cadangan topik perbualan"
+                      : language === "中文"
+                        ? "推荐开启暖心话题"
+                        : "Suggested conversation starters"}
+                  </span>
+                  <span className="chat-hero-suggestions-hint">
+                    {language === "Bahasa Melayu"
+                      ? "Ketik untuk mula"
+                      : language === "中文"
+                        ? "轻点直接开启"
+                        : "Tap to begin"}
+                  </span>
+                </div>
+
+                <div className="chat-hero-suggestions-grid">
+                  {suggestedCards.map((card) => (
+                    <button
+                      key={card.prompt}
+                      type="button"
+                      className="hero-suggestion-card"
+                      disabled={typing || isLimitReached}
+                      onClick={() => {
+                        if (!isLimitReached) {
+                          reply(card.prompt);
+                        } else {
+                          navigate("subscription");
+                        }
+                      }}
+                    >
+                      <div className="suggestion-card-left">
+                        <span className="suggestion-card-icon" aria-hidden="true">
+                          <Icon name={card.icon} />
+                        </span>
+                        <div className="suggestion-card-texts">
+                          <strong className="suggestion-card-label">{card.label}</strong>
+                          <p className="suggestion-card-prompt">"{card.prompt}"</p>
+                        </div>
+                      </div>
+                      <span className="suggestion-card-arrow" aria-hidden="true">
+                        <Icon name="chevron" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          ) : (
-            <form
-              className="chat-input-bar text-mode"
-              onSubmit={submit}
-              onClick={(e) => {
-                if ((e.target as HTMLElement).tagName !== "BUTTON" && !(e.target as HTMLElement).closest("button")) {
-                  textareaRef.current?.focus();
-                }
-              }}
-            >
-              <textarea
-                ref={textareaRef}
-                className="chat-textarea"
-                rows={1}
-                value={input}
-                onChange={handleTextareaChange}
-                onKeyDown={handleKeyDown}
-                placeholder={t.chat_input_placeholder}
-                aria-label="Message ONY"
-                maxLength={2000}
-              />
-              <div className="composer-actions">
-                <button
-                  type="button"
-                  className="composer-icon-btn mic-btn"
-                  onClick={() => {
-                    setInputMode("voice");
-                    void startVoiceListening();
-                  }}
-                  title={t.chat_voice_start}
-                  aria-label={t.chat_voice_start}
-                  disabled={typing}
-                >
-                  <Icon name="mic" />
-                </button>
-                <button
-                  type="submit"
-                  className={`composer-icon-btn send-btn ${input.trim() ? "ready" : ""}`}
-                  disabled={typing || !input.trim()}
-                  title={t.chat_send_button}
-                  aria-label={t.chat_send_button}
-                >
-                  <Icon name="send" />
-                </button>
-              </div>
-            </form>
           )}
-        </>
+
+          {messages.length > 0 && (
+            <ClassicMessageList
+              messages={messages}
+              companion={companion}
+              typing={typing}
+              speakingMsgId={speakingMsgId}
+              language={language}
+              chatError={chatError}
+              failedUserText={failedUserText}
+              safetyContext={safetyContext}
+              serverSafetyAction={serverSafetyAction}
+              memoryContext={memoryContext}
+              savedMemoryId={savedMemoryId}
+              anxietyContext={anxietyContext}
+              studyContext={studyContext}
+              jobContext={jobContext}
+              relationshipContext={relationshipContext}
+              showContextActions
+              onToggleSpeakMessage={toggleSpeakMessage}
+              onDismissVoucher={handleDismissVoucher}
+              onOpenMerchant={onOpenMerchant}
+              onNavigate={(s) => navigate(s as Screen)}
+              onDismissError={() => setChatError(null)}
+              onRetryLastMessage={retryLastMessage}
+              onSaveContextMemory={saveContextMemory}
+              onUndoContextMemory={undoContextMemory}
+              onOpenToolkitGuide={onOpenToolkitGuide}
+              onSendQuickReply={reply}
+              onNotify={notify}
+              messagesEndRef={messagesEndRef}
+              labels={classicMessageLabels}
+            />
+          )}
+        </div>
       )}
+
+      {/* Compact Input Bar with Reply-Matched Suggestion Strip, Single-Row ToneChip + Disclaimer */}
+      <ChatInputBar
+        input={input}
+        inputMode={inputMode}
+        voiceState={voiceState}
+        voiceTranscript={voiceTranscript}
+        voiceInterim={voiceInterim}
+        voiceVolume={voiceVolume}
+        micNotice={micNotice}
+        typing={typing}
+        keyboardOpen={keyboardOpen}
+        isLimitReached={isLimitReached}
+        freeUsage={freeUsage}
+        freeLimit={freeLimit}
+        persona={persona}
+        personaOptions={personaOptions}
+        language={language}
+        suggestions={turnSuggestions}
+        activeTimer={activeBreakTimer}
+        textareaRef={textareaRef}
+        onOpenTonePicker={() => setShowTonePicker(true)}
+        onOpenAiDisclaimer={() => setShowAiDisclaimer(true)}
+        onSelectSuggestion={handleSelectSuggestion}
+        onDismissSuggestion={handleDismissSuggestion}
+        onTogglePauseTimer={() =>
+          setActiveBreakTimer((prev) => (prev ? { ...prev, paused: !prev.paused } : null))
+        }
+        onStopTimer={() => setActiveBreakTimer(null)}
+        onDismissMicNotice={() => setMicNotice(null)}
+        onUsePromptSuggestion={handleUsePromptSuggestion}
+        onChangeInput={handleTextareaChange}
+        onKeyDownInput={handleKeyDown}
+        onFocusInput={() => {
+          if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) {
+            setKeyboardOpen(true);
+          }
+        }}
+        onBlurInput={() => {
+          setIsUserTyping(false);
+          if (typeof window !== "undefined" && window.visualViewport) {
+            const ratio = window.visualViewport.height / Math.max(window.innerHeight, 1);
+            if (ratio >= 0.85) setKeyboardOpen(false);
+          } else {
+            setKeyboardOpen(false);
+          }
+        }}
+        onSubmitText={submit}
+        onSwitchToTextMode={() => {
+          stopVoiceListening(false);
+          setInputMode("text");
+        }}
+        onSwitchToVoiceMode={() => {
+          setInputMode("voice");
+          void startVoiceListening();
+        }}
+        onHandleVoiceTap={handleVoice}
+        onStartVoiceListening={() => {
+          void startVoiceListening();
+        }}
+        onCancelVoice={() => {
+          stopVoiceListening(false);
+          setInputMode("text");
+        }}
+        onSendVoice={() => {
+          stopVoiceListening(true);
+          setInputMode("text");
+        }}
+        onUpgradePlan={() => navigate("subscription")}
+        labels={{
+          placeholder: t.chat_input_placeholder,
+          aiNotice: t.chat_ai_notice,
+          limitTitle: t.chat_limit_title,
+          limitDesc: t.chat_limit_desc,
+          unlockBtn: t.chat_limit_unlock_btn,
+          voiceModeText: t.chat_mode_text,
+          voiceStart: t.chat_voice_start,
+          voiceStop: t.chat_voice_stop,
+          voiceListening: t.chat_voice_listening,
+          voiceSent: t.chat_voice_sent,
+          voiceTapMic: t.chat_voice_tap_mic,
+          voiceSendBtn: t.chat_voice_send_btn,
+          sendButton: t.chat_send_button,
+          cancel: t.common_cancel,
+          promptOverwhelmed: t.chat_voice_prompt_overwhelmed,
+          promptBreathing: t.chat_voice_prompt_breathing,
+          promptTalk: t.chat_voice_prompt_talk,
+        }}
+      />
+
+      {/* Slide-up Full Conversation History Sheet */}
+      <ChatHistorySheet
+        open={showHistorySheet}
+        onClose={() => setShowHistorySheet(false)}
+        messages={messages}
+        companion={companion}
+        typing={typing}
+        speakingMsgId={speakingMsgId}
+        language={language}
+        onToggleSpeakMessage={toggleSpeakMessage}
+        onDismissVoucher={handleDismissVoucher}
+        onOpenMerchant={onOpenMerchant}
+        onNavigate={(s) => navigate(s as Screen)}
+        onOpenAllSessions={() => navigate("chatHistory")}
+        onNewChat={handleNewChat}
+        labels={classicMessageLabels}
+      />
+
+      {/* Header "..." Overflow Bottom Sheet */}
+      <ChatOverflowSheet
+        open={showOverflowMenu}
+        onClose={() => setShowOverflowMenu(false)}
+        chatViewMode={chatViewMode}
+        onChangeChatViewMode={handleSwitchChatViewMode}
+        hasMessages={messages.length > 0}
+        autoSpeak={autoSpeak}
+        soundOn={soundOn}
+        unreadCount={unreadCount}
+        memoryActive={memoryConsent === "allow" && useActiveMemories}
+        language={language}
+        onNewChat={handleNewChat}
+        onToggleAutoSpeak={handleToggleAutoSpeak}
+        onToggleSound={() => setSoundOn(!soundOn)}
+        onOpenMusicModal={onOpenMusicModal}
+        onOpenNotifications={openNotifications}
+        onOpenToolkit={() => navigate("resources")}
+        onOpenSafety={() => navigate("safety")}
+        onOpenHelp={() => navigate("help")}
+        onOpenMemoryTab={() => goTab("memory")}
+      />
+
+      {/* Tone Picker Bottom Sheet */}
+      <ChatTonePickerSheet
+        open={showTonePicker}
+        onClose={() => setShowTonePicker(false)}
+        persona={persona}
+        personaOptions={personaOptions}
+        language={language}
+        onSelectPersona={(nextPersona) => {
+          if (setPersona && persona !== nextPersona) {
+            setPersona(nextPersona);
+            const opt = personaOptions.find((item) => item.id === nextPersona);
+            const details = getPersonaDetails(
+              nextPersona,
+              opt?.name || "",
+              opt?.note || "",
+              opt?.preview || "",
+              language,
+            );
+            notify(
+              language === "Bahasa Melayu"
+                ? `Nada ditukar kepada: ${details.name}`
+                : language === "中文"
+                  ? `已切换语气：${details.name}`
+                  : `Tone switched to: ${details.name}`,
+            );
+          }
+        }}
+      />
+
+      {/* AI Disclaimer Info Sheet */}
+      <AiDisclaimerSheet
+        open={showAiDisclaimer}
+        onClose={() => setShowAiDisclaimer(false)}
+        language={language}
+        onOpenSafety={() => navigate("safety")}
+        onOpenToolkit={() => navigate("resources")}
+      />
     </div>
-  </div>;
+  );
 }
 
 function MoodCheck({ back, navigate, entries, setEntries, notify }: { back: () => void; navigate: (s: Screen) => void; entries: MoodEntry[]; setEntries: (entries: MoodEntry[]) => void; notify: (s: string) => void }) {

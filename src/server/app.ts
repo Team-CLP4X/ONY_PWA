@@ -18,6 +18,10 @@ import type {
   SafetyAction,
 } from "../services/contracts.js";
 import {
+  buildContextualSuggestions,
+  parseAiSuggestionsFromReply,
+} from "../services/chatSuggestions.js";
+import {
   translateCommunityContent,
   transcribeSupportiveVoice,
 } from "./communityAIEngine.js";
@@ -329,6 +333,10 @@ export function createApiApp() {
       safetyAction,
     });
 
+    const recentSuggestionIds = Array.isArray(body.recentSuggestionIds)
+      ? body.recentSuggestionIds.filter((id): id is string => typeof id === "string").slice(0, 10)
+      : [];
+
     try {
       const result = await geminiProvider.generateReply({
         message: rawMessage,
@@ -337,6 +345,20 @@ export function createApiApp() {
         language,
         persona,
         memories: approvedMemories,
+      });
+
+      const { cleanReply, aiSuggestions } = parseAiSuggestionsFromReply(result.reply);
+      const finalReply = cleanReply || result.reply;
+
+      const suggestions = buildContextualSuggestions({
+        replyText: finalReply,
+        userMessage: rawMessage,
+        aiSuggestions,
+        recentShownIds: recentSuggestionIds,
+        memories: approvedMemories,
+        language,
+        safetyAction,
+        maxCount: 3,
       });
 
       const { vouchers: recommendedVouchers, copingActivity } =
@@ -349,13 +371,14 @@ export function createApiApp() {
         });
 
       const responsePayload: AIConversationResponse = {
-        message: result.reply,
+        message: finalReply,
         safetyAction,
         citedResourceIds,
         model: result.model,
         recommendedVoucher: recommendedVouchers[0] || null,
         recommendedVouchers,
         copingActivity: copingActivity || null,
+        suggestions,
       };
 
       return res.json(responsePayload);
@@ -405,6 +428,20 @@ export function createApiApp() {
         memories: approvedMemories,
       });
 
+      const { cleanReply: cleanFallbackReply, aiSuggestions: fallbackAiSuggestions } =
+        parseAiSuggestionsFromReply(fallbackReply);
+      const finalFallbackReply = cleanFallbackReply || fallbackReply;
+      const fallbackSuggestions = buildContextualSuggestions({
+        replyText: finalFallbackReply,
+        userMessage: rawMessage,
+        aiSuggestions: fallbackAiSuggestions,
+        recentShownIds: recentSuggestionIds,
+        memories: approvedMemories,
+        language,
+        safetyAction,
+        maxCount: 3,
+      });
+
       const { vouchers: fallbackVouchers, copingActivity: fallbackActivity } =
         await evaluateMarketplaceRecommendations({
           userMessage: rawMessage,
@@ -415,13 +452,14 @@ export function createApiApp() {
         });
 
       return res.json({
-        message: fallbackReply,
+        message: finalFallbackReply,
         safetyAction,
         citedResourceIds,
         model: "ony-resilient-companion",
         recommendedVoucher: fallbackVouchers[0] || null,
         recommendedVouchers: fallbackVouchers,
         copingActivity: fallbackActivity || null,
+        suggestions: fallbackSuggestions,
       });
     }
   });

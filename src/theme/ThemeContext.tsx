@@ -18,6 +18,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase/config";
 
 export type FontSizeScale = "small" | "default" | "large" | "extraLarge";
+export type ChatViewMode = "companion" | "classic";
 
 export const FONT_SCALE_VALUES: Record<FontSizeScale, number> = {
   small: 85,
@@ -82,6 +83,7 @@ export interface UserSettingsDoc {
   themeMode: ThemeMode;
   fontSizeScale: FontSizeScale;
   fontSizePercent: number; // 85 to 150
+  chatViewMode: ChatViewMode;
   language: string;
   companionPreferences: CompanionPreferences;
   notificationPreferences: NotificationPreferences;
@@ -104,6 +106,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
   themeMode: "system",
   fontSizeScale: "default",
   fontSizePercent: 100,
+  chatViewMode: "companion",
   language: "English",
   companionPreferences: {
     companion: "Cat",
@@ -221,6 +224,7 @@ export function loadCachedSettings(): UserSettingsDoc {
     const legacyMode = localStorage.getItem("ony_appearance_theme_mode");
     const legacyScale = localStorage.getItem("ony_appearance_font_scale");
     const legacyLang = localStorage.getItem("ony_language");
+    const legacyChatMode = localStorage.getItem("ony_chat_view_mode");
 
     const migrated: Partial<UserSettingsDoc> = {};
     if (legacyTheme && legacyTheme in THEME_DEFINITIONS) {
@@ -232,6 +236,9 @@ export function loadCachedSettings(): UserSettingsDoc {
     if (legacyScale && legacyScale in FONT_SCALE_VALUES) {
       migrated.fontSizeScale = legacyScale as FontSizeScale;
       migrated.fontSizePercent = FONT_SCALE_VALUES[migrated.fontSizeScale];
+    }
+    if (legacyChatMode === "companion" || legacyChatMode === "classic") {
+      migrated.chatViewMode = legacyChatMode;
     }
     if (legacyLang) migrated.language = legacyLang;
 
@@ -272,6 +279,11 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
       ? incoming.fontSizePercent
       : FONT_SCALE_VALUES[fontSizeScale] || 100;
 
+  const chatViewMode: ChatViewMode =
+    incoming.chatViewMode === "classic" || incoming.chatViewMode === "companion"
+      ? incoming.chatViewMode
+      : DEFAULT_USER_SETTINGS.chatViewMode;
+
   return {
     schemaVersion: 1,
     userId: incoming.userId || "",
@@ -279,6 +291,7 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
     themeMode,
     fontSizeScale,
     fontSizePercent,
+    chatViewMode,
     language: incoming.language || DEFAULT_USER_SETTINGS.language,
     companionPreferences: {
       ...DEFAULT_USER_SETTINGS.companionPreferences,
@@ -309,6 +322,7 @@ export function saveCachedSettings(settings: UserSettingsDoc): void {
     localStorage.setItem("ony_theme_preference", settings.colorTheme);
     localStorage.setItem("ony_appearance_theme_mode", settings.themeMode);
     localStorage.setItem("ony_appearance_font_scale", settings.fontSizeScale);
+    localStorage.setItem("ony_chat_view_mode", settings.chatViewMode);
     localStorage.setItem("ony_language", settings.language);
   } catch {}
 }
@@ -329,6 +343,7 @@ export interface ThemeContextValue {
   effectiveMode: "light" | "dark";
   fontSizeScale: FontSizeScale;
   fontSizePercent: number;
+  chatViewMode: ChatViewMode;
   tokens: SemanticThemeTokens;
   isDark: boolean;
   settings: UserSettingsDoc;
@@ -341,6 +356,7 @@ export interface ThemeContextValue {
   setFontSizeScale: (scale: FontSizeScale) => void;
   setFontSizePercent: (percent: number) => void;
   setFontScalePercent: (percent: number) => void;
+  setChatViewMode: (mode: ChatViewMode) => void;
   updateSettings: (updater: ((prev: UserSettingsDoc) => UserSettingsDoc) | Partial<UserSettingsDoc>) => Promise<void> | void;
   syncWithDatabase: (userId: string) => Promise<void>;
   resetSettingsOnLogout: () => void;
@@ -412,6 +428,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             responseLength: payload.companionPreferences.responseLength,
             useActiveMemories: payload.companionPreferences.useActiveMemories,
             memoryConsent: payload.companionPreferences.memoryConsent,
+            chatViewMode: payload.chatViewMode,
             userSettings: payload,
             updatedAt: payload.updatedAt,
           },
@@ -483,6 +500,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
               ...(uData.userSettings || {}),
               colorTheme: (uData.theme as ThemeId) || settings.colorTheme,
               language: uData.preferredLanguage || settings.language,
+              chatViewMode:
+                (uData.chatViewMode as ChatViewMode) ||
+                (uData.userSettings?.chatViewMode as ChatViewMode) ||
+                settings.chatViewMode,
             };
             const merged = mergeWithDefaults(fromProfile);
             setSettings(merged);
@@ -602,6 +623,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [updateSettings],
   );
 
+  const setChatViewMode = useCallback(
+    (mode: ChatViewMode) => {
+      updateSettings((prev) => ({
+        ...prev,
+        chatViewMode: mode,
+      }));
+    },
+    [updateSettings],
+  );
+
   const resetSettingsOnLogout = useCallback(() => {
     const defaults = { ...DEFAULT_USER_SETTINGS, userId: "" };
     setSettings(defaults);
@@ -609,6 +640,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyTokensToDocument(defaults.colorTheme, defaults.themeMode, defaults.fontSizePercent);
     if (typeof window !== "undefined") {
       localStorage.removeItem(PENDING_SYNC_QUEUE_KEY);
+      localStorage.removeItem("ony_chat_view_mode");
     }
   }, []);
 
@@ -623,6 +655,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         effectiveMode,
         fontSizeScale: settings.fontSizeScale,
         fontSizePercent: settings.fontSizePercent,
+        chatViewMode: settings.chatViewMode,
         tokens,
         isDark,
         settings,
@@ -633,6 +666,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setFontSizeScale,
         setFontSizePercent,
         setFontScalePercent: setFontSizePercent,
+        setChatViewMode,
         updateSettings,
         syncWithDatabase,
         resetSettingsOnLogout,
