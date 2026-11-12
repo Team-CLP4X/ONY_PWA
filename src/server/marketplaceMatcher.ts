@@ -61,7 +61,7 @@ export async function getActiveDatabaseVouchers(): Promise<FirestoreMerchant[]> 
     const colRef = collection(dbLite, "merchants");
     const snapshot = await getDocs(colRef);
     if (!snapshot.empty) {
-      const liveList: FirestoreMerchant[] = snapshot.docs.map((docSnap) => {
+      const liveList: FirestoreMerchant[] = snapshot.docs.map((docSnap: any) => {
         const data = docSnap.data() as Record<string, any>;
         return {
           id: docSnap.id,
