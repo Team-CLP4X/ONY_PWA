@@ -1661,9 +1661,34 @@ export async function listCommunityMessages(
               Boolean(currentUid && m.toUserId === currentUid))),
       );
     }
-    return messages;
+    // Deduplicate in memory (guards against concurrent seed or rapid double-submissions)
+    const seenIds = new Set<string>();
+    const seenContent = new Map<string, number>();
+    const deduped: FirestoreCommunityMessage[] = [];
+    for (const msg of messages) {
+      if (!msg.id || seenIds.has(msg.id)) continue;
+      const textKey = `${msg.kind || "text"}:${(msg.text || "").trim().toLowerCase()}`;
+      const msgTime = Date.parse(msg.createdAt || "") || 0;
+      const prevTime = seenContent.get(textKey);
+      if (prevTime !== undefined && Math.abs(msgTime - prevTime) < 30_000) {
+        continue;
+      }
+      seenIds.add(msg.id);
+      seenContent.set(textKey, msgTime);
+      deduped.push(msg);
+    }
+    return deduped;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function deleteCommunityMessage(messageId: string): Promise<void> {
+  const path = `communityMessages/${messageId}`;
+  try {
+    await deleteDoc(doc(db, "communityMessages", messageId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 

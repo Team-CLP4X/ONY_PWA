@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   translateCommunityText,
@@ -20,7 +20,41 @@ export interface SupportiveMessageBubbleProps {
   timeDisplay?: string;
   recipientAnonymous?: string;
   toYou?: boolean;
-  notify: (msg: string) => void;
+  autoTranslate?: boolean;
+  language?: string;
+  notify?: (msg: string) => void;
+  onReport?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}
+
+/**
+ * Normalizes any sender label so languages are never mixed (e.g. English UI always says "Anonymous Member #607")
+ */
+function formatSenderLabel(rawSender: string | undefined, isMe: boolean, language: string): string {
+  if (isMe) {
+    if (language === "Bahasa Melayu") return "Anda (Tanpa Nama)";
+    if (language === "中文") return "您 (匿名)";
+    return "You (Anonymous)";
+  }
+
+  const s = (rawSender || "").trim();
+  // Extract number if present: #607, #928, etc.
+  const numMatch = /#?(\d+)/.exec(s);
+  const idSuffix = numMatch ? `#${numMatch[1]}` : "";
+
+  if (s.toLowerCase().includes("friend") || s.includes("Teman") || s.includes("朋友")) {
+    if (language === "Bahasa Melayu") return `Sahabat Tanpa Nama ${idSuffix}`.trim();
+    if (language === "中文") return `匿名挚友 ${idSuffix}`.trim();
+    return `Anonymous Friend ${idSuffix}`.trim();
+  }
+
+  if (language === "Bahasa Melayu") {
+    return idSuffix ? `Ahli Tanpa Nama ${idSuffix}` : "Ahli Tanpa Nama";
+  }
+  if (language === "中文") {
+    return idSuffix ? `匿名成员 ${idSuffix}` : "匿名成员";
+  }
+  return idSuffix ? `Anonymous Member ${idSuffix}` : "Anonymous Member";
 }
 
 export function SupportiveMessageBubble({
@@ -34,9 +68,16 @@ export function SupportiveMessageBubble({
   senderAnonymous,
   timeDisplay,
   toYou = false,
-  notify,
+  autoTranslate = true,
+  notify = () => {},
+  onReport,
+  onDelete,
 }: SupportiveMessageBubbleProps) {
   const { t, language } = useLanguage();
+
+  // Menu popup state for Report / Delete
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Text message translation state
   const [showTranslation, setShowTranslation] = useState(false);
@@ -63,6 +104,46 @@ export function SupportiveMessageBubble({
   );
   const [isTranslatingVoice, setIsTranslatingVoice] = useState(false);
 
+  // Close popup menu when clicking outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handleClickOutside);
+    return () => document.removeEventListener("pointerdown", handleClickOutside);
+  }, [menuOpen]);
+
+  // Handle auto-translation if enabled by user settings
+  useEffect(() => {
+    if (!autoTranslate || isMe) return;
+
+    if (kind === "text" && text) {
+      // Check if text is likely in a different language
+      const cached = getCachedTranslation(text, language);
+      if (cached) {
+        setTranslatedText(cached);
+        setShowTranslation(true);
+      } else {
+        // Auto-fetch translation in background
+        let isCurrent = true;
+        void translateCommunityText(text, language)
+          .then((result) => {
+            if (isCurrent && result && result !== text) {
+              setTranslatedText(result);
+              setShowTranslation(true);
+            }
+          })
+          .catch(() => {});
+        return () => {
+          isCurrent = false;
+        };
+      }
+    }
+  }, [autoTranslate, kind, text, language, isMe]);
+
   // --- Voice Note Playback ---
   const togglePlay = () => {
     if (audioUrl) {
@@ -79,8 +160,8 @@ export function SupportiveMessageBubble({
             language === "Bahasa Melayu"
               ? "Tidak dapat memainkan nota suara"
               : language === "中文"
-              ? "无法播放语音留言"
-              : "Unable to play voice note",
+                ? "无法播放语音留言"
+                : "Unable to play voice note",
           );
         };
         audioRef.current = audio;
@@ -97,8 +178,8 @@ export function SupportiveMessageBubble({
               language === "Bahasa Melayu"
                 ? "Audio disekat oleh pelayar"
                 : language === "中文"
-                ? "浏览器拦截了音频播放"
-                : "Audio playback blocked by browser",
+                  ? "浏览器拦截了音频播放"
+                  : "Audio playback blocked by browser",
             );
           });
       }
@@ -116,18 +197,15 @@ export function SupportiveMessageBubble({
   // --- Text Translation Handler ---
   const handleToggleTextTranslation = async () => {
     if (showTranslation) {
-      // Switch back to original
       setShowTranslation(false);
       return;
     }
 
     if (translatedText) {
-      // Instant switch to existing translation
       setShowTranslation(true);
       return;
     }
 
-    // Need to fetch translation
     setIsTranslating(true);
     try {
       const translated = await translateCommunityText(text, language);
@@ -135,18 +213,18 @@ export function SupportiveMessageBubble({
       setShowTranslation(true);
       notify(
         language === "Bahasa Melayu"
-          ? `Diterjemah ke Bahasa Melayu`
+          ? "Diterjemah ke Bahasa Melayu"
           : language === "中文"
-          ? `已翻译为中文`
-          : `Translated to English`,
+            ? "已翻译为中文"
+            : "Translated to English",
       );
     } catch {
       notify(
         language === "Bahasa Melayu"
           ? "Gagal menterjemah teks"
           : language === "中文"
-          ? "翻译未能完成"
-          : "Translation failed",
+            ? "翻译未能完成"
+            : "Translation failed",
       );
     } finally {
       setIsTranslating(false);
@@ -156,7 +234,6 @@ export function SupportiveMessageBubble({
   // --- Voice Transcription Handler ---
   const handleFetchTranscript = async () => {
     if (showTranscript) {
-      // Toggle visibility
       setShowTranscript(false);
       return;
     }
@@ -181,16 +258,16 @@ export function SupportiveMessageBubble({
         language === "Bahasa Melayu"
           ? "Teks suara berjaya didapatkan"
           : language === "中文"
-          ? "已获取语音文字"
-          : "Voice text retrieved",
+            ? "已获取语音文字"
+            : "Voice text retrieved",
       );
     } catch {
       notify(
         language === "Bahasa Melayu"
           ? "Tidak dapat mendapatkan teks suara"
           : language === "中文"
-          ? "未能获取语音文字"
-          : "Could not fetch voice text",
+            ? "未能获取语音文字"
+            : "Could not fetch voice text",
       );
     } finally {
       setIsTranscribing(false);
@@ -202,7 +279,6 @@ export function SupportiveMessageBubble({
     if (!transcriptText) return;
 
     if (showVoiceTranslation) {
-      // Switch back to original voice transcript
       setShowVoiceTranslation(false);
       return;
     }
@@ -219,18 +295,18 @@ export function SupportiveMessageBubble({
       setShowVoiceTranslation(true);
       notify(
         language === "Bahasa Melayu"
-          ? `Transkripsi diterjemah ke Bahasa Melayu`
+          ? "Transkripsi diterjemah ke Bahasa Melayu"
           : language === "中文"
-          ? `语音内容已翻译为中文`
-          : `Voice transcript translated to English`,
+            ? "语音内容已翻译为中文"
+            : "Voice transcript translated to English",
       );
     } catch {
       notify(
         language === "Bahasa Melayu"
           ? "Gagal menterjemah transkripsi suara"
           : language === "中文"
-          ? "未能翻译语音转写内容"
-          : "Could not translate voice transcript",
+            ? "未能翻译语音转写内容"
+            : "Could not translate voice transcript",
       );
     } finally {
       setIsTranslatingVoice(false);
@@ -240,6 +316,8 @@ export function SupportiveMessageBubble({
   const displayText = showTranslation && translatedText ? translatedText : text;
   const displayVoiceText =
     showVoiceTranslation && translatedVoiceText ? translatedVoiceText : transcriptText;
+
+  const senderLabel = formatSenderLabel(senderAnonymous, isMe, language);
 
   return (
     <div className={`support-bubble-row ${isMe ? "me" : "member"}`} key={id}>
@@ -251,30 +329,58 @@ export function SupportiveMessageBubble({
 
       <div className="support-bubble-col">
         <div className="support-bubble-meta">
-          <strong>
-            {isMe
-              ? language === "Bahasa Melayu"
-                ? "Anda (Tanpa Nama)"
-                : language === "中文"
-                ? "你 (匿名)"
-                : "You (Anonymous)"
-              : senderAnonymous ||
-                (language === "Bahasa Melayu"
-                  ? "Pengembara Tanpa Nama"
-                  : language === "中文"
-                  ? "匿名旅人"
-                  : "Anonymous Traveler")}
-          </strong>
-          {toYou && (
-            <span className="to-you-pill">
-              {language === "Bahasa Melayu"
-                ? "Kepada Anda"
-                : language === "中文"
-                ? "写给您"
-                : "To You"}
-            </span>
-          )}
+          <strong className="support-bubble-sender">{senderLabel}</strong>
           {timeDisplay && <small>{timeDisplay}</small>}
+
+          {/* Action Menu (...) */}
+          {(onReport || onDelete) && (
+            <div className="support-bubble-menu-wrap" ref={menuRef}>
+              <button
+                type="button"
+                className="support-bubble-more-btn"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                aria-label="Message options"
+                title="Message options"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <circle cx="5" cy="12" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="19" cy="12" r="2" />
+                </svg>
+              </button>
+
+              {menuOpen && (
+                <div className="support-bubble-dropdown" role="menu">
+                  {onReport && (
+                    <button
+                      type="button"
+                      className="support-dropdown-item"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onReport(id);
+                      }}
+                      role="menuitem"
+                    >
+                      {language === "Bahasa Melayu" ? "Laporkan" : language === "中文" ? "举报" : "Report"}
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      type="button"
+                      className="support-dropdown-item danger"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onDelete(id);
+                      }}
+                      role="menuitem"
+                    >
+                      {language === "Bahasa Melayu" ? "Padam" : language === "中文" ? "删除" : "Delete"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className={`support-bubble ${isMe ? "me" : "member"}`}>
@@ -282,17 +388,16 @@ export function SupportiveMessageBubble({
             <div className="support-text-content">
               <p className="support-text-sentence">{displayText}</p>
 
-              {/* Translation Badge & Toggle Actions */}
               <div className="support-translation-controls">
                 {showTranslation && (
                   <span className="support-translated-badge">
                     <span className="lang-icon">🌐</span>
                     <small>
                       {language === "Bahasa Melayu"
-                        ? "Diterjemah ke Bahasa Melayu"
+                        ? "Diterjemah"
                         : language === "中文"
-                        ? "已翻译为中文"
-                        : "Translated to English"}
+                          ? "已翻译"
+                          : "Translated"}
                     </small>
                   </span>
                 )}
@@ -336,7 +441,6 @@ export function SupportiveMessageBubble({
             </div>
           ) : (
             <div className="support-voice-content">
-              {/* Voice Audio Player Bar */}
               <div className="voice-note">
                 <button
                   type="button"
@@ -361,7 +465,6 @@ export function SupportiveMessageBubble({
                 </small>
               </div>
 
-              {/* Voice Actions: Fetch Voice Text / View Transcript */}
               <div className="support-voice-actions-bar">
                 <button
                   type="button"
@@ -388,7 +491,6 @@ export function SupportiveMessageBubble({
                 </button>
               </div>
 
-              {/* Expandable Voice Transcript Box with Translation & Switch buttons */}
               {showTranscript && (
                 <div className="support-voice-transcript-card">
                   <div className="support-transcript-header">
@@ -402,8 +504,8 @@ export function SupportiveMessageBubble({
                           {language === "Bahasa Melayu"
                             ? "Diterjemah"
                             : language === "中文"
-                            ? "已翻译"
-                            : "Translated"}
+                              ? "已翻译"
+                              : "Translated"}
                         </small>
                       </span>
                     )}
@@ -459,3 +561,7 @@ export function SupportiveMessageBubble({
     </div>
   );
 }
+
+// Named alias so both names can be used seamlessly
+export const MessageBubble = SupportiveMessageBubble;
+export default SupportiveMessageBubble;

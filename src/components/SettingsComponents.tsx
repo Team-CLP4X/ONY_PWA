@@ -28,6 +28,7 @@ import {
   type ThemeMode,
 } from "../theme/palettes";
 import { CompanionAvatar } from "./CompanionAvatar";
+import ThemedSwitch from "./common/ThemedSwitch";
 
 export function getAnimalFromPreset(preset?: string): "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda" | null {
   if (!preset) return null;
@@ -1563,20 +1564,15 @@ export function NotificationSettingsScreen({ back, notify }: NotificationSetting
       <div className="settings-subpage-content">
         {/* Daily Check-in Reminder */}
         <SettingsSection title="DAILY WELLNESS CHECK-IN">
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Daily Reminder</strong>
-              <small>Receive a gentle prompt to record your daily feelings</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={dailyCheckinEnabled}
-                onChange={(e) => setDailyCheckinEnabled(e.target.checked)}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={dailyCheckinEnabled}
+            onChange={(v) => setDailyCheckinEnabled(v)}
+            label="Daily Reminder"
+            description="Receive a gentle prompt to record your daily feelings"
+            onStatusText="On · reminders scheduled"
+            offStatusText="Off · disabled"
+            ariaLabel="Daily Reminder"
+          />
 
           {dailyCheckinEnabled && (
             <div className="settings-time-picker-row">
@@ -1594,20 +1590,15 @@ export function NotificationSettingsScreen({ back, notify }: NotificationSetting
 
         {/* Quiet Hours */}
         <SettingsSection title="QUIET HOURS & SLEEP">
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Quiet Hours</strong>
-              <small>Mute non-urgent sound notifications during rest</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={quietHoursEnabled}
-                onChange={(e) => setQuietHoursEnabled(e.target.checked)}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={quietHoursEnabled}
+            onChange={(v) => setQuietHoursEnabled(v)}
+            label="Quiet Hours"
+            description="Mute non-urgent sound notifications during rest"
+            onStatusText="On · quiet hours active"
+            offStatusText="Off · standard alerts"
+            ariaLabel="Quiet Hours"
+          />
 
           {quietHoursEnabled && (
             <div className="settings-quiet-times-grid">
@@ -1642,65 +1633,45 @@ export function NotificationSettingsScreen({ back, notify }: NotificationSetting
 
         {/* Categories */}
         <SettingsSection title="NOTIFICATION CATEGORIES">
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Reminders & Reflections</strong>
-              <small>Mindful check-ins, diary prompts, and breathing breaks</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={categories.reminders}
-                onChange={(e) => setCategories((prev: NotifCategories) => ({ ...prev, reminders: e.target.checked }))}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={categories.reminders}
+            onChange={(v) => setCategories((prev: NotifCategories) => ({ ...prev, reminders: v }))}
+            label="Reminders & Reflections"
+            description="Mindful check-ins, diary prompts, and breathing breaks"
+            onStatusText="On · notifications active"
+            offStatusText="Off · muted"
+            ariaLabel="Reminders & Reflections"
+          />
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Community Interaction</strong>
-              <small>When others hug or comment on your anonymous posts</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={categories.community}
-                onChange={(e) => setCategories((prev: NotifCategories) => ({ ...prev, community: e.target.checked }))}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={categories.community}
+            onChange={(v) => setCategories((prev: NotifCategories) => ({ ...prev, community: v }))}
+            label="Community Interaction"
+            description="When others hug or comment on your anonymous posts"
+            onStatusText="On · notifications active"
+            offStatusText="Off · muted"
+            ariaLabel="Community Interaction"
+          />
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Marketplace & Wellness Perks</strong>
-              <small>New student discounts and verified wellness vouchers</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={categories.marketplace}
-                onChange={(e) => setCategories((prev: NotifCategories) => ({ ...prev, marketplace: e.target.checked }))}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={categories.marketplace}
+            onChange={(v) => setCategories((prev: NotifCategories) => ({ ...prev, marketplace: v }))}
+            label="Marketplace & Wellness Perks"
+            description="New student discounts and verified wellness vouchers"
+            onStatusText="On · notifications active"
+            offStatusText="Off · muted"
+            ariaLabel="Marketplace & Wellness Perks"
+          />
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>System & Security</strong>
-              <small>Account safety, new versions, and trusted requests</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={categories.system}
-                onChange={(e) => setCategories((prev: NotifCategories) => ({ ...prev, system: e.target.checked }))}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={categories.system}
+            onChange={(v) => setCategories((prev: NotifCategories) => ({ ...prev, system: v }))}
+            label="System & Security"
+            description="Account safety, new versions, and trusted requests"
+            onStatusText="On · notifications active"
+            offStatusText="Off · muted"
+            ariaLabel="System & Security"
+          />
         </SettingsSection>
       </div>
     </div>
@@ -1818,23 +1789,18 @@ export function AppLockScreen({ back, notify }: AppLockScreenProps) {
 
       <div className="settings-subpage-content">
         <SettingsSection title="SECURITY PROTECTION">
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Enable App Lock</strong>
-              <small>Require passcode or biometric verification to unlock ONY</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => {
-                  setEnabled(e.target.checked);
-                  if (e.target.checked && !hasExistingPin) setIsChangingPin(true);
-                }}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={enabled}
+            onChange={(v) => {
+              setEnabled(v);
+              if (v && !hasExistingPin) setIsChangingPin(true);
+            }}
+            label="Enable App Lock"
+            description="Require passcode or biometric verification to unlock ONY"
+            onStatusText="On · passcode protection active"
+            offStatusText="Off · unlocked"
+            ariaLabel="Enable App Lock"
+          />
         </SettingsSection>
 
         {enabled && (
@@ -1899,20 +1865,15 @@ export function AppLockScreen({ back, notify }: AppLockScreenProps) {
 
             {isBiometricSupported && (
               <SettingsSection title="BIOMETRIC UNLOCK">
-                <div className="settings-toggle-row">
-                  <div>
-                    <strong>Biometric Authentication</strong>
-                    <small>Unlock with Face ID, Touch ID, or fingerprint</small>
-                  </div>
-                  <label className="settings-switch">
-                    <input
-                      type="checkbox"
-                      checked={biometricEnabled}
-                      onChange={(e) => setBiometricEnabled(e.target.checked)}
-                    />
-                    <span className="slider round" />
-                  </label>
-                </div>
+                <ThemedSwitch
+                  checked={biometricEnabled}
+                  onChange={(v) => setBiometricEnabled(v)}
+                  label="Biometric Authentication"
+                  description="Unlock with Face ID, Touch ID, or fingerprint"
+                  onStatusText="On · biometric unlock enabled"
+                  offStatusText="Off · passcode only"
+                  ariaLabel="Biometric Authentication"
+                />
               </SettingsSection>
             )}
 
@@ -2028,35 +1989,25 @@ export function SoundHapticsScreen({ back, notify, onOpenAmbientModal }: SoundHa
 
       <div className="settings-subpage-content">
         <SettingsSection title="TACTILE & AUDIO FEEDBACK">
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Sound Effects</strong>
-              <small>Calming chime when completing check-ins or saving journal notes</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={sounds}
-                onChange={(e) => setSounds(e.target.checked)}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={sounds}
+            onChange={(v) => setSounds(v)}
+            label="Sound Effects"
+            description="Calming chime when completing check-ins or saving journal notes"
+            onStatusText="On · sound enabled"
+            offStatusText="Off · muted"
+            ariaLabel="Sound Effects"
+          />
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Haptic Vibration</strong>
-              <small>Gentle tactile vibration when tapping key buttons</small>
-            </div>
-            <label className="settings-switch">
-              <input
-                type="checkbox"
-                checked={haptics}
-                onChange={(e) => setHaptics(e.target.checked)}
-              />
-              <span className="slider round" />
-            </label>
-          </div>
+          <ThemedSwitch
+            checked={haptics}
+            onChange={(v) => setHaptics(v)}
+            label="Haptic Vibration"
+            description="Gentle tactile vibration when tapping key buttons"
+            onStatusText="On · vibration enabled"
+            offStatusText="Off · disabled"
+            ariaLabel="Haptic Vibration"
+          />
 
           <div className="settings-row-static">
             <div>

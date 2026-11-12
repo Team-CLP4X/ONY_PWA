@@ -718,8 +718,153 @@ export function resolveAndCoarsenLocation(
   };
 }
 
+export interface CameraLocationResult {
+  level: "world" | "country" | "state";
+  country: string | null;
+  state: string | null;
+  isOcean: boolean;
+}
+
+/**
+ * Reverse-looks up the camera center (lon, lat, zoom) to derive the active breadcrumb region.
+ * On world zoom (< 2.2), returns level="world".
+ * On country zoom (2.2 <= zoom < 4.5), matches containing country polygon or coastal state span.
+ * On state zoom (zoom >= 4.5), matches containing state in that country.
+ * If center is over open ocean, returns level="world" and isOcean=true.
+ */
+export function reverseLookupCameraLocation(
+  lon: number,
+  lat: number,
+  zoom: number,
+): CameraLocationResult {
+  // Normalize lon to [-180, 180]
+  let nLon = ((lon + 180) % 360 + 360) % 360 - 180;
+  const clampedLat = Math.max(-85, Math.min(85, lat));
+
+  if (zoom < 2.2) {
+    return {
+      level: "world",
+      country: null,
+      state: null,
+      isOcean: false,
+    };
+  }
+
+  // Check country boundary polygons
+  let matchedCountry: RegionCentroid | null = null;
+  for (let i = 0; i < WORLD_COUNTRIES_GEOJSON.features.length; i++) {
+    const c = COUNTRY_CENTROIDS[i];
+    if (EXCLUDED_TERRITORY_NAMES.has(c.name)) continue;
+    const feat = WORLD_COUNTRIES_GEOJSON.features[i];
+    if (
+      nLon >= c.bbox[0] - 0.45 &&
+      nLon <= c.bbox[2] + 0.45 &&
+      clampedLat >= c.bbox[1] - 0.45 &&
+      clampedLat <= c.bbox[3] + 0.45
+    ) {
+      if (pointInCountry(nLon, clampedLat, feat.geometry)) {
+        matchedCountry = c;
+        break;
+      }
+    }
+  }
+
+  // Coastal tolerance: check near known state hubs if not strictly in polygon
+  if (!matchedCountry) {
+    for (const st of STATE_PROVINCES) {
+      const d = distSq(nLon, clampedLat, st.lon, st.lat);
+      if (d <= Math.pow(st.spanDeg + 0.8, 2)) {
+        matchedCountry = COUNTRY_BY_RAW_NAME.get(st.country) || null;
+        if (matchedCountry) break;
+      }
+    }
+  }
+
+  // Open ocean / unrecognized
+  if (!matchedCountry) {
+    return {
+      level: "world",
+      country: null,
+      state: null,
+      isOcean: true,
+    };
+  }
+
+  const countryDisplay = normalizeCountryDisplayName(matchedCountry.name);
+
+  // Country zoom level
+  if (zoom < 4.5) {
+    return {
+      level: "country",
+      country: countryDisplay,
+      state: null,
+      isOcean: false,
+    };
+  }
+
+  // State zoom level: find matching state within this country
+  let matchedState: StateProvinceRegion | null = null;
+  let bestStateDist = Infinity;
+  for (const st of STATE_PROVINCES) {
+    if (st.country !== matchedCountry.name) continue;
+    const d = distSq(nLon, clampedLat, st.lon, st.lat);
+    const maxRadius = Math.pow(Math.max(st.spanDeg * 2.2, 5.0), 2);
+    if (d < bestStateDist && d <= maxRadius) {
+      bestStateDist = d;
+      matchedState = st;
+    }
+  }
+
+  if (matchedState) {
+    return {
+      level: "state",
+      country: countryDisplay,
+      state: matchedState.name,
+      isOcean: false,
+    };
+  }
+
+  return {
+    level: "country",
+    country: countryDisplay,
+    state: null,
+    isOcean: false,
+  };
+}
+
+/**
+ * Computes visible people count strictly matching the camera's active breadcrumb level.
+ * Respects hidden/undiscoverable nodes, blocked nodes, and privacy merging.
+ */
+export function getCameraVisibleCount(
+  users: GlobeUser[],
+  cameraLocation: CameraLocationResult,
+  blockedNodeIds: ReadonlySet<number> = new Set(),
+): number {
+  const { publicNodes } = enrichGlobeNodes(users, blockedNodeIds);
+
+  if (cameraLocation.level === "world" || !cameraLocation.country) {
+    return publicNodes.length;
+  }
+
+  const countryNodes = publicNodes.filter(
+    (n) => n.resolved.country === cameraLocation.country,
+  );
+
+  if (cameraLocation.level === "country" || !cameraLocation.state) {
+    return countryNodes.length;
+  }
+
+  const stateNodes = countryNodes.filter(
+    (n) => n.resolved.state === cameraLocation.state,
+  );
+
+  return stateNodes.length;
+}
+
 /**
  * Produces strictly coarsened lat/lng for storing in Firestore `globeUsers`
+
  * from raw browser geolocation or manual area pickers (~0.2 deg / ~25km fuzz).
  */
 export function coarsenCoordinates(

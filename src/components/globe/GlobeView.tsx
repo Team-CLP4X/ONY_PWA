@@ -575,6 +575,12 @@ export default function GlobeView({
         onZoomChange(map.getZoom(), { lon: c.lng, lat: c.lat });
       });
 
+      map.on("moveend", () => {
+        if (!map) return;
+        const c = map.getCenter();
+        onZoomChange(map.getZoom(), { lon: c.lng, lat: c.lat });
+      });
+
       map.on("dragstart", markInteractionStart);
       map.on("zoomstart", markInteractionStart);
       map.on("rotatestart", markInteractionStart);
