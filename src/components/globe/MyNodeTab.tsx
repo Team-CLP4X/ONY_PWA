@@ -1,9 +1,34 @@
-import React, { useState, useMemo, useEffect } from "react";
-import ThemedSwitch from "../common/ThemedSwitch";
-import StatusPill from "../common/StatusPill";
-import SectionCard from "../common/SectionCard";
-import SupportiveMessageBubble from "../SupportiveMessageBubble";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FirestoreCommunityMessage } from "../../firebase/firestore";
+import { getCachedTranscript } from "../../services/communityTranslationService";
+import {
+  formatInboxSenderLabel,
+  getDateBucketKey,
+  getMyNodeStrings,
+  getSenderBlockKey,
+  isMessageUnread,
+  loadAutoTranslatePref,
+  loadBlockedSenders,
+  loadReadMessageIds,
+  loadUnreadOverrideIds,
+  parseMessageTimestamp,
+  saveAutoTranslatePref,
+  saveBlockedSenders,
+  saveReadMessageIds,
+  saveUnreadOverrideIds,
+  type BlockedSenderEntry,
+  type DateBucketKey,
+  type InboxFilterKind,
+  type InboxMessage,
+} from "../../utils/nodeInboxHelpers";
+import InboxFilterChips from "./InboxFilterChips";
+import MessageRow from "./MessageRow";
+import NodeHeader from "./NodeHeader";
+import NodeSettingsScreen from "./NodeSettingsScreen";
+
+export type NotifyInput =
+  | string
+  | { text: string; actionLabel?: string; onAction?: () => void };
 
 export interface MyNodeTabProps {
   discoverable: boolean;
@@ -14,11 +39,13 @@ export interface MyNodeTabProps {
   myMoodLabel: string;
   myMoodGlow?: string;
   myRegion: { state: string; country: string };
+  onUpdateMood?: () => void;
   onLocateOnGlobe: () => void;
   messages: FirestoreCommunityMessage[];
   loadingMessages: boolean;
+  messagesError?: string | null;
   onRefreshMessages: () => void;
-  onDeleteMessage?: (id: string) => void;
+  onDeleteMessage?: (id: string) => Promise<void> | void;
   onReportMessage?: (id: string) => void;
   detectingLocation?: boolean;
   locationChoice?: "none" | "allowed" | "declined";
@@ -26,21 +53,27 @@ export interface MyNodeTabProps {
   onClearLocation?: () => void;
   onSelectManualArea?: () => void;
   renderAreaPicker?: () => React.ReactNode;
-  notify?: (msg: string) => void;
+  notify?: (msg: NotifyInput) => void;
   language?: string;
 }
 
-function parseMessageTimestamp(createdAt: unknown): number {
-  if (!createdAt) return Date.now();
-  if (typeof createdAt === "number") return createdAt;
-  if (createdAt instanceof Date) return createdAt.getTime();
-  const obj = createdAt as { toMillis?: () => number; toDate?: () => Date; seconds?: number };
-  if (typeof obj.toMillis === "function") return obj.toMillis();
-  if (typeof obj.toDate === "function") return obj.toDate().getTime();
-  if (typeof obj.seconds === "number") return obj.seconds * 1000;
-  const parsed = Date.parse(String(createdAt));
-  return isNaN(parsed) ? Date.now() : parsed;
-}
+type VirtualEntry =
+  | {
+      type: "header";
+      key: string;
+      bucket: DateBucketKey;
+      label: string;
+      count: number;
+    }
+  | {
+      type: "message";
+      key: string;
+      bucket: DateBucketKey;
+      message: InboxMessage;
+    };
+
+const PAGE_SIZE = 20;
+const OVERSCAN_PX = 360;
 
 export default function MyNodeTab({
   discoverable,
@@ -51,46 +84,32 @@ export default function MyNodeTab({
   myMoodLabel,
   myMoodGlow = "soft",
   myRegion,
+  onUpdateMood,
   onLocateOnGlobe,
   messages,
   loadingMessages,
+  messagesError = null,
   onRefreshMessages,
   onDeleteMessage,
   onReportMessage,
   detectingLocation = false,
-  locationChoice = "none",
   onEnableLocation,
-  onClearLocation,
   onSelectManualArea,
   renderAreaPicker,
-  notify,
+  notify = () => {},
   language = "English",
 }: MyNodeTabProps) {
-  // Filter chips state
-  const [filter, setFilter] = useState<"all" | "text" | "voice">("all");
+  const strings = getMyNodeStrings(language);
 
-  // Region editor open/close state
-  const [isEditingRegion, setIsEditingRegion] = useState(false);
+  // Settings screen state
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Privacy info expandable
-  const [showPrivacyDetails, setShowPrivacyDetails] = useState(false);
-
-  // Auto-translate preference saved in localStorage
-  const [autoTranslate, setAutoTranslate] = useState<boolean>(() => {
-    try {
-      const stored = localStorage.getItem("ony_auto_translate_messages");
-      return stored !== null ? stored === "true" : true;
-    } catch {
-      return true;
-    }
-  });
-
-  const handleToggleAutoTranslate = (checked: boolean) => {
-    setAutoTranslate(checked);
-    try {
-      localStorage.setItem("ony_auto_translate_messages", String(checked));
-    } catch {}
-    if (notify) {
+  // Auto-translate preference (controlled inside NodeSettingsScreen)
+  const [autoTranslate, setAutoTranslate] = useState<boolean>(() => loadAutoTranslatePref());
+  const handleToggleAutoTranslate = useCallback(
+    (checked: boolean) => {
+      setAutoTranslate(checked);
+      saveAutoTranslatePref(checked);
       notify(
         checked
           ? language === "中文"
@@ -101,455 +120,702 @@ export default function MyNodeTab({
           : language === "中文"
             ? "已关闭自动翻译，将显示原文"
             : language === "Bahasa Melayu"
-              ? "Auto-terjemah dimatikan, teks asal dipaparkan"
-              : "Auto-translate turned off; original text shown",
+              ? "Auto-terjemah dimatikan"
+              : "Auto-translate turned off",
       );
+    },
+    [language, notify],
+  );
+
+  // Local read/unread state & blocked senders state
+  // TODO: Persist `isRead` & `readAt` directly on `communityMessages/{id}` and `blockedSenderIds` on user/node preferences in Firestore when backend fields are added.
+  const [readIds, setReadIds] = useState<Set<string>>(() => loadReadMessageIds());
+  const [unreadOverrideIds, setUnreadOverrideIds] = useState<Set<string>>(() =>
+    loadUnreadOverrideIds(),
+  );
+  const [blockedSenders, setBlockedSenders] = useState<BlockedSenderEntry[]>(() =>
+    loadBlockedSenders(),
+  );
+
+  // Transcript cache mirror so search matches live-fetched transcripts too
+  const [resolvedTranscripts, setResolvedTranscripts] = useState<Record<string, string>>({});
+  const handleTranscriptResolved = useCallback((id: string, transcript: string) => {
+    setResolvedTranscripts((prev) => (prev[id] === transcript ? prev : { ...prev, [id]: transcript }));
+  }, []);
+
+  // Soft-deleted IDs pending undo snackbar completion
+  const [pendingDeletedIds, setPendingDeletedIds] = useState<Set<string>>(() => new Set());
+  const deleteTimersRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      deleteTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      deleteTimersRef.current.clear();
+    };
+  }, []);
+
+  // Toolbar filter & search state
+  const [filter, setFilter] = useState<InboxFilterKind>("all");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Multi-select mode
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectionMode = selectedIds.size > 0;
+
+  // Pagination (load 20 at a time with infinite scroll)
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Scroll & header collapse
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(460);
+
+  // Pull-to-refresh gesture tracking
+  const [pullDistance, setPullDistance] = useState(0);
+  const pullStartYRef = useRef<number | null>(null);
+
+  const blockedSenderIdSet = useMemo(
+    () => new Set(blockedSenders.map((b) => b.id)),
+    [blockedSenders],
+  );
+
+  // Active inbox messages excluding blocked senders and pending soft-deletes, newest first
+  const activeMessages = useMemo(() => {
+    return [...messages]
+      .filter((m) => !pendingDeletedIds.has(m.id))
+      .filter((m) => !blockedSenderIdSet.has(getSenderBlockKey(m)))
+      .sort((a, b) => parseMessageTimestamp(b.createdAt) - parseMessageTimestamp(a.createdAt));
+  }, [messages, pendingDeletedIds, blockedSenderIdSet]);
+
+  // Filter counts
+  const counts = useMemo(() => {
+    let unread = 0;
+    let text = 0;
+    let voice = 0;
+    for (const msg of activeMessages) {
+      if (isMessageUnread(msg, readIds, unreadOverrideIds)) unread++;
+      if (msg.kind === "voice") voice++;
+      else text++;
     }
-  };
+    return {
+      all: activeMessages.length,
+      unread,
+      text,
+      voice,
+    };
+  }, [activeMessages, readIds, unreadOverrideIds]);
 
-  // Filter messages by kind
+  // Apply filter chip + search query (searching text + transcripts)
   const filteredMessages = useMemo(() => {
-    if (filter === "all") return messages;
-    if (filter === "text") return messages.filter((m) => !m.kind || m.kind === "text");
-    if (filter === "voice") return messages.filter((m) => m.kind === "voice");
-    return messages;
-  }, [messages, filter]);
+    const q = searchQuery.trim().toLowerCase();
+    return activeMessages.filter((msg) => {
+      if (filter === "unread" && !isMessageUnread(msg, readIds, unreadOverrideIds)) return false;
+      if (filter === "text" && msg.kind === "voice") return false;
+      if (filter === "voice" && msg.kind !== "voice") return false;
 
-  // Counts for tabs
-  const textCount = useMemo(
-    () => messages.filter((m) => !m.kind || m.kind === "text").length,
-    [messages],
-  );
-  const voiceCount = useMemo(
-    () => messages.filter((m) => m.kind === "voice").length,
-    [messages],
-  );
+      if (q) {
+        const transcript =
+          resolvedTranscripts[msg.id] ||
+          msg.transcription ||
+          getCachedTranscript(msg.id, msg.audioUrl) ||
+          "";
+        const sender = formatInboxSenderLabel(msg.senderAnonymous, language);
+        const haystack = `${msg.text || ""} ${transcript} ${sender}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [
+    activeMessages,
+    filter,
+    searchQuery,
+    readIds,
+    unreadOverrideIds,
+    resolvedTranscripts,
+    language,
+  ]);
 
-  // Group messages by date
-  const groupedMessages = useMemo(() => {
+  // Reset pagination when filter or search changes
+  useEffect(() => {
+    setVisibleLimit(PAGE_SIZE);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+    setScrollTop(0);
+    setHeaderCollapsed(false);
+  }, [filter, searchQuery]);
+
+  // Paged slice (20 at a time)
+  const pagedMessages = useMemo(
+    () => filteredMessages.slice(0, visibleLimit),
+    [filteredMessages, visibleLimit],
+  );
+  const hasMorePages = pagedMessages.length < filteredMessages.length;
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasMorePages || loadingMore) return;
+    setLoadingMore(true);
+    window.setTimeout(() => {
+      setVisibleLimit((prev) => prev + PAGE_SIZE);
+      setLoadingMore(false);
+    }, 160);
+  }, [hasMorePages, loadingMore]);
+
+  // Flatten date buckets into virtual entries (`Today`, `Yesterday`, `This week`, `Earlier`)
+  const virtualEntries = useMemo<VirtualEntry[]>(() => {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const sevenDaysAgo = startOfToday - 6 * 24 * 60 * 60 * 1000;
+    const bucketOrder: DateBucketKey[] = ["today", "yesterday", "thisWeek", "earlier"];
+    const bucketLabels: Record<DateBucketKey, string> = {
+      today: strings.today,
+      yesterday: strings.yesterday,
+      thisWeek: strings.thisWeek,
+      earlier: strings.earlier,
+    };
 
-    const todayList: FirestoreCommunityMessage[] = [];
-    const thisWeekList: FirestoreCommunityMessage[] = [];
-    const olderList: FirestoreCommunityMessage[] = [];
+    const grouped: Record<DateBucketKey, InboxMessage[]> = {
+      today: [],
+      yesterday: [],
+      thisWeek: [],
+      earlier: [],
+    };
 
-    for (const msg of filteredMessages) {
-      const ts = parseMessageTimestamp(msg.createdAt);
-      if (ts >= startOfToday) {
-        todayList.push(msg);
-      } else if (ts >= sevenDaysAgo) {
-        thisWeekList.push(msg);
-      } else {
-        olderList.push(msg);
+    for (const msg of pagedMessages) {
+      const bucket = getDateBucketKey(parseMessageTimestamp(msg.createdAt), now);
+      grouped[bucket].push(msg);
+    }
+
+    const list: VirtualEntry[] = [];
+    for (const b of bucketOrder) {
+      const items = grouped[b];
+      if (items.length === 0) continue;
+      list.push({
+        type: "header",
+        key: `hdr_${b}`,
+        bucket: b,
+        label: bucketLabels[b],
+        count: items.length,
+      });
+      for (const msg of items) {
+        list.push({
+          type: "message",
+          key: msg.id,
+          bucket: b,
+          message: msg,
+        });
+      }
+    }
+    return list;
+  }, [pagedMessages, strings.today, strings.yesterday, strings.thisWeek, strings.earlier]);
+
+  // Variable-height virtualizer measurements
+  const heightsRef = useRef<Map<string, number>>(new Map());
+  const [measureVersion, setMeasureVersion] = useState(0);
+
+  const measureItemRef = useCallback(
+    (key: string) => (el: HTMLDivElement | null) => {
+      if (!el) return;
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      if (h > 0 && heightsRef.current.get(key) !== h) {
+        heightsRef.current.set(key, h);
+        setMeasureVersion((v) => v + 1);
+      }
+    },
+    [],
+  );
+
+  // Measure viewport container height
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const updateHeight = () => {
+      setViewportHeight(container.clientHeight || 460);
+    };
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
+  // Compute virtual window offsets & active sticky date header
+  const virtualLayout = useMemo(() => {
+    void measureVersion;
+    const gapPx = 8;
+    const offsets: number[] = [];
+    const heights: number[] = [];
+    let cursor = 0;
+
+    for (let i = 0; i < virtualEntries.length; i++) {
+      const entry = virtualEntries[i];
+      const estimated =
+        entry.type === "header" ? 30 : entry.message.kind === "voice" ? 112 : 104;
+      const h = heightsRef.current.get(entry.key) ?? estimated;
+      offsets.push(cursor);
+      heights.push(h);
+      cursor += h + gapPx;
+    }
+
+    const totalHeight = Math.max(0, cursor - (virtualEntries.length > 0 ? gapPx : 0));
+    const minY = Math.max(0, scrollTop - OVERSCAN_PX);
+    const maxY = scrollTop + viewportHeight + OVERSCAN_PX;
+
+    let startIdx = 0;
+    while (
+      startIdx < virtualEntries.length &&
+      offsets[startIdx] + heights[startIdx] < minY
+    ) {
+      startIdx++;
+    }
+
+    let endIdx = startIdx;
+    while (endIdx < virtualEntries.length && offsets[endIdx] <= maxY) {
+      endIdx++;
+    }
+
+    // Determine currently active sticky bucket at scrollTop
+    let activeStickyLabel: string | null = null;
+    if (scrollTop > 18 && virtualEntries.length > 0) {
+      for (let i = 0; i < virtualEntries.length; i++) {
+        if (offsets[i] <= scrollTop + 10) {
+          const b = virtualEntries[i].bucket;
+          activeStickyLabel =
+            b === "today"
+              ? strings.today
+              : b === "yesterday"
+                ? strings.yesterday
+                : b === "thisWeek"
+                  ? strings.thisWeek
+                  : strings.earlier;
+        } else {
+          break;
+        }
       }
     }
 
-    return {
-      today: todayList,
-      thisWeek: thisWeekList,
-      older: olderList,
-    };
-  }, [filteredMessages]);
+    const topSpacer = startIdx < offsets.length ? offsets[startIdx] : 0;
+    const lastRenderedBottom =
+      endIdx > startIdx ? offsets[endIdx - 1] + heights[endIdx - 1] : topSpacer;
+    const bottomSpacer = Math.max(0, totalHeight - lastRenderedBottom);
 
-  const labels = {
-    myLight:
-      language === "Bahasa Melayu"
-        ? "Cahaya Tanpa Nama Anda"
-        : language === "中文"
-          ? "您的匿名微光"
-          : "Your anonymous light",
-    visible:
-      language === "Bahasa Melayu"
-        ? "Kelihatan di Glob"
-        : language === "中文"
-          ? "星球可见"
-          : "Visible on Globe",
-    hidden:
-      language === "Bahasa Melayu"
-        ? "Tersembunyi"
-        : language === "中文"
-          ? "已隐藏"
-          : "Hidden",
-    moodGlow:
-      language === "Bahasa Melayu"
-        ? "Cahaya Emosi Semasa"
-        : language === "中文"
-          ? "当前心情微光"
-          : "Mood glow",
-    supportReceived:
-      language === "Bahasa Melayu"
-        ? "Sokongan Diterima"
-        : language === "中文"
-          ? "收到支持鼓励"
-          : "Support received",
-    locateOnGlobe:
-      language === "Bahasa Melayu"
-        ? "Cari di glob"
-        : language === "中文"
-          ? "在星球上定位"
-          : "Locate on globe",
-    messagesHeading:
-      language === "Bahasa Melayu"
-        ? "Sokongan Dihantar Kepada Anda"
-        : language === "中文"
-          ? "发送给您的温暖鼓励"
-          : "Support sent to you",
-    refresh:
-      language === "Bahasa Melayu"
-        ? "Segarkan"
-        : language === "中文"
-          ? "刷新"
-          : "Refresh",
-    refreshing:
-      language === "Bahasa Melayu"
-        ? "Menyegarkan…"
-        : language === "中文"
-          ? "刷新中…"
-          : "Refreshing…",
-    all:
-      language === "Bahasa Melayu"
-        ? "Semua"
-        : language === "中文"
-          ? "全部"
-          : "All",
-    textOnly:
-      language === "Bahasa Melayu"
-        ? "Teks"
-        : language === "中文"
-          ? "文字"
-          : "Text",
-    voiceOnly:
-      language === "Bahasa Melayu"
-        ? "Suara"
-        : language === "中文"
-          ? "语音"
-          : "Voice",
-    autoTranslateLabel:
-      language === "Bahasa Melayu"
-        ? "Auto-terjemah mesej ke bahasa saya"
-        : language === "中文"
-          ? "自动翻译留言到我的语言"
-          : "Auto-translate messages to my language",
-    autoTranslateDesc:
-      language === "Bahasa Melayu"
-        ? "Menterjemah mesej sokongan komuniti secara automatik."
-        : language === "中文"
-          ? "自动将社区鼓励翻译为当前界面语言。"
-          : "Automatically renders community messages in your chosen language.",
-    today:
-      language === "Bahasa Melayu"
-        ? "Hari ini"
-        : language === "中文"
-          ? "今天"
-          : "Today",
-    thisWeek:
-      language === "Bahasa Melayu"
-        ? "Awal minggu ini"
-        : language === "中文"
-          ? "本周早些时候"
-          : "Earlier this week",
-    older:
-      language === "Bahasa Melayu"
-        ? "Sebelum ini"
-        : language === "中文"
-          ? "更早的鼓励"
-          : "Older",
-    emptyTitle:
-      language === "Bahasa Melayu"
-        ? "Belum ada mesej sokongan"
-        : language === "中文"
-          ? "暂无支持留言"
-          : "No support messages yet",
-    emptyDesc:
-      language === "Bahasa Melayu"
-        ? "Apabila ahli komuniti menghantar kata-kata semangat atau bisikan audio kepada cahaya anda, ia akan muncul di sini."
-        : language === "中文"
-          ? "当社区伙伴向您的微光发送温柔鼓励或语音暖言时，它们会显示在这里。"
-          : "When community members send warm whispers or words of kindness to your light, they will appear here.",
-    visibilityHeading:
-      language === "Bahasa Melayu"
-        ? "Keterlihatan Glob & Mesej"
-        : language === "中文"
-          ? "星球可见性与留言设置"
-          : "Globe & Message Visibility",
-    visibilitySub:
-      language === "Bahasa Melayu"
-        ? "Kawal bagaimana kehadiran tanpa nama anda dipaparkan"
-        : language === "中文"
-          ? "掌控您的匿名微光展示与留言接收"
-          : "Control how your anonymous presence appears to others",
-    appearTitle:
-      language === "Bahasa Melayu"
-        ? "Tampil di atas glob"
-        : language === "中文"
-          ? "在社区星球上发光"
-          : "Appear on the globe",
-    appearDesc:
-      language === "Bahasa Melayu"
-        ? "Biarkan cahaya hangat anda kelihatan oleh komuniti di rantau anda."
-        : language === "中文"
-          ? "让您所在大区的社区伙伴看见您的温暖微光。"
-          : "Let your warm light be seen by others in your broad region.",
-    appearOnStatus:
-      language === "Bahasa Melayu"
-        ? "Aktif · kelihatan kepada orang lain"
-        : language === "中文"
-          ? "开启 · 对社区可见"
-          : "On · visible to others",
-    appearOffStatus:
-      language === "Bahasa Melayu"
-        ? "Mati · tersembunyi"
-        : language === "中文"
-          ? "关闭 · 已隐藏"
-          : "Off · hidden",
-    acceptTitle:
-      language === "Bahasa Melayu"
-        ? "Terima mesej sokongan"
-        : language === "中文"
-          ? "接收温暖支持留言"
-          : "Accept supportive messages",
-    acceptDesc:
-      language === "Bahasa Melayu"
-        ? "Terima kata-kata lembut dan bisikan audio daripada komuniti."
-        : language === "中文"
-          ? "接收来自社区伙伴的温暖文字与语音关怀。"
-          : "Receive gentle words and audio whispers from community members.",
-    acceptOnStatus:
-      language === "Bahasa Melayu"
-        ? "Aktif · sedia menerima sokongan"
-        : language === "中文"
-          ? "开启 · 正常接收支持"
-          : "On · receiving messages",
-    acceptOffStatus:
-      language === "Bahasa Melayu"
-        ? "Mati · mesej dijeda"
-        : language === "中文"
-          ? "关闭 · 已暂停接收"
-          : "Off · messages paused",
-    regionHeading:
-      language === "Bahasa Melayu"
-        ? "Kawasan Serantau Luas"
-        : language === "中文"
-          ? "大区地理范围"
-          : "Broad Regional Discovery",
-    regionSub:
-      language === "Bahasa Melayu"
-        ? "Hanya negeri atau rantau anda digunakan, bukan lokasi tepat (~25 km)"
-        : language === "中文"
-          ? "仅使用大区或省州范围，绝不使用精确定位（约 25 公里泛化）"
-          : "Only your state or region is used, never your exact location (~25 km coarsened)",
-    editArea:
-      language === "Bahasa Melayu"
-        ? "Tukar kawasan"
-        : language === "中文"
-          ? "更换区域"
-          : "Change area",
-    doneEditing:
-      language === "Bahasa Melayu"
-        ? "Selesai"
-        : language === "中文"
-          ? "完成"
-          : "Done",
-    useCurrentArea:
-      language === "Bahasa Melayu"
-        ? "Gunakan kawasan semasa saya"
-        : language === "中文"
-          ? "使用我当前大区"
-          : "Use my current area",
-    chooseAreaManual:
-      language === "Bahasa Melayu"
-        ? "Pilih kawasan secara manual"
-        : language === "中文"
-          ? "手动搜索选择区域"
-          : "Choose area manually",
-    detecting:
-      language === "Bahasa Melayu"
-        ? "Mengenal pasti rantau…"
-        : language === "中文"
-          ? "正在识别大区…"
-          : "Detecting broad region…",
-    privacyNoteShort:
-      language === "Bahasa Melayu"
-        ? "Lokasi digeneralisasikan ke peringkat wilayah (~25 km). Kurang daripada 5 orang digabungkan ke kluster induk."
-        : language === "中文"
-          ? "位置仅展示为省州大区范围（约 25 公里），少于 5 人的区域合并入上级星团以保护隐私。"
-          : "Locations are coarsened to broad state regions (~25 km). Areas with fewer than 5 people merge into their parent cluster.",
-    learnMore:
-      language === "Bahasa Melayu"
-        ? "Ketahui lebih lanjut"
-        : language === "中文"
-          ? "了解更多"
-          : "Learn more",
-    hideDetails:
-      language === "Bahasa Melayu"
-        ? "Tutup penerangan"
-        : language === "中文"
-          ? "收起说明"
-          : "Hide details",
-    privacyDetail:
-      language === "Bahasa Melayu"
-        ? "Untuk memastikan keselamatan dan kerahsiaan anda sepenuhnya, koordinat GPS tepat tidak pernah disimpan atau dihantar ke pelayan. Titik koordinat sentiasa digeneralisasikan ke pusat rantau luas (~25 km). Sekiranya kurang daripada 5 orang aktif dalam negeri anda, cahaya anda digabungkan secara automatik ke kluster kebangsaan. Anda boleh mematikan cahaya anda atau menjeda mesej pada bila-bila masa."
-        : language === "中文"
-          ? "为全面保护您的隐私与人身安全，精确的 GPS 坐标绝不会存储或上传至服务器，仅会在设备本地即时泛化为约 25 公里的大区中心。若您所在的省州活跃人数少于 5 人，系统会自动将您的微光合并至国家级星团以防止反向推测。您可以随时隐藏微光或暂停接收留言。"
-          : "To protect your safety and complete anonymity, precise GPS coordinates are never stored or transmitted. They are coarsened locally into broad regional centers (~25 km). If fewer than 5 people are active in your state, your light automatically merges into the national cluster. You can turn off your light or pause messages at any time.",
+    return {
+      slice: virtualEntries.slice(startIdx, endIdx),
+      topSpacer,
+      bottomSpacer,
+      activeStickyLabel,
+    };
+  }, [
+    virtualEntries,
+    scrollTop,
+    viewportHeight,
+    measureVersion,
+    strings.today,
+    strings.yesterday,
+    strings.thisWeek,
+    strings.earlier,
+  ]);
+
+  // Read / Unread mutators
+  const markMessagesRead = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setReadIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      saveReadMessageIds(next);
+      return next;
+    });
+    setUnreadOverrideIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (next.delete(id)) changed = true;
+      }
+      if (!changed) return prev;
+      saveUnreadOverrideIds(next);
+      return next;
+    });
+  }, []);
+
+  const handleToggleUnread = useCallback((id: string, nextUnread: boolean) => {
+    if (nextUnread) {
+      setReadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        saveReadMessageIds(next);
+        return next;
+      });
+      setUnreadOverrideIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        saveUnreadOverrideIds(next);
+        return next;
+      });
+    } else {
+      markMessagesRead([id]);
+    }
+  }, [markMessagesRead]);
+
+  const handleMarkAllRead = useCallback(() => {
+    const allIds = activeMessages.map((m) => m.id);
+    markMessagesRead(allIds);
+    notify(strings.markedAllReadToast);
+  }, [activeMessages, markMessagesRead, notify, strings.markedAllReadToast]);
+
+  // IntersectionObserver: mark unread messages read automatically when scrolled into view
+  const dwellTimersRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || typeof IntersectionObserver === "undefined") return;
+
+    const unreadVisibleIds = new Set(
+      activeMessages
+        .filter((m) => isMessageUnread(m, readIds, unreadOverrideIds))
+        .map((m) => m.id),
+    );
+    if (unreadVisibleIds.size === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const msgId = (entry.target as HTMLElement).dataset.messageId;
+          if (!msgId || !unreadVisibleIds.has(msgId)) continue;
+
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.55) {
+            if (!dwellTimersRef.current.has(msgId)) {
+              const tId = window.setTimeout(() => {
+                dwellTimersRef.current.delete(msgId);
+                markMessagesRead([msgId]);
+              }, 650);
+              dwellTimersRef.current.set(msgId, tId);
+            }
+          } else {
+            const existing = dwellTimersRef.current.get(msgId);
+            if (existing !== undefined) {
+              window.clearTimeout(existing);
+              dwellTimersRef.current.delete(msgId);
+            }
+          }
+        }
+      },
+      { root: container, threshold: [0.55] },
+    );
+
+    const rows = container.querySelectorAll<HTMLElement>("[data-message-id]");
+    rows.forEach((row) => observer.observe(row));
+
+    return () => {
+      observer.disconnect();
+      dwellTimersRef.current.forEach((tId) => window.clearTimeout(tId));
+      dwellTimersRef.current.clear();
+    };
+  }, [activeMessages, readIds, unreadOverrideIds, virtualLayout.slice, markMessagesRead]);
+
+  // Infinite scroll sentinel observer
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const container = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    if (!container || !sentinel || !hasMorePages || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          handleLoadMore();
+        }
+      },
+      { root: container, rootMargin: "120px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMorePages, handleLoadMore]);
+
+  // Soft-delete with Undo snackbar
+  const scheduleDeleteWithUndo = useCallback(
+    (idsToDelete: string[]) => {
+      if (idsToDelete.length === 0) return;
+
+      setPendingDeletedIds((prev) => {
+        const next = new Set(prev);
+        idsToDelete.forEach((id) => next.add(id));
+        return next;
+      });
+      setSelectedIds((prev) => {
+        if (prev.size === 0) return prev;
+        const next = new Set(prev);
+        idsToDelete.forEach((id) => next.delete(id));
+        return next;
+      });
+
+      const batchKey = idsToDelete.join(",");
+      const timerId = window.setTimeout(() => {
+        deleteTimersRef.current.delete(batchKey);
+        idsToDelete.forEach((id) => {
+          void onDeleteMessage?.(id);
+        });
+      }, 4600);
+      deleteTimersRef.current.set(batchKey, timerId);
+
+      notify({
+        text:
+          idsToDelete.length === 1
+            ? strings.deletedUndo
+            : strings.deletedBulkUndo(idsToDelete.length),
+        actionLabel: strings.undo,
+        onAction: () => {
+          const pendingTimer = deleteTimersRef.current.get(batchKey);
+          if (pendingTimer !== undefined) {
+            window.clearTimeout(pendingTimer);
+            deleteTimersRef.current.delete(batchKey);
+          }
+          setPendingDeletedIds((prev) => {
+            const next = new Set(prev);
+            idsToDelete.forEach((id) => next.delete(id));
+            return next;
+          });
+        },
+      });
+    },
+    [onDeleteMessage, notify, strings],
+  );
+
+  // Delete all messages (from NodeSettingsScreen after confirmation)
+  const handleDeleteAllMessages = useCallback(() => {
+    const allIds = activeMessages.map((m) => m.id);
+    if (allIds.length === 0) return;
+    allIds.forEach((id) => {
+      void onDeleteMessage?.(id);
+    });
+    notify(strings.deletedAllToast);
+  }, [activeMessages, onDeleteMessage, notify, strings.deletedAllToast]);
+
+  // Block / Unblock sender
+  const handleBlockSender = useCallback(
+    (msg: InboxMessage) => {
+      const key = getSenderBlockKey(msg);
+      const label = formatInboxSenderLabel(msg.senderAnonymous, language);
+      setBlockedSenders((prev) => {
+        if (prev.some((b) => b.id === key)) return prev;
+        const next = [
+          ...prev,
+          { id: key, label, blockedAt: new Date().toISOString() },
+        ];
+        saveBlockedSenders(next);
+        return next;
+      });
+      notify(strings.senderBlockedToast(label));
+    },
+    [language, notify, strings],
+  );
+
+  const handleUnblockSender = useCallback(
+    (senderId: string) => {
+      setBlockedSenders((prev) => {
+        const target = prev.find((b) => b.id === senderId);
+        const next = prev.filter((b) => b.id !== senderId);
+        saveBlockedSenders(next);
+        if (target) notify(strings.senderUnblockedToast(target.label));
+        return next;
+      });
+    },
+    [notify, strings],
+  );
+
+  // Selection helpers
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const enterSelectionMode = useCallback((id: string) => {
+    setSelectedIds(new Set([id]));
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleBulkMarkRead = useCallback(() => {
+    const ids = Array.from(selectedIds);
+    markMessagesRead(ids);
+    clearSelection();
+    notify(strings.markedAllReadToast);
+  }, [selectedIds, markMessagesRead, clearSelection, notify, strings.markedAllReadToast]);
+
+  const handleBulkDelete = useCallback(() => {
+    const ids = Array.from(selectedIds);
+    clearSelection();
+    scheduleDeleteWithUndo(ids);
+  }, [selectedIds, clearSelection, scheduleDeleteWithUndo]);
+
+  // Inbox scroll listener
+  const handleInboxScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const y = e.currentTarget.scrollTop;
+    setScrollTop(y);
+    setHeaderCollapsed(y > 28);
+  };
+
+  // Pull-to-refresh handlers on inbox top
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop <= 0 && e.touches.length === 1) {
+      pullStartYRef.current = e.touches[0].clientY;
+    } else {
+      pullStartYRef.current = null;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (pullStartYRef.current === null || scrollRef.current?.scrollTop) return;
+    const dy = e.touches[0].clientY - pullStartYRef.current;
+    if (dy > 0) {
+      setPullDistance(Math.min(72, dy * 0.45));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (pullDistance >= 48 && !loadingMessages) {
+      onRefreshMessages();
+    }
+    pullStartYRef.current = null;
+    setPullDistance(0);
   };
 
   return (
     <div className="my-node-tab-root">
-      {/* 1. Header Card (Compact & Dignified, No 'Node #0') */}
-      <section className="my-node-header-card" aria-label="Your anonymous node summary">
-        <div className="my-node-header-top">
-          <div className="my-node-beacon-avatar" aria-hidden="true">
-            <span className="beacon-emoji">{myMoodEmoji || "🌱"}</span>
-            <span className={`beacon-ring ${myMoodGlow}`} />
-          </div>
+      {/* 1. Compact Header (always visible, <= 20% viewport height, collapses smoothly on scroll) */}
+      <NodeHeader
+        discoverable={discoverable}
+        myMoodEmoji={myMoodEmoji}
+        myMoodLabel={myMoodLabel}
+        myMoodGlow={myMoodGlow}
+        myRegion={myRegion}
+        messageCount={activeMessages.length}
+        collapsed={headerCollapsed}
+        onUpdateMood={onUpdateMood}
+        onLocateOnGlobe={onLocateOnGlobe}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onExpandHeader={() => {
+          setHeaderCollapsed(false);
+          scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        language={language}
+      />
 
-          <div className="my-node-header-info">
-            <div className="my-node-header-title-row">
-              <h1 className="my-node-title">{labels.myLight}</h1>
-              <StatusPill
-                variant={discoverable ? "visible" : "hidden"}
-                label={discoverable ? labels.visible : labels.hidden}
-              />
-            </div>
-            <p className="my-node-region-caption">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              <span>{myRegion.state ? `${myRegion.state}, ${myRegion.country}` : myRegion.country || "Earth"}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* 2 Stat Tiles */}
-        <div className="my-node-stats-grid">
-          <div className="my-node-stat-tile">
-            <span className="stat-label">{labels.moodGlow}</span>
-            <div className="stat-value">
-              <i className={`mood-dot-mini ${myMoodGlow}`} aria-hidden="true" />
-              <span>{myMoodLabel}</span>
-            </div>
-          </div>
-
-          <div className="my-node-stat-tile">
-            <span className="stat-label">{labels.supportReceived}</span>
-            <div className="stat-value">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-              </svg>
-              <span>{messages.length}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Locate on Globe Button */}
-        <button
-          type="button"
-          className="my-node-locate-btn"
-          onClick={onLocateOnGlobe}
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 3a14 14 0 0 0 0 18M12 3a14 14 0 0 1 0 18M3.6 9h16.8M3.6 15h16.8" />
-          </svg>
-          <span>{labels.locateOnGlobe}</span>
-        </button>
-      </section>
-
-      {/* 2. Messages ("Support sent to you") - Main Content Placed Directly Below Header */}
-      <section className="my-node-messages-section" aria-label={labels.messagesHeading}>
-        <div className="my-node-messages-header">
-          <div className="messages-heading-info">
-            <h2 className="messages-title">{labels.messagesHeading}</h2>
-            <span className="messages-count-badge">{messages.length}</span>
-          </div>
-
-          <button
-            type="button"
-            className="my-node-refresh-btn"
-            onClick={onRefreshMessages}
-            disabled={loadingMessages}
-            aria-label={labels.refresh}
-          >
-            <svg
-              className={loadingMessages ? "spin-icon" : ""}
-              viewBox="0 0 24 24"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
+      {/* 2. Filter / Search Toolbar OR Multi-Select Action Bar */}
+      {selectionMode ? (
+        <div className="inbox-selection-bar" role="region" aria-label="Selected messages actions">
+          <strong className="inbox-selection-count">
+            {strings.selectedCount(selectedIds.size)}
+          </strong>
+          <div className="inbox-selection-btns">
+            <button
+              type="button"
+              className="inbox-sel-btn"
+              onClick={handleBulkMarkRead}
             >
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-            </svg>
-            <span>{loadingMessages ? labels.refreshing : labels.refresh}</span>
-          </button>
-        </div>
-
-        {/* Filter chips (All, Text, Voice) */}
-        <div className="my-node-filters-row" role="tablist" aria-label="Filter messages">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === "all"}
-            className={`my-node-filter-chip ${filter === "all" ? "active" : ""}`}
-            onClick={() => setFilter("all")}
-          >
-            <span>{labels.all}</span>
-            <span className="filter-count">({messages.length})</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === "text"}
-            className={`my-node-filter-chip ${filter === "text" ? "active" : ""}`}
-            onClick={() => setFilter("text")}
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <span>{labels.textOnly}</span>
-            <span className="filter-count">({textCount})</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === "voice"}
-            className={`my-node-filter-chip ${filter === "voice" ? "active" : ""}`}
-            onClick={() => setFilter("voice")}
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
-            </svg>
-            <span>{labels.voiceOnly}</span>
-            <span className="filter-count">({voiceCount})</span>
-          </button>
-        </div>
-
-        {/* Auto-translate row */}
-        <div className="my-node-autotranslate-card">
-          <div className="autotranslate-text">
-            <span className="autotranslate-title">{labels.autoTranslateLabel}</span>
-            <span className="autotranslate-desc">{labels.autoTranslateDesc}</span>
+              {strings.markRead}
+            </button>
+            <button
+              type="button"
+              className="inbox-sel-btn danger"
+              onClick={handleBulkDelete}
+            >
+              {strings.deleteAction}
+            </button>
+            <button
+              type="button"
+              className="inbox-sel-btn subtle"
+              onClick={clearSelection}
+            >
+              {strings.cancel}
+            </button>
           </div>
-          <ThemedSwitch
-            checked={autoTranslate}
-            onChange={handleToggleAutoTranslate}
-            ariaLabel={labels.autoTranslateLabel}
-          />
         </div>
+      ) : (
+        <InboxFilterChips
+          filter={filter}
+          onChangeFilter={setFilter}
+          counts={counts}
+          searchOpen={searchOpen}
+          searchQuery={searchQuery}
+          onToggleSearch={() =>
+            setSearchOpen((prev) => {
+              if (prev) setSearchQuery("");
+              return !prev;
+            })
+          }
+          onChangeSearch={setSearchQuery}
+          loading={loadingMessages}
+          onRefresh={onRefreshMessages}
+          onMarkAllRead={handleMarkAllRead}
+          onOpenSettings={() => setSettingsOpen(true)}
+          language={language}
+        />
+      )}
+
+      {/* 3. Scrollable Virtualized Inbox */}
+      <div
+        ref={scrollRef}
+        className="my-node-inbox-scroll"
+        onScroll={handleInboxScroll}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        aria-label={strings.inboxTitle}
+      >
+        {pullDistance > 16 && (
+          <div className="inbox-pull-indicator" style={{ height: `${pullDistance}px` }}>
+            <span>{strings.pullToRefresh}</span>
+          </div>
+        )}
+
+        {/* Messages turned off inline banner (when archived messages still exist) */}
+        {!acceptMessages && activeMessages.length > 0 && (
+          <div className="inbox-paused-banner" role="status">
+            <span>{strings.pausedInlineBanner}</span>
+            <button
+              type="button"
+              className="inbox-paused-link-btn"
+              onClick={() => setSettingsOpen(true)}
+            >
+              {strings.openSettings}
+            </button>
+          </div>
+        )}
+
+        {/* Inline refresh error banner when cached messages are visible */}
+        {messagesError && activeMessages.length > 0 && (
+          <div className="inbox-error-banner" role="alert">
+            <span>{messagesError}</span>
+            <button type="button" className="inbox-retry-inline" onClick={onRefreshMessages}>
+              {strings.retry}
+            </button>
+          </div>
+        )}
+
+        {/* Sticky Active Bucket Header while scrolling virtualized rows */}
+        {virtualLayout.activeStickyLabel && filteredMessages.length > 0 && (
+          <div className="inbox-sticky-group-bar" aria-hidden="true">
+            <span>{virtualLayout.activeStickyLabel}</span>
+          </div>
+        )}
 
         {/* Loading skeleton */}
-        {loadingMessages && (
+        {loadingMessages && activeMessages.length === 0 && (
           <div className="my-node-skeleton-list" aria-busy="true">
             <div className="support-skeleton" />
             <div className="support-skeleton" />
@@ -557,241 +823,177 @@ export default function MyNodeTab({
           </div>
         )}
 
-        {/* Empty state */}
-        {!loadingMessages && filteredMessages.length === 0 && (
-          <div className="my-node-empty-box">
-            <div className="empty-icon-wrap" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 12h8M12 8v8" opacity="0.4" />
-              </svg>
-            </div>
-            <h3 className="empty-title">{labels.emptyTitle}</h3>
-            <p className="empty-desc">{labels.emptyDesc}</p>
+        {/* Full error state when no messages could load */}
+        {!loadingMessages && messagesError && activeMessages.length === 0 && (
+          <div className="my-node-empty-box" role="alert">
+            <h3 className="empty-title">{strings.errorTitle}</h3>
+            <p className="empty-desc">{messagesError}</p>
+            <button
+              type="button"
+              className="inbox-empty-cta-btn"
+              onClick={onRefreshMessages}
+            >
+              {strings.retry}
+            </button>
           </div>
         )}
 
-        {/* Date Grouped Messages List */}
-        {!loadingMessages && filteredMessages.length > 0 && (
-          <div className="my-node-message-groups">
-            {groupedMessages.today.length > 0 && (
-              <div className="message-group-block">
-                <div className="message-date-header">
-                  <span className="date-label">{labels.today}</span>
-                  <span className="date-count">({groupedMessages.today.length})</span>
-                </div>
-                <div className="message-group-items">
-                  {groupedMessages.today.map((msg) => (
-                    <SupportiveMessageBubble
-                      key={msg.id}
-                      id={msg.id}
-                      kind={msg.kind}
-                      text={msg.text}
-                      audioUrl={msg.audioUrl}
-                      audioDuration={msg.audioDuration}
-                      transcription={msg.transcription}
-                      senderAnonymous={msg.senderAnonymous}
-                      toYou={true}
-                      autoTranslate={autoTranslate}
-                      language={language}
-                      onDelete={onDeleteMessage}
-                      onReport={onReportMessage}
-                      notify={notify}
-                    />
-                  ))}
-                </div>
+        {/* Empty State A: Messages paused & inbox empty */}
+        {!loadingMessages &&
+          !messagesError &&
+          activeMessages.length === 0 &&
+          !acceptMessages && (
+            <div className="my-node-empty-box">
+              <div className="empty-icon-wrap" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                  <line x1="12" y1="2" x2="12" y2="12" />
+                </svg>
               </div>
-            )}
-
-            {groupedMessages.thisWeek.length > 0 && (
-              <div className="message-group-block">
-                <div className="message-date-header">
-                  <span className="date-label">{labels.thisWeek}</span>
-                  <span className="date-count">({groupedMessages.thisWeek.length})</span>
-                </div>
-                <div className="message-group-items">
-                  {groupedMessages.thisWeek.map((msg) => (
-                    <SupportiveMessageBubble
-                      key={msg.id}
-                      id={msg.id}
-                      kind={msg.kind}
-                      text={msg.text}
-                      audioUrl={msg.audioUrl}
-                      audioDuration={msg.audioDuration}
-                      transcription={msg.transcription}
-                      senderAnonymous={msg.senderAnonymous}
-                      toYou={true}
-                      autoTranslate={autoTranslate}
-                      language={language}
-                      onDelete={onDeleteMessage}
-                      onReport={onReportMessage}
-                      notify={notify}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {groupedMessages.older.length > 0 && (
-              <div className="message-group-block">
-                <div className="message-date-header">
-                  <span className="date-label">{labels.older}</span>
-                  <span className="date-count">({groupedMessages.older.length})</span>
-                </div>
-                <div className="message-group-items">
-                  {groupedMessages.older.map((msg) => (
-                    <SupportiveMessageBubble
-                      key={msg.id}
-                      id={msg.id}
-                      kind={msg.kind}
-                      text={msg.text}
-                      audioUrl={msg.audioUrl}
-                      audioDuration={msg.audioDuration}
-                      transcription={msg.transcription}
-                      senderAnonymous={msg.senderAnonymous}
-                      toYou={true}
-                      autoTranslate={autoTranslate}
-                      language={language}
-                      onDelete={onDeleteMessage}
-                      onReport={onReportMessage}
-                      notify={notify}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* 3. Visibility Card (Two ThemedSwitch toggles with divider) */}
-      <SectionCard
-        title={labels.visibilityHeading}
-        subtitle={labels.visibilitySub}
-      >
-        <div className="toggle-row-item">
-          <ThemedSwitch
-            checked={discoverable}
-            onChange={onSetDiscoverable}
-            label={labels.appearTitle}
-            description={labels.appearDesc}
-            onStatusText={labels.appearOnStatus}
-            offStatusText={labels.appearOffStatus}
-            ariaLabel={labels.appearTitle}
-          />
-        </div>
-
-        <div className="section-card-divider" />
-
-        <div className="toggle-row-item">
-          <ThemedSwitch
-            checked={acceptMessages}
-            onChange={onSetAcceptMessages}
-            label={labels.acceptTitle}
-            description={labels.acceptDesc}
-            onStatusText={labels.acceptOnStatus}
-            offStatusText={labels.acceptOffStatus}
-            ariaLabel={labels.acceptTitle}
-          />
-        </div>
-      </SectionCard>
-
-      {/* 4. Region Card (Compact row with Edit button) */}
-      <SectionCard
-        title={labels.regionHeading}
-        action={
-          <button
-            type="button"
-            className="card-action-btn"
-            onClick={() => setIsEditingRegion((prev) => !prev)}
-          >
-            {isEditingRegion ? labels.doneEditing : labels.editArea}
-          </button>
-        }
-      >
-        {!isEditingRegion ? (
-          <div className="region-compact-row">
-            <div className="region-badge-info">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              <strong>
-                {myRegion.state ? `${myRegion.state}, ${myRegion.country}` : myRegion.country || "Earth"}
-              </strong>
+              <h3 className="empty-title">{strings.pausedTitle}</h3>
+              <p className="empty-desc">{strings.pausedDesc}</p>
+              <button
+                type="button"
+                className="inbox-empty-cta-btn"
+                onClick={() => setSettingsOpen(true)}
+              >
+                {strings.openNodeSettingsBtn}
+              </button>
             </div>
-          </div>
-        ) : (
-          <div className="region-edit-panel">
-            {detectingLocation && (
-              <div className="region-detecting-state">
-                <span className="spinner mini" />
-                <span>{labels.detecting}</span>
+          )}
+
+        {/* Empty State B: No messages received yet */}
+        {!loadingMessages &&
+          !messagesError &&
+          activeMessages.length === 0 &&
+          acceptMessages && (
+            <div className="my-node-empty-box">
+              <div className="empty-icon-wrap" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
               </div>
+              <h3 className="empty-title">{strings.emptyNoMessagesTitle}</h3>
+              <p className="empty-desc">{strings.emptyNoMessagesDesc}</p>
+            </div>
+          )}
+
+        {/* Empty State C: No results for current filter / search */}
+        {!loadingMessages &&
+          activeMessages.length > 0 &&
+          filteredMessages.length === 0 && (
+            <div className="my-node-empty-box">
+              <h3 className="empty-title">{strings.emptyNoMatchesTitle}</h3>
+              <p className="empty-desc">{strings.emptyNoMatchesDesc}</p>
+              <button
+                type="button"
+                className="inbox-empty-cta-btn secondary"
+                onClick={() => {
+                  setFilter("all");
+                  setSearchQuery("");
+                }}
+              >
+                {strings.clearFilters}
+              </button>
+            </div>
+          )}
+
+        {/* Virtualized Date-Grouped Message List */}
+        {filteredMessages.length > 0 && (
+          <div className="inbox-virtual-list">
+            {virtualLayout.topSpacer > 0 && (
+              <div style={{ height: `${virtualLayout.topSpacer}px` }} aria-hidden="true" />
             )}
 
-            {!detectingLocation && (
-              <div className="region-actions-stack">
-                <div className="region-buttons-row">
+            {virtualLayout.slice.map((entry) => {
+              if (entry.type === "header") {
+                return (
+                  <div
+                    key={entry.key}
+                    ref={measureItemRef(entry.key)}
+                    className="inbox-date-group-header"
+                  >
+                    <span>{entry.label}</span>
+                    <span className="inbox-date-group-count">({entry.count})</span>
+                  </div>
+                );
+              }
+
+              const msg = entry.message;
+              return (
+                <div key={entry.key} ref={measureItemRef(entry.key)}>
+                  <MessageRow
+                    message={msg}
+                    isUnread={isMessageUnread(msg, readIds, unreadOverrideIds)}
+                    autoTranslate={autoTranslate}
+                    language={language}
+                    selectionMode={selectionMode}
+                    selected={selectedIds.has(msg.id)}
+                    onToggleSelect={toggleSelect}
+                    onEnterSelectionMode={enterSelectionMode}
+                    onMarkRead={(id) => markMessagesRead([id])}
+                    onToggleUnread={handleToggleUnread}
+                    onSwipeDelete={(targetMsg) => scheduleDeleteWithUndo([targetMsg.id])}
+                    onReport={onReportMessage}
+                    onBlockSender={handleBlockSender}
+                    onTranscriptResolved={handleTranscriptResolved}
+                    onHeightChange={() => setMeasureVersion((v) => v + 1)}
+                    notify={(m) => notify(m)}
+                  />
+                </div>
+              );
+            })}
+
+            {virtualLayout.bottomSpacer > 0 && (
+              <div style={{ height: `${virtualLayout.bottomSpacer}px` }} aria-hidden="true" />
+            )}
+
+            {/* Infinite scroll sentinel & loading footer */}
+            {hasMorePages && (
+              <div ref={sentinelRef} className="inbox-load-more-footer">
+                {loadingMore ? (
+                  <>
+                    <span className="support-spinner mini" />
+                    <span>{strings.loadingMore}</span>
+                  </>
+                ) : (
                   <button
                     type="button"
-                    className="region-btn primary"
-                    onClick={() => {
-                      if (onEnableLocation) onEnableLocation();
-                    }}
+                    className="inbox-load-more-btn"
+                    onClick={handleLoadMore}
                   >
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="12" cy="12" r="3" />
-                      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-                    </svg>
-                    <span>{labels.useCurrentArea}</span>
+                    {strings.loadMoreBtn}
                   </button>
-
-                  <button
-                    type="button"
-                    className="region-btn secondary"
-                    onClick={() => {
-                      if (onSelectManualArea) onSelectManualArea();
-                    }}
-                  >
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="11" cy="11" r="8" />
-                      <path d="m21 21-4.35-4.35" />
-                    </svg>
-                    <span>{labels.chooseAreaManual}</span>
-                  </button>
-                </div>
-
-                {renderAreaPicker && renderAreaPicker()}
+                )}
               </div>
             )}
-          </div>
-        )}
-      </SectionCard>
-
-      {/* 5. Privacy Note (Collapsed to 1 line with Learn More) */}
-      <div className="my-node-privacy-banner" role="region" aria-label="Privacy safeguards">
-        <div className="privacy-banner-summary">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-          <p className="privacy-summary-text">{labels.privacyNoteShort}</p>
-          <button
-            type="button"
-            className="privacy-learn-more-link"
-            onClick={() => setShowPrivacyDetails((prev) => !prev)}
-            aria-expanded={showPrivacyDetails}
-          >
-            {showPrivacyDetails ? labels.hideDetails : labels.learnMore}
-          </button>
-        </div>
-
-        {showPrivacyDetails && (
-          <div className="privacy-banner-expanded">
-            <p>{labels.privacyDetail}</p>
           </div>
         )}
       </div>
+
+      {/* 4. Node Settings Screen (opened via Gear button or Paused CTA) */}
+      <NodeSettingsScreen
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        discoverable={discoverable}
+        acceptMessages={acceptMessages}
+        onSetDiscoverable={onSetDiscoverable}
+        onSetAcceptMessages={onSetAcceptMessages}
+        autoTranslate={autoTranslate}
+        onSetAutoTranslate={handleToggleAutoTranslate}
+        myRegion={myRegion}
+        detectingLocation={detectingLocation}
+        onEnableLocation={onEnableLocation}
+        onSelectManualArea={onSelectManualArea}
+        renderAreaPicker={renderAreaPicker}
+        blockedSenders={blockedSenders}
+        onUnblockSender={handleUnblockSender}
+        unreadCount={counts.unread}
+        totalMessageCount={activeMessages.length}
+        onMarkAllRead={handleMarkAllRead}
+        onDeleteAllMessages={handleDeleteAllMessages}
+        language={language}
+      />
     </div>
   );
 }

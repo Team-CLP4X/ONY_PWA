@@ -1014,22 +1014,31 @@ function AppInner() {
   const [history, setHistory] = useState<Screen[]>([]);
   const [toast, setToast] = useState("");
   const [toastAction, setToastAction] = useState<{ label: string; onAction: () => void } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const navigate = (next: Screen) => { setHistory((h) => [...h, screen]); setScreen(next); };
   const back = () => { const prev = history[history.length - 1] || "main"; setHistory((h) => h.slice(0, -1)); setScreen(prev); };
   const notify = (
     input: string | { text: string; actionLabel?: string; onAction?: () => void },
   ) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     if (typeof input === "string") {
       setToast(input);
       setToastAction(null);
-      window.setTimeout(() => setToast((curr) => (curr === input ? "" : curr)), 2400);
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast((curr) => (curr === input ? "" : curr));
+        toastTimerRef.current = null;
+      }, 2600);
     } else {
       setToast(input.text);
       setToastAction(input.actionLabel && input.onAction ? { label: input.actionLabel, onAction: input.onAction } : null);
-      window.setTimeout(() => {
+      toastTimerRef.current = window.setTimeout(() => {
         setToast((curr) => (curr === input.text ? "" : curr));
         setToastAction(null);
-      }, 4500);
+        toastTimerRef.current = null;
+      }, 4600);
     }
   };
   const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); setIsWritingJournalBook(false); setIsJournalSheetOpen(false); };
@@ -5528,9 +5537,11 @@ function Community({
   const mySupportMessages = propMySupportMessages || internalSupportMessages;
   const setMySupportMessages = propSetMySupportMessages || setInternalSupportMessages;
   const [loadingMyMessages, setLoadingMyMessages] = useState(false);
+  const [myMessagesError, setMyMessagesError] = useState<string | null>(null);
 
   const fetchMySupportMessages = async () => {
     setLoadingMyMessages(true);
+    setMyMessagesError(null);
     try {
       let msgs = await listCommunityMessages("0");
       if (!msgs || msgs.length === 0) {
@@ -5551,11 +5562,12 @@ function Community({
         );
       }
     } catch {
-      setMySupportMessages(
-        DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
-          id: `seed_me_${i}`,
-          ...m,
-        })),
+      setMyMessagesError(
+        language === "Bahasa Melayu"
+          ? "Gagal memuat turun mesej terkini"
+          : language === "中文"
+            ? "刷新留言失败，请重试"
+            : "Could not refresh messages. Tap Retry to try again.",
       );
     } finally {
       setLoadingMyMessages(false);
@@ -5721,7 +5733,7 @@ function Community({
   );
 
   const handleDeleteSupportMessage = useCallback(
-    async (msgId: string) => {
+    async (msgId: string, silent = false) => {
       try {
         await deleteCommunityMessage(msgId);
       } catch (e) {
@@ -5731,19 +5743,23 @@ function Community({
       if (propSetMySupportMessages) {
         propSetMySupportMessages((prev) => prev.filter((m) => m.id !== msgId));
       }
-      notify(
-        language === "Bahasa Melayu"
-          ? "Mesej telah dipadam"
-          : language === "中文"
-            ? "留言已删除"
-            : "Message deleted",
-      );
+      if (!silent) {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Mesej telah dipadam"
+            : language === "中文"
+              ? "留言已删除"
+              : "Message deleted",
+        );
+      }
     },
     [language, notify, propSetMySupportMessages],
   );
 
   const handleReportSupportMessage = useCallback(
     (msgId: string) => {
+      // TODO: Persist supportive message moderation reports (`communityMessageReports`) when backend endpoint is added.
+      void msgId;
       notify(
         language === "Bahasa Melayu"
           ? "Mesej telah dilaporkan kepada penyederhana"
@@ -5931,13 +5947,15 @@ function Community({
   const communityPageClass =
     view === "globe"
       ? "globe-tab-active"
-      : view === "posts" && selectedCategory === null
-        ? "posts-desk-active"
-        : view === "posts" && postsViewMode === "feed"
-          ? "posts-feed-active"
-          : view === "posts"
-            ? "posts-list-active"
-            : "";
+      : view === "myNode"
+        ? "my-node-tab-active"
+        : view === "posts" && selectedCategory === null
+          ? "posts-desk-active"
+          : view === "posts" && postsViewMode === "feed"
+            ? "posts-feed-active"
+            : view === "posts"
+              ? "posts-list-active"
+              : "";
 
   const openCreatePostFlow = (cat?: string) => {
     if (onOpenCreatePost) {
@@ -5947,7 +5965,7 @@ function Community({
     }
   };
 
-  return <><PageHeader title={t.community_title} subtitle={view === "globe" || view === "posts" ? undefined : t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => openCreatePostFlow(selectedCategory || undefined)}>+ {t.community_create_post}</Button></div>} /><section className={`page-pad community-page ${communityPageClass}`}>
+  return <><PageHeader title={t.community_title} subtitle={undefined} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => openCreatePostFlow(selectedCategory || undefined)}>+ {t.community_create_post}</Button></div>} /><section className={`page-pad community-page ${communityPageClass}`}>
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
@@ -6308,6 +6326,7 @@ function Community({
         myMoodLabel={myMoodLabel}
         myMoodGlow={myMoodGlow}
         myRegion={{ state: myNodeResolved.state, country: myNodeResolved.country }}
+        onUpdateMood={() => navigate("mood")}
         onLocateOnGlobe={() => {
           setView("globe");
           window.setTimeout(() => {
@@ -6316,8 +6335,9 @@ function Community({
         }}
         messages={mySupportMessages}
         loadingMessages={loadingMyMessages}
+        messagesError={myMessagesError}
         onRefreshMessages={fetchMySupportMessages}
-        onDeleteMessage={handleDeleteSupportMessage}
+        onDeleteMessage={(id) => handleDeleteSupportMessage(id, true)}
         onReportMessage={handleReportSupportMessage}
         detectingLocation={detectingLocation}
         locationChoice={locationChoice}
