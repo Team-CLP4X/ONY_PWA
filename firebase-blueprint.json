@@ -348,6 +348,7 @@
         "fontSizeScale": { "type": "string", "enum": ["small", "default", "large", "extraLarge"] },
         "fontSizePercent": { "type": "number" },
         "chatViewMode": { "type": "string", "enum": ["companion", "classic"] },
+        "postsViewMode": { "type": "string", "enum": ["feed", "list"] },
         "language": { "type": "string" },
         "companionPreferences": { "type": "object" },
         "notificationPreferences": { "type": "object" },

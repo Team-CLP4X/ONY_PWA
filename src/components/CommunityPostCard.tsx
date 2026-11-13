@@ -7,6 +7,7 @@ import {
 import type { FirestoreCommunityPost, PostLikeRecord, PostCommentRecord } from "../firebase/firestore";
 import { formatFriendlyTime, getCategoryLabel } from "../i18n/translations";
 import { SupportiveMessageBubble } from "./SupportiveMessageBubble";
+import { detectPostLanguage } from "../utils/communityPostHelpers";
 
 export interface CommunityPostCardProps {
   post: FirestoreCommunityPost;
@@ -41,6 +42,9 @@ export function CommunityPostCard({
       l.userId === currentUid ||
       l.userName.trim().toLowerCase() === currentUserName.trim().toLowerCase(),
   );
+
+  const detectedLang = detectPostLanguage(post.title, post.body);
+  const shouldShowTranslate = detectedLang !== language || showTranslation;
 
   const handleToggleTranslation = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -100,55 +104,39 @@ export function CommunityPostCard({
           </small>
         </div>
 
-        {/* Translation action button on post header */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <button
-            type="button"
-            className={`post-translate-btn ${showTranslation ? "active" : ""}`}
-            onClick={handleToggleTranslation}
-            disabled={isTranslating}
-            title={showTranslation ? t.community_show_original : `${t.community_translate_btn} (${language})`}
-            aria-label={showTranslation ? t.community_show_original : `${t.community_translate_btn} (${language})`}
-          >
-            {isTranslating ? (
-              <>
-                <span className="support-spinner mini" />
-                <span>{t.community_translating}</span>
-              </>
-            ) : showTranslation ? (
-              <>
-                <span className="btn-icon">↩</span>
-                <span>{t.community_show_original}</span>
-              </>
-            ) : translatedContent ? (
-              <>
-                <span className="btn-icon">🌐</span>
-                <span>{t.community_show_translation}</span>
-              </>
-            ) : (
-              <>
-                <span className="btn-icon">🌐</span>
-                <span>{t.community_translate_btn}</span>
-              </>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className="post-report-ghost-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              notify(
-                language === "Bahasa Melayu"
-                  ? "Terima kasih. Siaran ditandakan untuk moderasi komuniti."
-                  : language === "中文"
-                  ? "感谢反馈。帖子已提交社区审核。"
-                  : "Thank you. Post flagged for community moderation.",
-              );
-            }}
-          >
-            {t.common_report}
-          </button>
+          {shouldShowTranslate && (
+            <button
+              type="button"
+              className={`post-translate-btn ${showTranslation ? "active" : ""}`}
+              onClick={handleToggleTranslation}
+              disabled={isTranslating}
+              title={showTranslation ? t.community_show_original : `${t.community_translate_btn} (${language})`}
+              aria-label={showTranslation ? t.community_show_original : `${t.community_translate_btn} (${language})`}
+            >
+              {isTranslating ? (
+                <>
+                  <span className="support-spinner mini" />
+                  <span>{t.community_translating}</span>
+                </>
+              ) : showTranslation ? (
+                <>
+                  <span className="btn-icon">↩</span>
+                  <span>{t.community_show_original}</span>
+                </>
+              ) : translatedContent ? (
+                <>
+                  <span className="btn-icon">🌐</span>
+                  <span>{t.community_show_translation}</span>
+                </>
+              ) : (
+                <>
+                  <span className="btn-icon">🌐</span>
+                  <span>{t.community_translate_btn}</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

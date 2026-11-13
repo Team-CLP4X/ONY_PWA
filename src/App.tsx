@@ -50,15 +50,9 @@ import {
   subscribeVisibleGlobeUsers,
   updateGlobeUserNode,
   listCommunityPosts,
+  deduplicateCommunityPostList,
   createCommunityPost,
   toggleCommunityPostLike,
-  addCommunityPostComment,
-  editCommunityPostComment,
-  deleteCommunityPostComment,
-  toggleCommunityCommentLike,
-  addCommunityCommentReply,
-  editCommunityCommentReply,
-  deleteCommunityCommentReply,
   validateCommunityCommentText,
   listMerchants,
   listCommunityMessages,
@@ -159,12 +153,29 @@ import {
   CalmingMusicModal,
 } from "./components/CalmingMusicPlayer";
 import { SupportiveMessageBubble } from "./components/SupportiveMessageBubble";
-import { CommunityPostCard } from "./components/CommunityPostCard";
-import { DigitalJournal } from "./components/DigitalJournal";
+import { CommunityWorldScene } from "./components/community/CommunityWorldScene";
+import { CategoryHeader } from "./components/community/CategoryHeader";
+import { PostDetailScreen } from "./components/community/PostDetailScreen";
+import { ReportReasonSheet } from "./components/community/PostMenu";
+import { PostFeed } from "./components/community/PostFeed";
+import { CommentSheet } from "./components/community/CommentSheet";
 import {
-  translateCommunityPost,
-  getCachedPostTranslation,
-} from "./services/communityTranslationService";
+  extractWorldCategories,
+  filterPostsBySubtopic,
+  getUserReactionChoice,
+  loadHiddenPostIds,
+  loadSavedPostIds,
+  loadSeenPostIds,
+  saveHiddenPostIds,
+  saveSavedPostIds,
+  saveSeenPostIds,
+  saveUserReactionChoice,
+  sortCommunityPosts,
+  type CategorySortTab,
+  type SubtopicFilterId,
+  type SupportiveReactionType,
+} from "./utils/communityPostHelpers";
+import { DigitalJournal } from "./components/DigitalJournal";
 import {
   SettingsHeader,
   SettingsSection,
@@ -346,6 +357,12 @@ const Icon = ({ name }: { name: string }) => {
     profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-7 8-7s8 2 8 7"/></>,
     back: <path d="m15 18-6-6 6-6"/>,
     close: <path d="m6 6 12 12M18 6 6 18"/>,
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </>
+    ),
     send: (
       <>
         <path d="m22 2-7 20-4-9-9-4Z" />
@@ -988,6 +1005,7 @@ function AppInner() {
   const [tab, setTab] = useState<Tab>("chat");
   const [screen, setScreen] = useState<Screen>("main");
   const [selectedToolkitGuideId, setSelectedToolkitGuideId] = useState<string | undefined>(undefined);
+  const [createPostInitialCategory, setCreatePostInitialCategory] = useState<string>("General");
   const [preloadedChatTopic, setPreloadedChatTopic] = useState<string | undefined>(undefined);
   const [isWritingJournalBook, setIsWritingJournalBook] = useState(false);
   const [isJournalSheetOpen, setIsJournalSheetOpen] = useState(false);
@@ -1138,7 +1156,9 @@ function AppInner() {
             setGlobeUsers(loadedGlobe);
           }
           if (loadedPosts && loadedPosts.length > 0) {
-            setPosts(loadedPosts);
+            setPosts((prev) =>
+              deduplicateCommunityPostList([...loadedPosts, ...prev.filter((p) => !/^post_\d+$/.test(p.id) && !loadedPosts.some((lp) => lp.id === p.id))]),
+            );
           }
           if (loadedMerchants && loadedMerchants.length > 0) {
             setMerchants(loadedMerchants);
@@ -1862,7 +1882,7 @@ function AppInner() {
         likeRecords: newPost.likeRecords || [],
         comments: newPost.comments || [],
       };
-      setPosts((prev) => [created, ...prev]);
+      setPosts((prev) => deduplicateCommunityPostList([created, ...prev]));
       notify(language === "Bahasa Melayu" ? "Siaran berjaya diterbitkan" : language === "中文" ? "帖子已发布" : "Post published");
     } catch (e) {
       console.warn("[ONY] Post save warning:", e);
@@ -1873,7 +1893,7 @@ function AppInner() {
         likeRecords: newPost.likeRecords || [],
         comments: newPost.comments || [],
       };
-      setPosts((prev) => [fallbackCreated, ...prev]);
+      setPosts((prev) => deduplicateCommunityPostList([fallbackCreated, ...prev]));
       notify("Post published");
     }
   };
@@ -1915,6 +1935,68 @@ function AppInner() {
     } catch (e) {
       console.warn("[ONY] Like post update notice:", e);
     }
+  };
+
+  const handleRefreshCommunityPosts = async (limitCount = 50) => {
+    try {
+      const fresh = await listCommunityPosts(limitCount);
+      if (fresh && fresh.length > 0) {
+        setPosts((prev) => {
+          const merged = deduplicateCommunityPostList([...fresh, ...prev.filter((p) => !fresh.some((f) => f.id === p.id))]);
+          return merged;
+        });
+      }
+    } catch (e) {
+      console.warn("[ONY] Community posts refresh notice:", e);
+    }
+  };
+
+  const handleSaveCommunityPostToVault = async (post: Post) => {
+    const now = new Date().toISOString();
+    const dateKey = now.slice(0, 10);
+    const contentText = `${post.title}\n\n${post.body}\n\n— Shared by ${post.author} (${post.category})`;
+    const newEntry: FirestoreJournalEntry = {
+      id: `journal_post_${post.id}_${Date.now()}`,
+      title: `Saved Post: ${post.title}`,
+      content: contentText,
+      dateKey,
+      entryDate: dateKey,
+      moodEmoji: "🌿",
+      moodLabel: "Reflective",
+      tags: ["Community", post.category || "General"],
+      createdAt: now,
+      updatedAt: now,
+    };
+    setJournalEntries((prev) => [newEntry, ...prev]);
+    if (currentUser) {
+      saveJournalEntry(currentUser.uid, newEntry).catch((err) =>
+        console.warn("[ONY] Journal post save notice:", err),
+      );
+      saveMemory(currentUser.uid, {
+        text: `${post.title} — ${post.body}`,
+        reason: `Saved from ONY Community (${post.category})`,
+        category: post.category || "Community",
+        active: true,
+      }).catch(() => {});
+    }
+    setMemories((prev) => [
+      {
+        id: Date.now(),
+        text: `${post.title} — ${post.body}`,
+        reason: `Saved from ONY Community (${post.category})`,
+        category: post.category || "Community",
+        active: true,
+        createdAt: now,
+      },
+      ...prev,
+    ]);
+    notify(
+      language === "Bahasa Melayu"
+        ? "Disimpan ke Peti Memori"
+        : language === "中文"
+          ? "已保存到记忆宝库"
+          : "Saved to Memory Vault",
+    );
   };
 
   return (
@@ -1961,7 +2043,7 @@ function AppInner() {
                     onSheetOpenChange={setIsJournalSheetOpen}
                   />
                 )}
-                {tab === "community" && <Community navigate={navigate} globeUsers={globeUsers} setGlobeUsers={setGlobeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
+                {tab === "community" && <Community navigate={navigate} onOpenCreatePost={(cat) => { setCreatePostInitialCategory(cat && cat !== "All" ? cat : "General"); navigate("post"); }} globeUsers={globeUsers} setGlobeUsers={setGlobeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} onPostUpdated={syncUpdatedPostInState} onSavePostToVault={handleSaveCommunityPostToVault} onRefreshPosts={handleRefreshCommunityPosts} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
                 {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
                 {tab === "profile" && (
                   <Profile
@@ -2046,7 +2128,7 @@ function AppInner() {
             {screen === "subscription" && <Subscription back={back} openHelp={() => navigate("help")} status={subscriptionStatus} setStatus={setSubscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} resetFreeUsage={() => setFreeUsage(0)} notify={notify} />}
             {screen === "merchant" && <MerchantDetail back={back} navigate={navigate} merchants={merchants} merchantName={selectedMerchantName} notify={notify} />}
             {screen === "voucher" && <Voucher back={back} merchants={merchants} merchantName={selectedMerchantName} />}
-            {screen === "post" && <CreatePost back={back} notify={notify} displayName={displayName} currentUid={effectiveUid} onPostCreated={handleCreatePost} />}
+            {screen === "post" && <CreatePost back={back} notify={notify} displayName={displayName} currentUid={effectiveUid} initialCategory={createPostInitialCategory} onPostCreated={handleCreatePost} />}
             {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} reviewMemories={() => goTab("memory")} clearMemories={handleClearMemories} onDeleteAccount={handleDeleteAccount} navigate={navigate} />}
             {screen === "systemLogs" && <SystemLogsView back={back} notify={notify} currentUser={currentUser} />}
             {screen === "about" && <About back={back} />}
@@ -2100,7 +2182,7 @@ function AppInner() {
             {screen === "chatHistory" && <ChatHistory back={back} navigate={navigate} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} folders={folders} setFolders={setFolders} selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} />}
             {screen === "monthlyReport" && <MonthlyReport back={back} moodEntries={moodEntries} setMoodEntries={handleSetMoodEntries} conversations={conversations} setConversations={setConversations} memories={memories} />}
             {screen === "postDetail" && selectedPost && (
-              <PostDetail
+              <PostDetailScreen
                 back={() => {
                   sessionStorage.setItem("ony-show-posts", "true");
                   back();
@@ -2110,6 +2192,8 @@ function AppInner() {
                 currentUserName={displayName}
                 onLikePost={handleLikePost}
                 onPostUpdated={syncUpdatedPostInState}
+                onSavePostToVault={handleSaveCommunityPostToVault}
+                onOpenHelp={() => navigate("help")}
                 notify={notify}
               />
             )}
@@ -5089,15 +5173,20 @@ function saveCachedGlobePrefs(prefs: { discoverable: boolean; acceptsMessages: b
 
 function Community({
   navigate,
+  onOpenCreatePost,
   openPost,
   openMember,
   notify,
   globeUsers = DEFAULT_GLOBE_USERS,
   setGlobeUsers,
   posts = [],
+  setPosts,
   currentUid = "guest_local_user",
   currentUserName = "ONY Member",
   onLikePost,
+  onPostUpdated,
+  onSavePostToVault,
+  onRefreshPosts,
   dbSyncing,
   latestMood,
   mySupportMessages: propMySupportMessages,
@@ -5106,6 +5195,7 @@ function Community({
   setUserCoords,
 }: {
   navigate: (s: Screen) => void;
+  onOpenCreatePost?: (category?: string) => void;
   openPost: (post: Post) => void;
   openMember: (user: GlobeUser) => void;
   notify: (s: string | { text: string; actionLabel?: string; onAction?: () => void }) => void;
@@ -5116,6 +5206,9 @@ function Community({
   currentUid?: string;
   currentUserName?: string;
   onLikePost?: (postId: string) => void;
+  onPostUpdated?: (updated: Post) => void;
+  onSavePostToVault?: (post: Post) => void;
+  onRefreshPosts?: (limitCount?: number) => Promise<void>;
   dbSyncing?: boolean;
   latestMood?: MoodEntry;
   mySupportMessages?: FirestoreCommunityMessage[];
@@ -5124,8 +5217,39 @@ function Community({
   setUserCoords?: (c: UserCoordinates | null) => void;
 }) {
   const { t, language } = useLanguage();
-  const [filter, setFilter] = useState("All");
+  const { postsViewMode, setPostsViewMode } = useTheme();
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem("ony_posts_selected_category");
+    } catch {
+      return null;
+    }
+  });
+  const [activeSortTab, setActiveSortTab] = useState<CategorySortTab>("forYou");
+  const [subtopicFilter, setSubtopicFilter] = useState<SubtopicFilterId>("all");
+  const [heroCollapsed, setHeroCollapsed] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
+  const [reportTargetPost, setReportTargetPost] = useState<Post | null>(null);
+  const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(() => loadHiddenPostIds());
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(() => loadSavedPostIds());
+  const [seenPostIds, setSeenPostIds] = useState<Set<string>>(() => loadSeenPostIds());
+  const [postsFetchLimit, setPostsFetchLimit] = useState(50);
+  const [reactionTick, setReactionTick] = useState(0);
+
+  useEffect(() => {
+    try {
+      if (selectedCategory) {
+        sessionStorage.setItem("ony_posts_selected_category", selectedCategory);
+      } else {
+        sessionStorage.removeItem("ony_posts_selected_category");
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedCategory]);
+
   const [view, setView] = useState<"globe" | "posts" | "myNode">(() => {
     const showPosts = sessionStorage.getItem("ony-show-posts") === "true";
     if (showPosts) {
@@ -5631,8 +5755,199 @@ function Community({
     [language, notify],
   );
 
-  const shown = posts.filter((p) => (filter === "All" || p.category === filter) && `${p.title} ${p.body}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeader title={t.community_title} subtitle={view === "globe" ? undefined : t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => navigate("post")}>+ {t.community_create_post}</Button></div>} /><section className={`page-pad community-page ${view === "globe" ? "globe-tab-active" : ""}`}>
+  const deduplicatedPosts = useMemo(() => deduplicateCommunityPostList(posts), [posts]);
+
+  const allVisiblePosts = useMemo(
+    () => deduplicatedPosts.filter((p) => !hiddenPostIds.has(p.id)),
+    [deduplicatedPosts, hiddenPostIds],
+  );
+
+  const worldCategories = useMemo(
+    () => extractWorldCategories(deduplicatedPosts, hiddenPostIds, seenPostIds, categories),
+    [deduplicatedPosts, hiddenPostIds, seenPostIds],
+  );
+
+  const markPostViewed = useCallback((postId: string) => {
+    setSeenPostIds((prev) => {
+      if (prev.has(postId)) return prev;
+      const next = new Set(prev);
+      next.add(postId);
+      saveSeenPostIds(next);
+      return next;
+    });
+  }, []);
+
+  const shown = useMemo(() => {
+    const activeCat = selectedCategory || "All";
+    const needle = query.trim().toLowerCase();
+    const catMatched = allVisiblePosts.filter((p) => {
+      if (
+        activeCat !== "All" &&
+        (p.category || "General").trim().toLowerCase() !== activeCat.trim().toLowerCase()
+      ) {
+        return false;
+      }
+      if (needle) {
+        const hay = `${p.title} ${p.body} ${p.author} ${p.category}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+    const subtopicMatched = filterPostsBySubtopic(catMatched, subtopicFilter);
+    return sortCommunityPosts(subtopicMatched, activeSortTab, seenPostIds);
+  }, [allVisiblePosts, selectedCategory, query, subtopicFilter, activeSortTab, seenPostIds, reactionTick]);
+
+  const activeCommentPost = useMemo(
+    () => (activeCommentPostId ? posts.find((p) => p.id === activeCommentPostId) || null : null),
+    [activeCommentPostId, posts],
+  );
+
+  const handleSelectPostReaction = useCallback(
+    (postId: string, reaction: SupportiveReactionType) => {
+      const targetPost = posts.find((p) => p.id === postId);
+      if (!targetPost) return;
+      const cleanUid = currentUid.trim() || "anonymous_user";
+      const cleanName = currentUserName.trim().toLowerCase();
+      const records = Array.isArray(targetPost.likeRecords) ? targetPost.likeRecords : [];
+      const alreadyLiked = records.some(
+        (rec) =>
+          rec.userId === cleanUid ||
+          rec.userName.trim().toLowerCase() === cleanName,
+      );
+      const currentReaction = getUserReactionChoice(postId, cleanUid) || (alreadyLiked ? "hug" : null);
+
+      if (alreadyLiked && currentReaction === reaction) {
+        saveUserReactionChoice(postId, cleanUid, null);
+        setReactionTick((n) => n + 1);
+        onLikePost?.(postId);
+      } else if (alreadyLiked && currentReaction !== reaction) {
+        saveUserReactionChoice(postId, cleanUid, reaction);
+        setReactionTick((n) => n + 1);
+      } else {
+        saveUserReactionChoice(postId, cleanUid, reaction);
+        setReactionTick((n) => n + 1);
+        onLikePost?.(postId);
+      }
+    },
+    [posts, currentUid, currentUserName, onLikePost],
+  );
+
+  const handleHideCommunityPost = useCallback(
+    (postId: string) => {
+      setHiddenPostIds((prev) => {
+        const next = new Set(prev);
+        next.add(postId);
+        saveHiddenPostIds(next);
+        return next;
+      });
+      notify({
+        text:
+          language === "Bahasa Melayu"
+            ? "Siaran disembunyikan daripada suapan anda"
+            : language === "中文"
+              ? "已为您隐藏该帖子"
+              : "Post hidden from your feed",
+        actionLabel: language === "Bahasa Melayu" ? "Buat asal" : language === "中文" ? "撤销" : "Undo",
+        onAction: () => {
+          setHiddenPostIds((prev) => {
+            const next = new Set(prev);
+            next.delete(postId);
+            saveHiddenPostIds(next);
+            return next;
+          });
+        },
+      });
+    },
+    [language, notify],
+  );
+
+  const handleReportCommunityPost = useCallback(
+    (post: Post) => {
+      setReportTargetPost(post);
+    },
+    [],
+  );
+
+  const handleConfirmReportCommunityPost = useCallback(
+    (_post: Post, _reason: string) => {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Terima kasih. Siaran ditandakan untuk semakan moderasi."
+          : language === "中文"
+            ? "感谢反馈。帖子已提交社区安全团队审核。"
+            : "Thank you. Post flagged for community moderation.",
+      );
+    },
+    [language, notify],
+  );
+
+  const handleSavePostToVaultClick = useCallback(
+    (post: Post) => {
+      if (savedPostIds.has(post.id)) {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Sudah disimpan dalam Peti Memori"
+            : language === "中文"
+              ? "已保存在记忆宝库中"
+              : "Already saved to Memory Vault",
+        );
+        return;
+      }
+      setSavedPostIds((prev) => {
+        const next = new Set(prev);
+        next.add(post.id);
+        saveSavedPostIds(next);
+        return next;
+      });
+      if (onSavePostToVault) {
+        onSavePostToVault(post);
+      } else {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Disimpan ke Peti Memori"
+            : language === "中文"
+              ? "已保存到记忆宝库"
+              : "Saved to Memory Vault",
+        );
+      }
+    },
+    [savedPostIds, onSavePostToVault, language, notify],
+  );
+
+  const handleRefreshPosts = useCallback(async () => {
+    if (onRefreshPosts) {
+      await onRefreshPosts(postsFetchLimit);
+    }
+  }, [onRefreshPosts, postsFetchLimit]);
+
+  const handleLoadMorePosts = useCallback(() => {
+    if (posts.length >= postsFetchLimit && onRefreshPosts) {
+      const nextLimit = postsFetchLimit + 30;
+      setPostsFetchLimit(nextLimit);
+      void onRefreshPosts(nextLimit);
+    }
+  }, [posts.length, postsFetchLimit, onRefreshPosts]);
+
+  const communityPageClass =
+    view === "globe"
+      ? "globe-tab-active"
+      : view === "posts" && selectedCategory === null
+        ? "posts-desk-active"
+        : view === "posts" && postsViewMode === "feed"
+          ? "posts-feed-active"
+          : view === "posts"
+            ? "posts-list-active"
+            : "";
+
+  const openCreatePostFlow = (cat?: string) => {
+    if (onOpenCreatePost) {
+      onOpenCreatePost(cat);
+    } else {
+      navigate("post");
+    }
+  };
+
+  return <><PageHeader title={t.community_title} subtitle={view === "globe" || view === "posts" ? undefined : t.community_subtitle} action={<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>{dbSyncing && <span className="status-badge">{t.common_syncing}</span>}<Button className="create-post-top" onClick={() => openCreatePostFlow(selectedCategory || undefined)}>+ {t.community_create_post}</Button></div>} /><section className={`page-pad community-page ${communityPageClass}`}>
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
@@ -5848,86 +6163,141 @@ function Community({
         )}
       </div>
     </>}
-    {view === "posts" && <>
-      <div className="posts-heading"><div><span className="eyebrow">{t.community_posts_heading}</span><h2>{language === "Bahasa Melayu" ? "Berkongsi dengan lembut, bersama-sama." : language === "中文" ? "轻柔分享，一路相伴。" : "Shared gently, together."}</h2></div><Button variant="ghost" onClick={() => setView("globe")}>{t.community_back_globe}</Button></div>
-      <div className="community-sticky-controls">
-        <div className="search">
-          <Icon name="search" />
-          <TextInput
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t.community_search_posts}
-          />
-          {query && (
-            <button
-              type="button"
-              className="community-search-clear"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              title="Clear search"
-            >
-              <Icon name="close" />
-            </button>
-          )}
-        </div>
-        <div className="scroll-chips">
-          {categories.map((x) => (
-            <Button
-              key={x}
-              variant={filter === x ? "primary" : "secondary"}
-              onClick={() => setFilter(x)}
-            >
-              {getCategoryLabel(x, language)}
-            </Button>
-          ))}
-        </div>
-      </div>
-      <div className="feed">
-        {shown.map((post) => (
-          <CommunityPostCard
-            key={post.id}
-            post={post}
-            currentUid={currentUid}
-            currentUserName={currentUserName}
-            onOpen={openPost}
-            onLike={onLikePost}
-            notify={notify}
-          />
-        ))}
-      {shown.length === 0 && (
-        <div className="empty">
-          <span className="empty-emoji">🌱</span>
-          <h3>
-            {language === "Bahasa Melayu"
-              ? "Tiada perkongsian ditemui"
-              : language === "中文"
-              ? "未找到相关动态"
-              : "No matching posts"}
-          </h3>
-          <p>
-            {language === "Bahasa Melayu"
-              ? "Cuba ubah carian kata kunci atau pilih topik yang berbeza."
-              : language === "中文"
-              ? "请尝试更改搜索词或选择其它话题标签。"
-              : "Try adjusting your search query or picking a different topic filter."}
-          </p>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setQuery("");
-              setFilter("All");
+    {view === "posts" && (
+      <div className="posts-stage-shell">
+        {selectedCategory === null ? (
+          <CommunityWorldScene
+            categories={worldCategories}
+            allVisiblePosts={allVisiblePosts}
+            searchOpen={searchOpen}
+            searchQuery={query}
+            onToggleSearch={() => {
+              if (searchOpen) {
+                setSearchOpen(false);
+                setQuery("");
+              } else {
+                setSearchOpen(true);
+              }
             }}
-          >
-            {language === "Bahasa Melayu"
-              ? "Kosongkan carian"
-              : language === "中文"
-              ? "重置筛选"
-              : "Reset filters"}
-          </Button>
-        </div>
-      )}
+            onSearchChange={setQuery}
+            onSelectCategory={(cat) => {
+              setQuery("");
+              setSearchOpen(false);
+              setHeroCollapsed(false);
+              setSubtopicFilter("all");
+              setSelectedCategory(cat);
+            }}
+            onSelectSearchPost={(post) => {
+              markPostViewed(post.id);
+              openPost(post);
+            }}
+            onOpenFeedWithSearch={() => {
+              setHeroCollapsed(false);
+              setSelectedCategory("All");
+            }}
+            language={language}
+          />
+        ) : (
+          <>
+            <CategoryHeader
+              selectedCategory={selectedCategory}
+              categories={worldCategories}
+              filteredCount={shown.length}
+              activeSortTab={activeSortTab}
+              subtopicFilter={subtopicFilter}
+              viewMode={postsViewMode}
+              heroCollapsed={heroCollapsed}
+              searchOpen={searchOpen}
+              searchQuery={query}
+              onBackToGarden={() => {
+                setSelectedCategory(null);
+                setHeroCollapsed(false);
+                setQuery("");
+                setSearchOpen(false);
+                setSubtopicFilter("all");
+              }}
+              onSelectCategory={(cat) => {
+                setHeroCollapsed(false);
+                setSubtopicFilter("all");
+                setSelectedCategory(cat);
+              }}
+              onChangeSortTab={setActiveSortTab}
+              onChangeSubtopic={setSubtopicFilter}
+              onChangeViewMode={setPostsViewMode}
+              onToggleSearch={() => {
+                if (searchOpen) {
+                  setSearchOpen(false);
+                  setQuery("");
+                } else {
+                  setSearchOpen(true);
+                }
+              }}
+              onSearchChange={setQuery}
+              onCreatePost={() => openCreatePostFlow(selectedCategory)}
+              onRefresh={() => void handleRefreshPosts()}
+              language={language}
+            />
+
+            <PostFeed
+              posts={shown}
+              selectedCategory={selectedCategory}
+              viewMode={postsViewMode}
+              loading={Boolean(dbSyncing)}
+              hasSearchQuery={query.trim().length > 0 || subtopicFilter !== "all"}
+              currentUid={currentUid}
+              currentUserName={currentUserName}
+              savedPostIds={savedPostIds}
+              onScrollCollapseChange={setHeroCollapsed}
+              onPostViewed={markPostViewed}
+              onOpenPostDetail={(post) => {
+                markPostViewed(post.id);
+                openPost(post);
+              }}
+              onSelectReaction={handleSelectPostReaction}
+              onOpenComments={(postId) => setActiveCommentPostId(postId)}
+              onSaveToVault={handleSavePostToVaultClick}
+              onReportPost={handleReportCommunityPost}
+              onHidePost={handleHideCommunityPost}
+              onOpenHelp={() => navigate("help")}
+              onCreatePost={() => openCreatePostFlow(selectedCategory)}
+              onResetSearch={() => {
+                setQuery("");
+                setSearchOpen(false);
+                setSubtopicFilter("all");
+              }}
+              onRefresh={handleRefreshPosts}
+              onLoadMore={handleLoadMorePosts}
+              notify={(msg) => notify(msg)}
+              language={language}
+            />
+          </>
+        )}
+
+        <CommentSheet
+          post={activeCommentPost}
+          currentUid={currentUid}
+          currentUserName={currentUserName}
+          loadingComments={Boolean(dbSyncing)}
+          onClose={() => setActiveCommentPostId(null)}
+          onPostUpdated={(updated) => {
+            if (onPostUpdated) {
+              onPostUpdated(updated);
+            } else if (setPosts) {
+              setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            }
+          }}
+          onOpenHelp={() => navigate("help")}
+          notify={(msg) => notify(msg)}
+        />
+
+        <ReportReasonSheet
+          post={reportTargetPost}
+          language={language}
+          onClose={() => setReportTargetPost(null)}
+          onConfirmReport={handleConfirmReportCommunityPost}
+        />
       </div>
-    </>}
+    )}
     {view === "myNode" && (
       <MyNodeTab
         discoverable={discoverable}
@@ -5982,18 +6352,22 @@ function CreatePost({
   notify,
   displayName = "Anonymous",
   currentUid = "guest_local_user",
+  initialCategory = "General",
   onPostCreated,
 }: {
   back: () => void;
   notify: (s: string) => void;
   displayName?: string;
   currentUid?: string;
+  initialCategory?: string;
   onPostCreated?: (post: Omit<FirestoreCommunityPost, "id">) => Promise<void>;
 }) {
   const { t, language } = useLanguage();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [category, setCategory] = useState("General");
+  const [category, setCategory] = useState(() =>
+    initialCategory && initialCategory !== "All" ? initialCategory : "General",
+  );
   const [posted, setPosted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [postAs, setPostAs] = useState("Anonymous");
@@ -6337,664 +6711,7 @@ function VoiceNote({
   );
 }
 
-function PostDetail({
-  back,
-  post,
-  currentUid = "guest_local_user",
-  currentUserName = "ONY Member",
-  notify,
-  onLikePost,
-  onPostUpdated,
-}: {
-  back: () => void;
-  post: Post;
-  currentUid?: string;
-  currentUserName?: string;
-  notify: (text: string) => void;
-  onLikePost?: (id: string) => void;
-  onPostUpdated?: (updated: Post) => void;
-}) {
-  const { t, language } = useLanguage();
-  const [comment, setComment] = useState("");
-  const [commentError, setCommentError] = useState<string | null>(null);
-  const [submittingComment, setSubmittingComment] = useState(false);
 
-  // Editing comment state
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingCommentText, setEditingCommentText] = useState("");
-  const [editingCommentError, setEditingCommentError] = useState<string | null>(null);
-
-  // Replying to a comment state
-  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
-  const [replyError, setReplyError] = useState<string | null>(null);
-
-  // Editing reply state
-  const [editingReplyTarget, setEditingReplyTarget] = useState<{ commentId: string; replyId: string } | null>(null);
-  const [editingReplyText, setEditingReplyText] = useState("");
-  const [editingReplyError, setEditingReplyError] = useState<string | null>(null);
-
-  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const commentsEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Translation state for post details
-  const [showDetailTranslation, setShowDetailTranslation] = useState(false);
-  const [translatedDetailContent, setTranslatedDetailContent] = useState<{
-    translatedTitle: string;
-    translatedBody: string;
-  } | null>(() => getCachedPostTranslation(post.id, language) || null);
-  const [isTranslatingDetail, setIsTranslatingDetail] = useState(false);
-
-  useEffect(() => {
-    const cached = getCachedPostTranslation(post.id, language);
-    if (cached) {
-      setTranslatedDetailContent(cached);
-    } else {
-      setTranslatedDetailContent(null);
-      setShowDetailTranslation(false);
-    }
-  }, [post.id, language]);
-
-  const handleToggleDetailTranslation = async () => {
-    if (showDetailTranslation) {
-      setShowDetailTranslation(false);
-      return;
-    }
-    if (translatedDetailContent) {
-      setShowDetailTranslation(true);
-      return;
-    }
-    setIsTranslatingDetail(true);
-    try {
-      const res = await translateCommunityPost(
-        { id: post.id, title: post.title, body: post.body },
-        language
-      );
-      setTranslatedDetailContent(res);
-      setShowDetailTranslation(true);
-      notify(
-        language === "Bahasa Melayu"
-          ? "Siaran diterjemahkan"
-          : language === "中文"
-          ? "帖子已翻译"
-          : "Post translated"
-      );
-    } catch {
-      notify(
-        language === "Bahasa Melayu"
-          ? "Gagal menterjemah siaran"
-          : language === "中文"
-          ? "翻译失败，请稍后重试"
-          : "Translation failed"
-      );
-    } finally {
-      setIsTranslatingDetail(false);
-    }
-  };
-
-  const cleanUid = currentUid.trim() || "anonymous_user";
-  const cleanName = currentUserName.trim() || "ONY Member";
-
-  const postLikes: PostLikeRecord[] = Array.isArray(post.likeRecords) ? post.likeRecords : [];
-  const comments: PostCommentRecord[] = Array.isArray(post.comments) ? post.comments : [];
-
-  const isPostLikedByMe = postLikes.some(
-    (l) =>
-      l.userId === cleanUid ||
-      l.userName.trim().toLowerCase() === cleanName.toLowerCase(),
-  );
-
-  const isOwnedByCurrentUser = (recordUserId?: string, recordUserName?: string) => {
-    if (recordUserId && recordUserId === cleanUid) return true;
-    const normRecord = (recordUserName || "").trim().toLowerCase();
-    const normCurrent = cleanName.toLowerCase();
-    return (
-      Boolean(normRecord) &&
-      (normRecord === normCurrent ||
-        normRecord === `${normCurrent} · ony profile` ||
-        normRecord === "my ony profile")
-    );
-  };
-
-  const handleAddComment = async (event?: FormEvent) => {
-    if (event) event.preventDefault();
-    const check = validateCommunityCommentText(comment);
-    if (!check.valid) {
-      setCommentError(check.reason || "Comment violates community guidelines.");
-      notify("Comment blocked: violates community guidelines");
-      return;
-    }
-    setCommentError(null);
-    setSubmittingComment(true);
-    try {
-      const updated = await addCommunityPostComment(post, {
-        userId: cleanUid,
-        userName: cleanName,
-        text: comment.trim(),
-      });
-      if (onPostUpdated) onPostUpdated(updated);
-      setComment("");
-      if (commentInputRef.current) {
-        commentInputRef.current.style.height = "36px";
-      }
-      setTimeout(() => {
-        commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 80);
-      notify(language === "Bahasa Melayu" ? "Komen telah dihantar" : language === "中文" ? "评论已发布" : "Comment posted");
-    } catch (err: any) {
-      setCommentError(err?.message || "Could not post comment.");
-    } finally {
-      setSubmittingComment(false);
-    }
-  };
-
-  const handleSaveEditedComment = async (commentId: string) => {
-    const check = validateCommunityCommentText(editingCommentText);
-    if (!check.valid) {
-      setEditingCommentError(check.reason || "Comment violates community guidelines.");
-      notify("Edit blocked: violates community guidelines");
-      return;
-    }
-    setEditingCommentError(null);
-    try {
-      const updated = await editCommunityPostComment(post, commentId, editingCommentText.trim());
-      if (onPostUpdated) onPostUpdated(updated);
-      setEditingCommentId(null);
-      setEditingCommentText("");
-      notify("Comment updated");
-    } catch (err: any) {
-      setEditingCommentError(err?.message || "Could not update comment.");
-    }
-  };
-
-  const handleDeleteComment = async (commentId: string) => {
-    try {
-      const updated = await deleteCommunityPostComment(post, commentId);
-      if (onPostUpdated) onPostUpdated(updated);
-      if (editingCommentId === commentId) setEditingCommentId(null);
-      if (replyingToCommentId === commentId) setReplyingToCommentId(null);
-      notify("Comment deleted");
-    } catch {
-      notify("Could not delete comment");
-    }
-  };
-
-  const handleToggleCommentLike = async (commentId: string, customLiker?: { uid: string; name: string }) => {
-    const liker = customLiker || { uid: cleanUid, name: cleanName };
-    try {
-      const updated = await toggleCommunityCommentLike(post, commentId, liker);
-      if (onPostUpdated) onPostUpdated(updated);
-      if (customLiker) {
-        notify(`${customLiker.name} liked the comment`);
-      }
-    } catch {
-      notify("Could not update comment like");
-    }
-  };
-
-
-  const handleAddReply = async (commentId: string) => {
-    const check = validateCommunityCommentText(replyText);
-    if (!check.valid) {
-      setReplyError(check.reason || "Reply violates community guidelines.");
-      notify("Reply blocked: violates community guidelines");
-      return;
-    }
-    setReplyError(null);
-    try {
-      const updated = await addCommunityCommentReply(post, commentId, {
-        userId: cleanUid,
-        userName: cleanName,
-        text: replyText.trim(),
-      });
-      if (onPostUpdated) onPostUpdated(updated);
-      setReplyText("");
-      setReplyingToCommentId(null);
-      notify("Reply added");
-    } catch (err: any) {
-      setReplyError(err?.message || "Could not add reply.");
-    }
-  };
-
-  const handleSaveEditedReply = async (commentId: string, replyId: string) => {
-    const check = validateCommunityCommentText(editingReplyText);
-    if (!check.valid) {
-      setEditingReplyError(check.reason || "Reply violates community guidelines.");
-      notify("Edit blocked: violates community guidelines");
-      return;
-    }
-    setEditingReplyError(null);
-    try {
-      const updated = await editCommunityCommentReply(post, commentId, replyId, editingReplyText.trim());
-      if (onPostUpdated) onPostUpdated(updated);
-      setEditingReplyTarget(null);
-      setEditingReplyText("");
-      notify("Reply updated");
-    } catch (err: any) {
-      setEditingReplyError(err?.message || "Could not update reply.");
-    }
-  };
-
-  const handleDeleteReply = async (commentId: string, replyId: string) => {
-    try {
-      const updated = await deleteCommunityCommentReply(post, commentId, replyId);
-      if (onPostUpdated) onPostUpdated(updated);
-      setEditingReplyTarget(null);
-      notify("Reply deleted");
-    } catch {
-      notify("Could not delete reply");
-    }
-  };
-
-  return (
-    <div className="post-detail-page">
-      <PageHeader
-        title={t.community_post_detail_title}
-        subtitle={`${getCategoryLabel(post.category, language)} · ${formatFriendlyTime(post.createdAt, language)}`}
-        back={back}
-      />
-      <section className="page-pad post-detail-scroll">
-        <article className="post-detail-card">
-          <div className="post-meta">
-            <span className="mini-avatar">{post.author[0]}</span>
-            <div>
-              <strong>{post.author}</strong>
-              <small>
-                {post.author === "Anonymous" ? t.community_private_identity : t.community_profile_identity} ·{" "}
-                {formatFriendlyTime(post.createdAt, language)}
-              </small>
-            </div>
-            <div style={{ marginLeft: "auto", display: "flex", gap: "6px", alignItems: "center" }}>
-              <button
-                type="button"
-                className={`post-translate-btn ${showDetailTranslation ? "active" : ""}`}
-                onClick={handleToggleDetailTranslation}
-                disabled={isTranslatingDetail}
-                title={showDetailTranslation ? t.community_show_original : t.community_translate_btn}
-                aria-label={showDetailTranslation ? t.community_show_original : t.community_translate_btn}
-              >
-                {isTranslatingDetail ? (
-                  <>
-                    <span className="spinner mini" />
-                    <span>{t.community_translating}</span>
-                  </>
-                ) : showDetailTranslation ? (
-                  <>
-                    <span className="translate-icon">↩</span>
-                    <span>{t.community_show_original}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="translate-icon">🌐</span>
-                    <span>{t.community_translate_btn}</span>
-                  </>
-                )}
-              </button>
-              <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Siaran ditandakan untuk semakan moderasi." : language === "中文" ? "感谢反馈。帖子已提交审核。" : "Thank you. Post flagged for moderation review.")}>
-                {t.common_report}
-              </Button>
-            </div>
-          </div>
-          {showDetailTranslation && (
-            <div className="post-translated-badge-row">
-              <span className="support-translated-badge">
-                <span className="translate-badge-dot" />
-                {t.community_translated_badge} ({language})
-              </span>
-            </div>
-          )}
-          <h1 className="post-card-title">{showDetailTranslation && translatedDetailContent ? translatedDetailContent.translatedTitle : post.title}</h1>
-          <p className="post-card-body">{showDetailTranslation && translatedDetailContent ? translatedDetailContent.translatedBody : post.body}</p>
-          {post.media === "voice" && (
-            <VoiceNote audioUrl={post.audioUrl} audioDuration={post.audioDuration} notify={notify} />
-          )}
-          {post.media === "image" && (
-            <div className="post-image detail">
-              <span>{t.community_calm_image}</span>
-            </div>
-          )}
-
-          <div className="post-detail-stats">
-            <span>
-              {post.likes} {language === "Bahasa Melayu" ? "suka" : language === "中文" ? "个赞" : post.likes === 1 ? "like" : "likes"}
-            </span>
-            <span>
-              {comments.length} {language === "Bahasa Melayu" ? "komen" : language === "中文" ? "条评论" : comments.length === 1 ? "comment" : "comments"}
-            </span>
-          </div>
-
-          <div className="post-detail-actions">
-            <Button
-              variant={isPostLikedByMe ? "primary" : "secondary"}
-              onClick={() => onLikePost && onLikePost(post.id)}
-            >
-              <Icon name="heart" />
-              {isPostLikedByMe ? (language === "Bahasa Melayu" ? "Disukai" : language === "中文" ? "已赞" : "Liked") : (language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "点赞" : "Like")} ({post.likes})
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => commentInputRef.current?.focus()}
-            >
-              <Icon name="chat" />
-              {language === "Bahasa Melayu" ? "Komen" : language === "中文" ? "评论" : "Comment"} ({comments.length})
-            </Button>
-          </div>
-        </article>
-
-        <div className="comments-section">
-          <div className="comments-section-header">
-            <h3>{t.community_comments_title} ({comments.length})</h3>
-          </div>
-
-          {comments.length === 0 ? (
-            <div className="empty mini-empty">
-              <p>{t.community_no_comments}</p>
-            </div>
-          ) : (
-            comments.map((item) => {
-              const isMine = isOwnedByCurrentUser(item.userId, item.userName);
-              const commentLikes = Array.isArray(item.likeRecords) ? item.likeRecords : [];
-              const likedByMe = commentLikes.some(
-                (l) =>
-                  l.userId === cleanUid ||
-                  l.userName.trim().toLowerCase() === cleanName.toLowerCase(),
-              );
-              const replies = Array.isArray(item.replies) ? item.replies : [];
-
-              return (
-                <div className="comment" key={item.id}>
-                  <span>{(item.userName || "A")[0]}</span>
-                  <div>
-                    <strong>
-                      <span className="comment-author-wrap">
-                        {item.userName}
-                        {isMine && <b className="you-badge">{t.common_you}</b>}
-                      </span>
-                      <small>
-                        {formatFriendlyTime(item.createdAt, language)}
-                        {item.updatedAt ? ` · ${t.common_edited}` : ""}
-                      </small>
-                    </strong>
-
-                    {editingCommentId === item.id ? (
-                      <div className="comment-inline-editor">
-                        <TextArea
-                          rows={2}
-                          value={editingCommentText}
-                          onChange={(e) => {
-                            setEditingCommentText(e.target.value);
-                            setEditingCommentError(null);
-                          }}
-                          placeholder={t.community_edit_comment_placeholder}
-                        />
-                        {editingCommentError && (
-                          <div className="form-error" role="alert">
-                            <Icon name="info" />
-                            <span>{editingCommentError}</span>
-                          </div>
-                        )}
-                        <div className="comment-inline-actions">
-                          <Button
-                            variant="primary"
-                            onClick={() => handleSaveEditedComment(item.id)}
-                            disabled={!editingCommentText.trim()}
-                          >
-                            {t.common_save}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setEditingCommentId(null);
-                              setEditingCommentError(null);
-                            }}
-                          >
-                            {t.common_cancel}
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p>{item.text}</p>
-                    )}
-
-                    <div className="comment-action-bar">
-                      <button
-                        type="button"
-                        className={`comment-action-btn ${likedByMe ? "liked" : ""}`}
-                        onClick={() => handleToggleCommentLike(item.id)}
-                      >
-                        <Icon name="heart" />
-                        {likedByMe ? (language === "Bahasa Melayu" ? "Disukai" : language === "中文" ? "已赞" : "Liked") : (language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "点赞" : "Like")} ({commentLikes.length})
-                      </button>
-
-                      <button
-                        type="button"
-                        className="comment-action-btn"
-                        onClick={() => {
-                          if (replyingToCommentId === item.id) {
-                            setReplyingToCommentId(null);
-                            setReplyError(null);
-                          } else {
-                            setReplyingToCommentId(item.id);
-                            setReplyText("");
-                            setReplyError(null);
-                          }
-                        }}
-                      >
-                        {language === "Bahasa Melayu" ? "Balas" : language === "中文" ? "回复" : "Reply"} ({replies.length})
-                      </button>
-
-                      {isMine && editingCommentId !== item.id && (
-                        <>
-                          <button
-                            type="button"
-                            className="comment-action-btn"
-                            onClick={() => {
-                              setEditingCommentId(item.id);
-                              setEditingCommentText(item.text);
-                              setEditingCommentError(null);
-                            }}
-                          >
-                            <Icon name="edit" /> {t.common_edit}
-                          </button>
-                          <button
-                            type="button"
-                            className="comment-action-btn danger"
-                            onClick={() => handleDeleteComment(item.id)}
-                          >
-                            <Icon name="trash" /> {t.common_delete}
-                          </button>
-                        </>
-                      )}
-                    </div>
-
-                    {replies.length > 0 && (
-                      <div className="comment-replies-list">
-                        {replies.map((rep) => {
-                          const isMyReply = isOwnedByCurrentUser(rep.userId, rep.userName);
-                          const isEditingThisReply =
-                            editingReplyTarget?.commentId === item.id &&
-                            editingReplyTarget?.replyId === rep.id;
-
-                          return (
-                            <div key={rep.id} className="comment-reply-item">
-                              <div className="comment-reply-head">
-                                <strong>
-                                  {rep.userName}
-                                  {isMyReply && <b className="you-badge">{t.common_you}</b>}
-                                </strong>
-                                <small>
-                                  {formatFriendlyTime(rep.createdAt, language)}
-                                  {rep.updatedAt ? ` · ${t.common_edited}` : ""}
-                                </small>
-                              </div>
-
-                              {isEditingThisReply ? (
-                                <div className="comment-inline-editor">
-                                  <TextInput
-                                    value={editingReplyText}
-                                    onChange={(e) => {
-                                      setEditingReplyText(e.target.value);
-                                      setEditingReplyError(null);
-                                    }}
-                                    placeholder={t.community_edit_reply_placeholder}
-                                  />
-                                  {editingReplyError && (
-                                    <div className="form-error" role="alert">
-                                      <Icon name="info" />
-                                      <span>{editingReplyError}</span>
-                                    </div>
-                                  )}
-                                  <div className="comment-inline-actions">
-                                    <Button
-                                      variant="primary"
-                                      onClick={() => handleSaveEditedReply(item.id, rep.id)}
-                                      disabled={!editingReplyText.trim()}
-                                    >
-                                      {t.common_save}
-                                    </Button>
-                                    <Button
-                                      variant="secondary"
-                                      onClick={() => {
-                                        setEditingReplyTarget(null);
-                                        setEditingReplyError(null);
-                                      }}
-                                    >
-                                      {t.common_cancel}
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p>{rep.text}</p>
-                              )}
-
-                              {isMyReply && !isEditingThisReply && (
-                                <div className="comment-reply-actions">
-                                  <button
-                                    type="button"
-                                    className="comment-action-btn"
-                                    onClick={() => {
-                                      setEditingReplyTarget({ commentId: item.id, replyId: rep.id });
-                                      setEditingReplyText(rep.text);
-                                      setEditingReplyError(null);
-                                    }}
-                                  >
-                                    <Icon name="edit" /> {t.common_edit}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="comment-action-btn danger"
-                                    onClick={() => handleDeleteReply(item.id, rep.id)}
-                                  >
-                                    <Icon name="trash" /> {t.common_delete}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {replyingToCommentId === item.id && (
-                      <div className="comment-reply-composer">
-                        <TextInput
-                          value={replyText}
-                          onChange={(e) => {
-                            setReplyText(e.target.value);
-                            setReplyError(null);
-                          }}
-                          placeholder={`${t.community_reply_to} ${item.userName}…`}
-                        />
-                        {replyError && (
-                          <div className="form-error" role="alert">
-                            <Icon name="info" />
-                            <span>{replyError}</span>
-                          </div>
-                        )}
-                        <div className="comment-inline-actions">
-                          <Button
-                            variant="primary"
-                            onClick={() => handleAddReply(item.id)}
-                            disabled={!replyText.trim()}
-                          >
-                            {language === "Bahasa Melayu" ? "Balas" : language === "中文" ? "回复" : "Reply"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setReplyingToCommentId(null);
-                              setReplyError(null);
-                            }}
-                          >
-                            {t.common_cancel}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-          <div ref={commentsEndRef} />
-        </div>
-      </section>
-
-      {/* Sticky Bottom Comment Input Bar */}
-      <div className="comment-composer-wrapper">
-        {commentError && (
-          <div className="comment-guideline-error" role="alert">
-            <Icon name="info" />
-            <span>{commentError}</span>
-          </div>
-        )}
-        <form
-          className="comment-composer"
-          onSubmit={handleAddComment}
-          onClick={(e) => {
-            if ((e.target as HTMLElement).tagName !== "BUTTON" && !(e.target as HTMLElement).closest("button")) {
-              commentInputRef.current?.focus();
-            }
-          }}
-        >
-          <textarea
-            ref={commentInputRef}
-            className="comment-textarea"
-            rows={1}
-            value={comment}
-            onChange={(event) => {
-              setComment(event.target.value);
-              if (commentError) setCommentError(null);
-              const el = event.target;
-              el.style.height = "auto";
-              el.style.height = `${Math.min(el.scrollHeight, 110)}px`;
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void handleAddComment();
-              }
-            }}
-            placeholder={`${t.community_comment_as} ${cleanName}…`}
-            aria-label={t.community_comments_title}
-            maxLength={1000}
-          />
-          <div className="comment-composer-actions">
-            <button
-              type="submit"
-              className={`comment-send-btn ${comment.trim() ? "ready" : ""}`}
-              disabled={submittingComment || !comment.trim()}
-              title={language === "Bahasa Melayu" ? "Hantar komen" : language === "中文" ? "发送评论" : "Send comment"}
-              aria-label={language === "Bahasa Melayu" ? "Hantar komen" : language === "中文" ? "发送评论" : "Send comment"}
-            >
-              {submittingComment ? <span className="spinner mini" /> : <Icon name="send" />}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 const fallbackMerchants: Merchant[] = DEFAULT_MERCHANTS;
 

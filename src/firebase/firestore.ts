@@ -164,7 +164,11 @@ export interface PostCommentReplyRecord {
   id: string;
   userId: string;
   userName: string;
+  kind?: "text" | "voice";
   text: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  transcription?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -173,7 +177,11 @@ export interface PostCommentRecord {
   id: string;
   userId: string;
   userName: string;
+  kind?: "text" | "voice";
   text: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  transcription?: string;
   createdAt: string;
   updatedAt?: string;
   likes: number;
@@ -1205,7 +1213,11 @@ function normalizeCommentReplies(raw: unknown): PostCommentReplyRecord[] {
         id: String(r.id || `reply_${idx + 1}`),
         userId: String(r.userId || "community_member"),
         userName: String(r.userName || "Community Member"),
+        ...(r.kind === "voice" || r.kind === "text" ? { kind: r.kind } : {}),
         text: String(r.text || ""),
+        ...(r.audioUrl ? { audioUrl: String(r.audioUrl) } : {}),
+        ...(typeof r.audioDuration === "number" ? { audioDuration: r.audioDuration } : {}),
+        ...(r.transcription ? { transcription: String(r.transcription) } : {}),
         createdAt: String(r.createdAt || new Date().toISOString()),
         ...(r.updatedAt ? { updatedAt: String(r.updatedAt) } : {}),
       };
@@ -1224,7 +1236,11 @@ function normalizePostComments(raw: unknown): PostCommentRecord[] {
         id: String(c.id || `comment_${idx + 1}`),
         userId: String(c.userId || "community_member"),
         userName: String(c.userName || "Community Member"),
+        ...(c.kind === "voice" || c.kind === "text" ? { kind: c.kind } : {}),
         text: String(c.text || ""),
+        ...(c.audioUrl ? { audioUrl: String(c.audioUrl) } : {}),
+        ...(typeof c.audioDuration === "number" ? { audioDuration: c.audioDuration } : {}),
+        ...(c.transcription ? { transcription: String(c.transcription) } : {}),
         createdAt: String(c.createdAt || new Date().toISOString()),
         ...(c.updatedAt ? { updatedAt: String(c.updatedAt) } : {}),
         likeRecords,
@@ -1238,11 +1254,62 @@ function normalizePostComments(raw: unknown): PostCommentRecord[] {
 // Community Posts Operations
 // ==========================================
 
-export async function listCommunityPosts(): Promise<FirestoreCommunityPost[]> {
+function normalizeCommunityPostSignature(post: Pick<FirestoreCommunityPost, "author" | "title" | "body">): string {
+  const norm = (v: string) => v.trim().toLowerCase().replace(/\s+/g, " ");
+  return `${norm(post.author)}|${norm(post.title)}|${norm(post.body)}`;
+}
+
+function scoreCommunityPostCompleteness(post: FirestoreCommunityPost): number {
+  const isCanonicalSeed = /^post_\d+$/.test(post.id) ? 10 : 0;
+  return (
+    isCanonicalSeed +
+    (post.comments?.length || 0) * 3 +
+    (post.likeRecords?.length || 0) * 2
+  );
+}
+
+export function deduplicateCommunityPostList(
+  posts: FirestoreCommunityPost[],
+): FirestoreCommunityPost[] {
+  const byId = new Map<string, FirestoreCommunityPost>();
+  const bySig = new Map<string, FirestoreCommunityPost>();
+  const orderedIds: string[] = [];
+
+  for (const post of posts) {
+    const existingById = byId.get(post.id);
+    if (existingById) {
+      if (scoreCommunityPostCompleteness(post) > scoreCommunityPostCompleteness(existingById)) {
+        byId.set(post.id, post);
+      }
+      continue;
+    }
+
+    const sig = normalizeCommunityPostSignature(post);
+    const existingBySig = bySig.get(sig);
+    if (existingBySig) {
+      if (scoreCommunityPostCompleteness(post) > scoreCommunityPostCompleteness(existingBySig)) {
+        byId.delete(existingBySig.id);
+        byId.set(post.id, post);
+        bySig.set(sig, post);
+        const idx = orderedIds.indexOf(existingBySig.id);
+        if (idx >= 0) orderedIds[idx] = post.id;
+      }
+      continue;
+    }
+
+    byId.set(post.id, post);
+    bySig.set(sig, post);
+    orderedIds.push(post.id);
+  }
+
+  return orderedIds.map((id) => byId.get(id)!).filter(Boolean);
+}
+
+export async function listCommunityPosts(maxCount = 50): Promise<FirestoreCommunityPost[]> {
   const path = "communityPosts";
   try {
     const colRef = collection(db, "communityPosts");
-    const q = query(colRef, orderBy("createdAt", "desc"), limit(50));
+    const q = query(colRef, orderBy("createdAt", "desc"), limit(maxCount));
     const snap = await getDocs(q);
 
     const results: FirestoreCommunityPost[] = [];
@@ -1302,7 +1369,7 @@ export async function listCommunityPosts(): Promise<FirestoreCommunityPost[]> {
       results.push(postObj);
     }
 
-    return results;
+    return deduplicateCommunityPostList(results);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
@@ -1406,19 +1473,47 @@ export async function toggleCommunityPostLike(
 
 export async function addCommunityPostComment(
   post: FirestoreCommunityPost,
-  params: { userId: string; userName: string; text: string },
+  params: {
+    userId: string;
+    userName: string;
+    text: string;
+    kind?: "text" | "voice";
+    audioUrl?: string;
+    audioDuration?: number;
+    transcription?: string;
+  },
 ): Promise<FirestoreCommunityPost> {
-  const validation = validateCommunityCommentText(params.text);
-  if (!validation.valid) {
-    throw new Error(validation.reason || "Comment violates community guidelines.");
+  const isVoice = params.kind === "voice";
+  if (isVoice) {
+    if (!params.audioUrl) {
+      throw new Error("Voice recording audio is missing. Please record again.");
+    }
+    if (params.transcription?.trim()) {
+      const tValidation = validateCommunityCommentText(params.transcription);
+      if (!tValidation.valid) {
+        throw new Error(tValidation.reason || "Comment violates community guidelines.");
+      }
+    }
+  } else {
+    const validation = validateCommunityCommentText(params.text);
+    if (!validation.valid) {
+      throw new Error(validation.reason || "Comment violates community guidelines.");
+    }
   }
 
   const now = new Date().toISOString();
+  // TODO: Upload voice audio blob via dedicated media storage endpoint instead of storing inline dataUrl in Firestore once backend storage API exists.
   const newComment: PostCommentRecord = {
     id: `comment_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     userId: params.userId.trim() || "anonymous_user",
     userName: params.userName.trim() || "ONY Member",
-    text: params.text.trim(),
+    ...(isVoice ? { kind: "voice" as const } : { kind: "text" as const }),
+    text: params.text.trim() || (isVoice ? "Voice comment" : ""),
+    ...(isVoice && params.audioUrl ? { audioUrl: params.audioUrl } : {}),
+    ...(isVoice && typeof params.audioDuration === "number"
+      ? { audioDuration: params.audioDuration }
+      : {}),
+    ...(isVoice && params.transcription ? { transcription: params.transcription } : {}),
     createdAt: now,
     likes: 0,
     likeRecords: [],
@@ -1516,19 +1611,41 @@ export async function toggleCommunityCommentLike(
 export async function addCommunityCommentReply(
   post: FirestoreCommunityPost,
   commentId: string,
-  params: { userId: string; userName: string; text: string },
+  params: {
+    userId: string;
+    userName: string;
+    text: string;
+    kind?: "text" | "voice";
+    audioUrl?: string;
+    audioDuration?: number;
+    transcription?: string;
+  },
 ): Promise<FirestoreCommunityPost> {
-  const validation = validateCommunityCommentText(params.text);
-  if (!validation.valid) {
-    throw new Error(validation.reason || "Reply violates community guidelines.");
+  const isVoice = params.kind === "voice";
+  if (isVoice) {
+    if (!params.audioUrl) {
+      throw new Error("Voice reply audio is missing. Please record again.");
+    }
+  } else {
+    const validation = validateCommunityCommentText(params.text);
+    if (!validation.valid) {
+      throw new Error(validation.reason || "Reply violates community guidelines.");
+    }
   }
 
   const now = new Date().toISOString();
+  // TODO: Upload voice reply audio via dedicated media storage endpoint when backend API exists.
   const newReply: PostCommentReplyRecord = {
     id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     userId: params.userId.trim() || "anonymous_user",
     userName: params.userName.trim() || "ONY Member",
-    text: params.text.trim(),
+    ...(isVoice ? { kind: "voice" as const } : { kind: "text" as const }),
+    text: params.text.trim() || (isVoice ? "Voice reply" : ""),
+    ...(isVoice && params.audioUrl ? { audioUrl: params.audioUrl } : {}),
+    ...(isVoice && typeof params.audioDuration === "number"
+      ? { audioDuration: params.audioDuration }
+      : {}),
+    ...(isVoice && params.transcription ? { transcription: params.transcription } : {}),
     createdAt: now,
   };
 

@@ -19,6 +19,7 @@ import { db, auth } from "../firebase/config";
 
 export type FontSizeScale = "small" | "default" | "large" | "extraLarge";
 export type ChatViewMode = "companion" | "classic";
+export type PostsViewMode = "feed" | "list";
 
 export const FONT_SCALE_VALUES: Record<FontSizeScale, number> = {
   small: 85,
@@ -84,6 +85,7 @@ export interface UserSettingsDoc {
   fontSizeScale: FontSizeScale;
   fontSizePercent: number; // 85 to 150
   chatViewMode: ChatViewMode;
+  postsViewMode: PostsViewMode;
   language: string;
   companionPreferences: CompanionPreferences;
   notificationPreferences: NotificationPreferences;
@@ -107,6 +109,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
   fontSizeScale: "default",
   fontSizePercent: 100,
   chatViewMode: "companion",
+  postsViewMode: "list",
   language: "English",
   companionPreferences: {
     companion: "Cat",
@@ -225,6 +228,7 @@ export function loadCachedSettings(): UserSettingsDoc {
     const legacyScale = localStorage.getItem("ony_appearance_font_scale");
     const legacyLang = localStorage.getItem("ony_language");
     const legacyChatMode = localStorage.getItem("ony_chat_view_mode");
+    const legacyPostsMode = localStorage.getItem("ony_posts_view_mode");
 
     const migrated: Partial<UserSettingsDoc> = {};
     if (legacyTheme && legacyTheme in THEME_DEFINITIONS) {
@@ -239,6 +243,9 @@ export function loadCachedSettings(): UserSettingsDoc {
     }
     if (legacyChatMode === "companion" || legacyChatMode === "classic") {
       migrated.chatViewMode = legacyChatMode;
+    }
+    if (legacyPostsMode === "feed" || legacyPostsMode === "list") {
+      migrated.postsViewMode = legacyPostsMode;
     }
     if (legacyLang) migrated.language = legacyLang;
 
@@ -284,6 +291,11 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
       ? incoming.chatViewMode
       : DEFAULT_USER_SETTINGS.chatViewMode;
 
+  const postsViewMode: PostsViewMode =
+    incoming.postsViewMode === "list" || incoming.postsViewMode === "feed"
+      ? incoming.postsViewMode
+      : DEFAULT_USER_SETTINGS.postsViewMode;
+
   return {
     schemaVersion: 1,
     userId: incoming.userId || "",
@@ -292,6 +304,7 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
     fontSizeScale,
     fontSizePercent,
     chatViewMode,
+    postsViewMode,
     language: incoming.language || DEFAULT_USER_SETTINGS.language,
     companionPreferences: {
       ...DEFAULT_USER_SETTINGS.companionPreferences,
@@ -323,6 +336,7 @@ export function saveCachedSettings(settings: UserSettingsDoc): void {
     localStorage.setItem("ony_appearance_theme_mode", settings.themeMode);
     localStorage.setItem("ony_appearance_font_scale", settings.fontSizeScale);
     localStorage.setItem("ony_chat_view_mode", settings.chatViewMode);
+    localStorage.setItem("ony_posts_view_mode", settings.postsViewMode);
     localStorage.setItem("ony_language", settings.language);
   } catch {}
 }
@@ -344,6 +358,7 @@ export interface ThemeContextValue {
   fontSizeScale: FontSizeScale;
   fontSizePercent: number;
   chatViewMode: ChatViewMode;
+  postsViewMode: PostsViewMode;
   tokens: SemanticThemeTokens;
   isDark: boolean;
   settings: UserSettingsDoc;
@@ -357,6 +372,7 @@ export interface ThemeContextValue {
   setFontSizePercent: (percent: number) => void;
   setFontScalePercent: (percent: number) => void;
   setChatViewMode: (mode: ChatViewMode) => void;
+  setPostsViewMode: (mode: PostsViewMode) => void;
   updateSettings: (updater: ((prev: UserSettingsDoc) => UserSettingsDoc) | Partial<UserSettingsDoc>) => Promise<void> | void;
   syncWithDatabase: (userId: string) => Promise<void>;
   resetSettingsOnLogout: () => void;
@@ -429,6 +445,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             useActiveMemories: payload.companionPreferences.useActiveMemories,
             memoryConsent: payload.companionPreferences.memoryConsent,
             chatViewMode: payload.chatViewMode,
+            postsViewMode: payload.postsViewMode,
             userSettings: payload,
             updatedAt: payload.updatedAt,
           },
@@ -504,6 +521,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                 (uData.chatViewMode as ChatViewMode) ||
                 (uData.userSettings?.chatViewMode as ChatViewMode) ||
                 settings.chatViewMode,
+              postsViewMode:
+                (uData.postsViewMode as PostsViewMode) ||
+                (uData.userSettings?.postsViewMode as PostsViewMode) ||
+                settings.postsViewMode,
             };
             const merged = mergeWithDefaults(fromProfile);
             setSettings(merged);
@@ -633,6 +654,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [updateSettings],
   );
 
+  const setPostsViewMode = useCallback(
+    (mode: PostsViewMode) => {
+      updateSettings((prev) => ({
+        ...prev,
+        postsViewMode: mode,
+      }));
+    },
+    [updateSettings],
+  );
+
   const resetSettingsOnLogout = useCallback(() => {
     const defaults = { ...DEFAULT_USER_SETTINGS, userId: "" };
     setSettings(defaults);
@@ -641,6 +672,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       localStorage.removeItem(PENDING_SYNC_QUEUE_KEY);
       localStorage.removeItem("ony_chat_view_mode");
+      localStorage.removeItem("ony_posts_view_mode");
     }
   }, []);
 
@@ -656,6 +688,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         fontSizeScale: settings.fontSizeScale,
         fontSizePercent: settings.fontSizePercent,
         chatViewMode: settings.chatViewMode,
+        postsViewMode: settings.postsViewMode,
         tokens,
         isDark,
         settings,
@@ -667,6 +700,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setFontSizePercent,
         setFontScalePercent: setFontSizePercent,
         setChatViewMode,
+        setPostsViewMode,
         updateSettings,
         syncWithDatabase,
         resetSettingsOnLogout,
