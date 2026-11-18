@@ -73,7 +73,11 @@ export function NodeSettingsScreen({
       }
     };
     document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    window.addEventListener("ony-tab-changed", onClose);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      window.removeEventListener("ony-tab-changed", onClose);
+    };
   }, [open, confirmDeleteAll, onClose]);
 
   if (!open || typeof document === "undefined") return null;

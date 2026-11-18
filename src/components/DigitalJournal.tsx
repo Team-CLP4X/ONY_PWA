@@ -366,6 +366,29 @@ export function DigitalJournal({
     onSheetOpenChange?.(isAnySheetOpen);
   }, [isAnySheetOpen, onSheetOpenChange]);
 
+  useEffect(() => {
+    const closeAllSheets = () => {
+      setShowCreateBookSheet(false);
+      setShowCalendarSheet(false);
+      setShowFilterSheet(false);
+      setShowPageTextureSheet(false);
+      setShowChangeCoverSheet(false);
+      setShowRenameBookModal(false);
+      setShowPageIndexDrawer(false);
+      setShowBookInfoModal(false);
+      setShowShelfModal(false);
+      setShowChooseBookModal(false);
+      setIsAddingAiMemory(false);
+      setShowClearConfirm(false);
+      setShelfToDelete(null);
+      setBookToDelete(null);
+      setPageToDelete(null);
+      setPreviewPhotoUrl(null);
+    };
+    window.addEventListener("ony-tab-changed", closeAllSheets);
+    return () => window.removeEventListener("ony-tab-changed", closeAllSheets);
+  }, []);
+
   // Helper date
   const todayKey = useMemo(() => getLocalDateKey(), []);
 

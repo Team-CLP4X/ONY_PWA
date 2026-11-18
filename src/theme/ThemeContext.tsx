@@ -20,6 +20,8 @@ import { db, auth } from "../firebase/config";
 export type FontSizeScale = "small" | "default" | "large" | "extraLarge";
 export type ChatViewMode = "companion" | "classic";
 export type PostsViewMode = "feed" | "list";
+export type ChatLibraryView = "grid" | "tree";
+export type AutoOrganizeChatsMode = "suggest" | "automatic" | "off";
 
 export const FONT_SCALE_VALUES: Record<FontSizeScale, number> = {
   small: 85,
@@ -86,6 +88,8 @@ export interface UserSettingsDoc {
   fontSizePercent: number; // 85 to 150
   chatViewMode: ChatViewMode;
   postsViewMode: PostsViewMode;
+  chatLibraryView: ChatLibraryView;
+  autoOrganizeChats: AutoOrganizeChatsMode;
   language: string;
   companionPreferences: CompanionPreferences;
   notificationPreferences: NotificationPreferences;
@@ -110,6 +114,8 @@ export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
   fontSizePercent: 100,
   chatViewMode: "companion",
   postsViewMode: "list",
+  chatLibraryView: "grid",
+  autoOrganizeChats: "suggest",
   language: "English",
   companionPreferences: {
     companion: "Cat",
@@ -296,6 +302,18 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
       ? incoming.postsViewMode
       : DEFAULT_USER_SETTINGS.postsViewMode;
 
+  const chatLibraryView: ChatLibraryView =
+    incoming.chatLibraryView === "tree" || incoming.chatLibraryView === "grid"
+      ? incoming.chatLibraryView
+      : DEFAULT_USER_SETTINGS.chatLibraryView;
+
+  const autoOrganizeChats: AutoOrganizeChatsMode =
+    incoming.autoOrganizeChats === "suggest" ||
+    incoming.autoOrganizeChats === "automatic" ||
+    incoming.autoOrganizeChats === "off"
+      ? incoming.autoOrganizeChats
+      : DEFAULT_USER_SETTINGS.autoOrganizeChats;
+
   return {
     schemaVersion: 1,
     userId: incoming.userId || "",
@@ -305,6 +323,8 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
     fontSizePercent,
     chatViewMode,
     postsViewMode,
+    chatLibraryView,
+    autoOrganizeChats,
     language: incoming.language || DEFAULT_USER_SETTINGS.language,
     companionPreferences: {
       ...DEFAULT_USER_SETTINGS.companionPreferences,
@@ -359,6 +379,8 @@ export interface ThemeContextValue {
   fontSizePercent: number;
   chatViewMode: ChatViewMode;
   postsViewMode: PostsViewMode;
+  chatLibraryView: ChatLibraryView;
+  autoOrganizeChats: AutoOrganizeChatsMode;
   tokens: SemanticThemeTokens;
   isDark: boolean;
   settings: UserSettingsDoc;
@@ -373,6 +395,8 @@ export interface ThemeContextValue {
   setFontScalePercent: (percent: number) => void;
   setChatViewMode: (mode: ChatViewMode) => void;
   setPostsViewMode: (mode: PostsViewMode) => void;
+  setChatLibraryView: (view: ChatLibraryView) => void;
+  setAutoOrganizeChats: (mode: AutoOrganizeChatsMode) => void;
   updateSettings: (updater: ((prev: UserSettingsDoc) => UserSettingsDoc) | Partial<UserSettingsDoc>) => Promise<void> | void;
   syncWithDatabase: (userId: string) => Promise<void>;
   resetSettingsOnLogout: () => void;
@@ -446,6 +470,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             memoryConsent: payload.companionPreferences.memoryConsent,
             chatViewMode: payload.chatViewMode,
             postsViewMode: payload.postsViewMode,
+            chatLibraryView: payload.chatLibraryView,
+            autoOrganizeChats: payload.autoOrganizeChats,
             userSettings: payload,
             updatedAt: payload.updatedAt,
           },
@@ -525,6 +551,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                 (uData.postsViewMode as PostsViewMode) ||
                 (uData.userSettings?.postsViewMode as PostsViewMode) ||
                 settings.postsViewMode,
+              chatLibraryView:
+                (uData.chatLibraryView as ChatLibraryView) ||
+                (uData.userSettings?.chatLibraryView as ChatLibraryView) ||
+                settings.chatLibraryView,
+              autoOrganizeChats:
+                (uData.autoOrganizeChats as AutoOrganizeChatsMode) ||
+                (uData.userSettings?.autoOrganizeChats as AutoOrganizeChatsMode) ||
+                settings.autoOrganizeChats,
             };
             const merged = mergeWithDefaults(fromProfile);
             setSettings(merged);
@@ -664,6 +698,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [updateSettings],
   );
 
+  const setChatLibraryView = useCallback(
+    (view: ChatLibraryView) => {
+      updateSettings((prev) => ({
+        ...prev,
+        chatLibraryView: view,
+      }));
+    },
+    [updateSettings],
+  );
+
+  const setAutoOrganizeChats = useCallback(
+    (mode: AutoOrganizeChatsMode) => {
+      updateSettings((prev) => ({
+        ...prev,
+        autoOrganizeChats: mode,
+      }));
+    },
+    [updateSettings],
+  );
+
   const resetSettingsOnLogout = useCallback(() => {
     const defaults = { ...DEFAULT_USER_SETTINGS, userId: "" };
     setSettings(defaults);
@@ -689,6 +743,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         fontSizePercent: settings.fontSizePercent,
         chatViewMode: settings.chatViewMode,
         postsViewMode: settings.postsViewMode,
+        chatLibraryView: settings.chatLibraryView,
+        autoOrganizeChats: settings.autoOrganizeChats,
         tokens,
         isDark,
         settings,
@@ -701,6 +757,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setFontScalePercent: setFontSizePercent,
         setChatViewMode,
         setPostsViewMode,
+        setChatLibraryView,
+        setAutoOrganizeChats,
         updateSettings,
         syncWithDatabase,
         resetSettingsOnLogout,

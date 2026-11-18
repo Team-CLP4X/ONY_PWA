@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CALMING_TRACKS,
   type CalmingTrack,
@@ -222,6 +222,13 @@ export function CalmingMusicModal({
 }: ModalProps) {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const currentLang = (language as AppLanguage) || "English";
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onTabChanged = () => onClose();
+    window.addEventListener("ony-tab-changed", onTabChanged);
+    return () => window.removeEventListener("ony-tab-changed", onTabChanged);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 

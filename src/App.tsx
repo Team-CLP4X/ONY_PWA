@@ -46,6 +46,8 @@ import {
   listConversations,
   saveConversation,
   deleteConversation,
+  loadUserChatFolders,
+  saveUserChatFolders,
   listGlobeUsers,
   subscribeVisibleGlobeUsers,
   updateGlobeUserNode,
@@ -217,6 +219,13 @@ import {
   type CompanionExpression,
 } from "./components/CompanionAvatar";
 import { CompanionPreviewSheet } from "./components/CompanionPreviewSheet";
+import { ChatsLibraryScreen } from "./components/chats/ChatsLibraryScreen";
+import {
+  DEFAULT_CHAT_FOLDERS,
+  evaluateChatFolderSuggestion,
+  type ChatLibraryConversation,
+  type ChatLibraryFolder,
+} from "./utils/chatLibraryHelpers";
 
 type Tab = "chat" | "memory" | "community" | "market" | "profile";
 type Screen =
@@ -290,8 +299,8 @@ type Message = {
   shownSuggestionIds?: string[];
   dismissedVoucher?: boolean;
 };
-type Conversation = { id: number; title: string; category: string; day: "Today" | "Yesterday"; messages: Message[]; folderId?: number; archived?: boolean; reportAllowed?: boolean };
-type ChatFolder = { id: number; name: string };
+type Conversation = ChatLibraryConversation;
+type ChatFolder = ChatLibraryFolder;
 type LegalDocumentId = "disclaimer" | "terms" | "privacy" | "crisis";
 type MoodEntry = { id: number; dateKey?: string; level: number; emoji: string; label: string; note: string; createdAt: string; reportAllowed: boolean };
 
@@ -321,6 +330,129 @@ function saveCachedMoodEntries(entries: MoodEntry[]): void {
     localStorage.setItem(MOOD_STORAGE_KEY, JSON.stringify(entries));
   } catch {
     // ignore storage quota errors
+  }
+}
+
+const CHAT_FOLDERS_STORAGE_KEY = "ony_chat_folders_v1";
+const CHAT_CONVERSATIONS_STORAGE_KEY = "ony_chat_conversations_v1";
+
+function createDefaultStarterConversations(): Conversation[] {
+  const now = Date.now();
+  return [
+    {
+      id: 101,
+      title: "Feeling overwhelmed",
+      category: "Emotional Wellbeing",
+      day: "Today",
+      folderId: 4,
+      reportAllowed: true,
+      createdAt: new Date(now - 45 * 60000).toISOString(),
+      updatedAt: new Date(now - 35 * 60000).toISOString(),
+      messages: [
+        { from: "user", text: "Everything feels like a lot today." },
+        { from: "ony", text: "I hear you. We can slow this down together—what feels most urgent right now?" },
+      ],
+    },
+    {
+      id: 102,
+      title: "Internship search",
+      category: "Career",
+      day: "Today",
+      folderId: 1,
+      reportAllowed: true,
+      createdAt: new Date(now - 3 * 3600000).toISOString(),
+      updatedAt: new Date(now - 2 * 3600000).toISOString(),
+      messages: [
+        { from: "user", text: "I want to find an internship." },
+        { from: "ony", text: "Let’s begin with the kind of work and environment you want." },
+      ],
+    },
+    {
+      id: 103,
+      title: "Study pressure",
+      category: "Study",
+      day: "Today",
+      folderId: 1,
+      reportAllowed: true,
+      createdAt: new Date(now - 6 * 3600000).toISOString(),
+      updatedAt: new Date(now - 5 * 3600000).toISOString(),
+      messages: [
+        { from: "user", text: "My exams are getting close." },
+        { from: "ony", text: "That pressure makes sense. Let’s choose one small task for today." },
+      ],
+    },
+    {
+      id: 104,
+      title: "Relationship thoughts",
+      category: "Relationships",
+      day: "Yesterday",
+      folderId: 2,
+      reportAllowed: true,
+      createdAt: new Date(now - 27 * 3600000).toISOString(),
+      updatedAt: new Date(now - 26 * 3600000).toISOString(),
+      messages: [
+        { from: "user", text: "I keep replaying a difficult conversation." },
+        { from: "ony", text: "It sounds like it stayed with you. Which part keeps coming back?" },
+      ],
+    },
+    {
+      id: 105,
+      title: "Feeling anxious",
+      category: "Emotional Wellbeing",
+      day: "Yesterday",
+      folderId: 3,
+      reportAllowed: true,
+      createdAt: new Date(now - 31 * 3600000).toISOString(),
+      updatedAt: new Date(now - 30 * 3600000).toISOString(),
+      messages: [
+        { from: "user", text: "I’m feeling anxious." },
+        { from: "ony", text: "I’m here. Would something calming help, or would you like to talk it through?" },
+      ],
+    },
+  ];
+}
+
+function loadCachedChatFolders(): ChatFolder[] {
+  try {
+    const raw = localStorage.getItem(CHAT_FOLDERS_STORAGE_KEY);
+    if (!raw) return DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f }));
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f }));
+    }
+    return parsed.filter((item) => item && typeof item.id === "number" && typeof item.name === "string");
+  } catch {
+    return DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f }));
+  }
+}
+
+function saveCachedChatFolders(folders: ChatFolder[]): void {
+  try {
+    localStorage.setItem(CHAT_FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadCachedConversations(): Conversation[] {
+  try {
+    const raw = localStorage.getItem(CHAT_CONVERSATIONS_STORAGE_KEY);
+    if (!raw) return createDefaultStarterConversations();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return createDefaultStarterConversations();
+    }
+    return parsed.filter((item) => item && typeof item.id === "number" && Array.isArray(item.messages));
+  } catch {
+    return createDefaultStarterConversations();
+  }
+}
+
+function saveCachedConversations(conversations: Conversation[]): void {
+  try {
+    localStorage.setItem(CHAT_CONVERSATIONS_STORAGE_KEY, JSON.stringify(conversations));
+  } catch {
+    // ignore storage errors
   }
 }
 
@@ -980,19 +1112,8 @@ function AppInner() {
   const [posts, setPosts] = useState<Post[]>(DEFAULT_COMMUNITY_POSTS);
   const [merchants, setMerchants] = useState<Merchant[]>(DEFAULT_MERCHANTS);
   const [dbSyncing, setDbSyncing] = useState(false);
-  const [folders, setFolders] = useState<ChatFolder[]>([
-    { id: 1, name: "Study & Work" },
-    { id: 2, name: "Relationships" },
-    { id: 3, name: "Self-Care" },
-    { id: 4, name: "Personal Reflections" },
-  ]);
-  const [conversations, setConversations] = useState<Conversation[]>([
-    { id: 101, title: "Feeling overwhelmed", category: "Emotional Wellbeing", day: "Today", folderId: 4, reportAllowed: true, messages: [{ from: "user", text: "Everything feels like a lot today." }, { from: "ony", text: "I hear you. We can slow this down together—what feels most urgent right now?" }] },
-    { id: 102, title: "Internship search", category: "Career", day: "Today", folderId: 1, reportAllowed: true, messages: [{ from: "user", text: "I want to find an internship." }, { from: "ony", text: "Let’s begin with the kind of work and environment you want." }] },
-    { id: 103, title: "Study pressure", category: "Study", day: "Today", folderId: 1, reportAllowed: true, messages: [{ from: "user", text: "My exams are getting close." }, { from: "ony", text: "That pressure makes sense. Let’s choose one small task for today." }] },
-    { id: 104, title: "Relationship thoughts", category: "Relationships", day: "Yesterday", folderId: 2, reportAllowed: true, messages: [{ from: "user", text: "I keep replaying a difficult conversation." }, { from: "ony", text: "It sounds like it stayed with you. Which part keeps coming back?" }] },
-    { id: 105, title: "Feeling anxious", category: "Emotional Wellbeing", day: "Yesterday", folderId: 3, reportAllowed: true, messages: [{ from: "user", text: "I’m feeling anxious." }, { from: "ony", text: "I’m here. Would something calming help, or would you like to talk it through?" }] },
-  ]);
+  const [folders, setFolders] = useState<ChatFolder[]>(() => loadCachedChatFolders());
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadCachedConversations());
   const [memories, setMemories] = useState<Memory[]>([
     { id: 1, text: "I have exams coming up.", reason: "You mentioned this during a study-pressure chat.", active: true, category: "Study" },
     { id: 2, text: "I prefer shorter replies.", reason: "You chose this in your conversation preferences.", active: true, category: "Preference" },
@@ -1008,7 +1129,6 @@ function AppInner() {
   const [createPostInitialCategory, setCreatePostInitialCategory] = useState<string>("General");
   const [preloadedChatTopic, setPreloadedChatTopic] = useState<string | undefined>(undefined);
   const [isWritingJournalBook, setIsWritingJournalBook] = useState(false);
-  const [isJournalSheetOpen, setIsJournalSheetOpen] = useState(false);
   const [isVirtualKeyboardOpen, setIsVirtualKeyboardOpen] = useState(false);
   const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(null);
   const [history, setHistory] = useState<Screen[]>([]);
@@ -1041,11 +1161,44 @@ function AppInner() {
       }, 4600);
     }
   };
-  const goTab = (next: Tab) => { setTab(next); setScreen("main"); setHistory([]); setIsWritingJournalBook(false); setIsJournalSheetOpen(false); };
+  const goTab = (next: Tab) => {
+    setTab(next);
+    setScreen("main");
+    setHistory([]);
+    setIsWritingJournalBook(false);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("ony-tab-changed", { detail: { tab: next } }));
+    }
+  };
   const handleOpenToolkitGuide = (guideId?: string) => {
     setSelectedToolkitGuideId(guideId);
     navigate("resources");
   };
+
+  useEffect(() => {
+    saveCachedChatFolders(folders);
+  }, [folders]);
+
+  useEffect(() => {
+    saveCachedConversations(conversations);
+  }, [conversations]);
+
+  const isBottomNavVisible =
+    authenticated &&
+    onboarding >= 9 &&
+    !isVirtualKeyboardOpen &&
+    (!isWritingJournalBook || tab !== "memory");
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty(
+      "--active-nav-clearance",
+      isBottomNavVisible ? "calc(64px + env(safe-area-inset-bottom, 0px))" : "0px",
+    );
+    return () => {
+      document.documentElement.style.setProperty("--active-nav-clearance", "0px");
+    };
+  }, [isBottomNavVisible]);
 
   useEffect(() => {
     const unsub = ambientMusicEngine.subscribe((state) => {
@@ -1303,19 +1456,32 @@ function AppInner() {
             setJournalEntries(loadedJournals);
             saveCachedJournalEntries(loadedJournals);
           }
-          const loadedChats = await listConversations(user.uid);
+          const [loadedFolders, loadedChats] = await Promise.all([
+            loadUserChatFolders(user.uid).catch(() => []),
+            listConversations(user.uid).catch(() => []),
+          ]);
+          if (loadedFolders && loadedFolders.length > 0) {
+            setFolders(loadedFolders);
+            saveCachedChatFolders(loadedFolders);
+          }
           if (loadedChats.length > 0) {
-            setConversations(
-              loadedChats.map((c, idx) => ({
-                id: Number(c.id.replace(/\D/g, "")) || 101 + idx,
-                title: c.title,
-                category: c.category,
-                day: c.day,
-                folderId: c.folderId,
-                reportAllowed: c.reportAllowed,
-                messages: c.messages,
-              })),
-            );
+            const hydrated: Conversation[] = loadedChats.map((c, idx) => ({
+              id: Number(c.id.replace(/\D/g, "")) || 101 + idx,
+              title: c.title,
+              category: c.category,
+              day: c.day,
+              folderId: c.folderId,
+              archived: c.archived,
+              pinned: c.pinned,
+              suggestedFolderName: c.suggestedFolderName,
+              dismissedSuggestion: c.dismissedSuggestion,
+              reportAllowed: c.reportAllowed,
+              createdAt: c.createdAt,
+              updatedAt: c.updatedAt,
+              messages: c.messages,
+            }));
+            setConversations(hydrated);
+            saveCachedConversations(hydrated);
           }
         } catch (err) {
           console.warn("[ONY] Firestore initial fetch notice:", err);
@@ -1804,6 +1970,133 @@ function AppInner() {
     }
   };
 
+  const persistSingleConversation = (chat: Conversation) => {
+    if (!currentUser) return;
+    saveConversation(currentUser.uid, String(chat.id), {
+      title: chat.title,
+      category: chat.category,
+      day: chat.day,
+      folderId: chat.folderId,
+      archived: chat.archived,
+      pinned: chat.pinned,
+      suggestedFolderName: chat.suggestedFolderName,
+      dismissedSuggestion: chat.dismissedSuggestion,
+      reportAllowed: chat.reportAllowed,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt || new Date().toISOString(),
+      messages: chat.messages,
+    }).catch((e) => console.warn("[ONY] Conversation save warning:", e));
+  };
+
+  const handleUpdateConversation = (id: number, patch: Partial<Conversation>) => {
+    const nowIso = new Date().toISOString();
+    setConversations((items) =>
+      items.map((chat) => {
+        if (chat.id !== id) return chat;
+        const updated: Conversation = {
+          ...chat,
+          ...patch,
+          updatedAt: patch.updatedAt ?? nowIso,
+        };
+        persistSingleConversation(updated);
+        return updated;
+      }),
+    );
+  };
+
+  const handleBulkUpdateConversations = (
+    ids: number[],
+    updater: (chat: Conversation) => Conversation,
+  ) => {
+    const idSet = new Set(ids);
+    const nowIso = new Date().toISOString();
+    setConversations((items) =>
+      items.map((chat) => {
+        if (!idSet.has(chat.id)) return chat;
+        const nextChat = { ...updater(chat), updatedAt: nowIso };
+        persistSingleConversation(nextChat);
+        return nextChat;
+      }),
+    );
+  };
+
+  const handleDeleteConversations = (ids: number[]) => {
+    const idSet = new Set(ids);
+    setConversations((items) => items.filter((chat) => !idSet.has(chat.id)));
+    if (activeChatId !== null && idSet.has(activeChatId)) {
+      setActiveChatId(null);
+    }
+    if (currentUser) {
+      ids.forEach((id) => {
+        deleteConversation(currentUser.uid, String(id)).catch((e) =>
+          console.warn("[ONY] Conversation delete warning:", e),
+        );
+      });
+    }
+  };
+
+  const handleCreateFolder = (payload: {
+    name: string;
+    color?: string;
+    icon?: string;
+  }): ChatFolder => {
+    const newFolder: ChatFolder = {
+      id: Date.now(),
+      name: payload.name.trim(),
+      color: payload.color || "sage",
+      icon: payload.icon || "folder",
+      isDefault: false,
+    };
+    setFolders((items) => {
+      const next = [...items, newFolder];
+      saveCachedChatFolders(next);
+      if (currentUser) {
+        saveUserChatFolders(currentUser.uid, next).catch((e) =>
+          console.warn("[ONY] Folders save warning:", e),
+        );
+      }
+      return next;
+    });
+    return newFolder;
+  };
+
+  const handleUpdateFolder = (folderId: number, patch: Partial<ChatFolder>) => {
+    setFolders((items) => {
+      const next = items.map((f) => (f.id === folderId ? { ...f, ...patch } : f));
+      saveCachedChatFolders(next);
+      if (currentUser) {
+        saveUserChatFolders(currentUser.uid, next).catch((e) =>
+          console.warn("[ONY] Folders save warning:", e),
+        );
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteFolder = (folderId: number) => {
+    setFolders((items) => {
+      const next = items.filter((f) => f.id !== folderId);
+      saveCachedChatFolders(next);
+      if (currentUser) {
+        saveUserChatFolders(currentUser.uid, next).catch((e) =>
+          console.warn("[ONY] Folders save warning:", e),
+        );
+      }
+      return next;
+    });
+    setConversations((items) =>
+      items.map((chat) => {
+        if (chat.folderId !== folderId) return chat;
+        const moved: Conversation = { ...chat, folderId: undefined };
+        persistSingleConversation(moved);
+        return moved;
+      }),
+    );
+    if (selectedFolderId === folderId) {
+      setSelectedFolderId(null);
+    }
+  };
+
   const handleSetMoodEntries = (action: MoodEntry[] | ((prev: MoodEntry[]) => MoodEntry[])) => {
     setMoodEntries((prev) => {
       const rawNext = typeof action === "function" ? action(prev) : action;
@@ -2028,7 +2321,7 @@ function AppInner() {
           {screen === "main" ? (
             <>
               <main className={`main-content ${tab === "chat" ? "chat-tab-active" : ""}`}>
-                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} setPersona={handleSetPersona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={handleSetSoundOn} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
+                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} setPersona={handleSetPersona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={handleSetSoundOn} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} folders={folders} onCreateFolder={handleCreateFolder} onPersistConversation={persistSingleConversation} onUpdateConversation={handleUpdateConversation} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
                   if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
                   const next = freeUsage + 1;
                   setFreeUsage(next);
@@ -2049,7 +2342,6 @@ function AppInner() {
                     currentUser={currentUser}
                     onNavigateToPrivacy={() => navigate("privacy")}
                     onOpenBookChange={setIsWritingJournalBook}
-                    onSheetOpenChange={setIsJournalSheetOpen}
                   />
                 )}
                 {tab === "community" && <Community navigate={navigate} onOpenCreatePost={(cat) => { setCreatePostInitialCategory(cat && cat !== "All" ? cat : "General"); navigate("post"); }} globeUsers={globeUsers} setGlobeUsers={setGlobeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} onPostUpdated={syncUpdatedPostInState} onSavePostToVault={handleSaveCommunityPostToVault} onRefreshPosts={handleRefreshCommunityPosts} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
@@ -2188,7 +2480,28 @@ function AppInner() {
             )}
             {screen === "communityMember" && selectedCommunityUser && <CommunityMember back={back} user={selectedCommunityUser} notify={notify} />}
             {screen === "guidelines" && <CommunityGuidelines back={back} />}
-            {screen === "chatHistory" && <ChatHistory back={back} navigate={navigate} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} folders={folders} setFolders={setFolders} selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} />}
+            {screen === "chatHistory" && (
+              <ChatsLibraryScreen
+                back={back}
+                onNavigateMonthlyReflection={() => navigate("monthlyReport")}
+                conversations={conversations}
+                onUpdateConversation={handleUpdateConversation}
+                onBulkUpdateConversations={handleBulkUpdateConversations}
+                onDeleteConversations={handleDeleteConversations}
+                onOpenChat={(chatId, folderId) => {
+                  setActiveChatId(chatId);
+                  setSelectedFolderId(folderId ?? null);
+                  setScreen("main");
+                  setHistory([]);
+                  setTab("chat");
+                }}
+                folders={folders}
+                onCreateFolder={handleCreateFolder}
+                onUpdateFolder={handleUpdateFolder}
+                onDeleteFolder={handleDeleteFolder}
+                notify={notify}
+              />
+            )}
             {screen === "monthlyReport" && <MonthlyReport back={back} moodEntries={moodEntries} setMoodEntries={handleSetMoodEntries} conversations={conversations} setConversations={setConversations} memories={memories} />}
             {screen === "postDetail" && selectedPost && (
               <PostDetailScreen
@@ -2349,7 +2662,7 @@ function AppInner() {
             language={language}
           />
         )}
-        {!isVirtualKeyboardOpen && ((!isWritingJournalBook && !isJournalSheetOpen) || tab !== "memory") && (
+        {isBottomNavVisible && (
           <BottomNav tab={tab} setTab={goTab} />
         )}
         {toast && (
@@ -3241,17 +3554,21 @@ export function getOnyTimeGreeting(
   };
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal, onOpenToolkitGuide, preloadedTopic, onClearPreloadedTopic }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, folders, onCreateFolder, onPersistConversation, onUpdateConversation, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal, onOpenToolkitGuide, preloadedTopic, onClearPreloadedTopic }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   setPersona?: (p: Persona) => void;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
   soundOn: boolean; setSoundOn: (v: boolean) => void;
   conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
   selectedFolderId: number | null;
+  folders: ChatFolder[];
+  onCreateFolder: (payload: { name: string; color?: string; icon?: string }) => ChatFolder;
+  onPersistConversation: (chat: Conversation) => void;
+  onUpdateConversation: (id: number, patch: Partial<Conversation>) => void;
   memories: Memory[]; setMemories: (items: Memory[]) => void;
   todayMoodEntry?: MoodEntry | null;
   subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
-  registerFreeUse: () => void; notify: (s: string) => void;
+  registerFreeUse: () => void; notify: (input: string | { text: string; actionLabel?: string; onAction?: () => void }) => void;
   onOpenMerchant?: (name: string) => void;
   currentTrack?: CalmingTrack;
   onOpenMusicModal?: () => void;
@@ -3263,8 +3580,10 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const activeIdRef = useRef<number | null>(activeChatId);
   activeIdRef.current = activeChatId;
   const messages = conversations.find((chat) => chat.id === activeChatId)?.messages || [];
+  const { chatViewMode, setChatViewMode, autoOrganizeChats, setAutoOrganizeChats } = useTheme();
   const setMessages = (update: Message[] | ((items: Message[]) => Message[])) => {
     const id = activeIdRef.current;
+    const nowIso = new Date().toISOString();
     if (id === null) {
       const next = typeof update === "function" ? update([]) : update;
       const firstText = next.find((message) => message.from === "user")?.text || "New conversation";
@@ -3274,10 +3593,106 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
       const newId = Date.now();
       activeIdRef.current = newId;
       setActiveChatId(newId);
-      setConversations((items) => [{ id: newId, title, category, day: "Today", folderId: selectedFolderId || undefined, reportAllowed: true, messages: next }, ...items]);
+      const createdChat: Conversation = {
+        id: newId,
+        title,
+        category,
+        day: "Today",
+        folderId: selectedFolderId || undefined,
+        reportAllowed: true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messages: next,
+      };
+      setConversations((items) => [createdChat, ...items]);
+      onPersistConversation(createdChat);
       return;
     }
-    setConversations((items) => items.map((chat) => chat.id === id ? { ...chat, messages: typeof update === "function" ? update(chat.messages) : update } : chat));
+    setConversations((items) =>
+      items.map((chat) => {
+        if (chat.id !== id) return chat;
+        const nextMessages = typeof update === "function" ? update(chat.messages) : update;
+        let updatedChat: Conversation = {
+          ...chat,
+          day: "Today",
+          updatedAt: nowIso,
+          messages: nextMessages,
+        };
+
+        // Optional Automatic auto-organize after >= 3 messages (never touches reportAllowed, archive, or delete)
+        if (
+          autoOrganizeChats === "automatic" &&
+          updatedChat.folderId == null &&
+          !updatedChat.archived &&
+          !updatedChat.dismissedSuggestion &&
+          nextMessages.length >= 3
+        ) {
+          const suggestion = evaluateChatFolderSuggestion(updatedChat, folders, language);
+          if (suggestion?.kind === "existing_folder" && suggestion.folderId != null) {
+            const targetFolderId = suggestion.folderId;
+            const targetFolderName = suggestion.folderName;
+            updatedChat = {
+              ...updatedChat,
+              folderId: targetFolderId,
+              suggestedFolderName: undefined,
+            };
+            window.setTimeout(() => {
+              notify({
+                text:
+                  language === "Bahasa Melayu"
+                    ? `Dialihkan ke "${targetFolderName}"`
+                    : language === "中文"
+                      ? `已自动归入「${targetFolderName}」`
+                      : `Auto-moved to "${targetFolderName}"`,
+                actionLabel: language === "Bahasa Melayu" ? "Buat asal" : language === "中文" ? "撤销" : "Undo",
+                onAction: () => {
+                  onUpdateConversation(updatedChat.id, {
+                    folderId: undefined,
+                    dismissedSuggestion: true,
+                  });
+                },
+              });
+            }, 120);
+          } else if (suggestion?.kind === "create_folder") {
+            const existingSame = folders.find(
+              (f) => f.name.trim().toLowerCase() === suggestion.folderName.trim().toLowerCase(),
+            );
+            const targetFolder =
+              existingSame ||
+              onCreateFolder({
+                name: suggestion.folderName,
+                color: suggestion.suggestedColor || "lavender",
+                icon: suggestion.suggestedIcon || "moon",
+              });
+            updatedChat = {
+              ...updatedChat,
+              folderId: targetFolder.id,
+              suggestedFolderName: undefined,
+            };
+            window.setTimeout(() => {
+              notify({
+                text:
+                  language === "Bahasa Melayu"
+                    ? `Dialihkan ke "${targetFolder.name}"`
+                    : language === "中文"
+                      ? `已自动归入「${targetFolder.name}」`
+                      : `Auto-moved to "${targetFolder.name}"`,
+                actionLabel: language === "Bahasa Melayu" ? "Buat asal" : language === "中文" ? "撤销" : "Undo",
+                onAction: () => {
+                  onUpdateConversation(updatedChat.id, {
+                    folderId: undefined,
+                    dismissedSuggestion: true,
+                  });
+                },
+              });
+            }, 120);
+          }
+        }
+
+        onPersistConversation(updatedChat);
+        return updatedChat;
+      }),
+    );
   };
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -3300,11 +3715,21 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const [activeBreakTimer, setActiveBreakTimer] = useState<ActiveBreakTimerState | null>(null);
 
   // Redesigned Chat UI states
-  const { chatViewMode, setChatViewMode } = useTheme();
   const [showHistorySheet, setShowHistorySheet] = useState(false);
   const [showOverflowMenu, setShowOverflowMenu] = useState(false);
   const [showTonePicker, setShowTonePicker] = useState(false);
   const [showAiDisclaimer, setShowAiDisclaimer] = useState(false);
+
+  useEffect(() => {
+    const closeChatSheets = () => {
+      setShowHistorySheet(false);
+      setShowOverflowMenu(false);
+      setShowTonePicker(false);
+      setShowAiDisclaimer(false);
+    };
+    window.addEventListener("ony-tab-changed", closeChatSheets);
+    return () => window.removeEventListener("ony-tab-changed", closeChatSheets);
+  }, []);
   const [isUserTyping, setIsUserTyping] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [recentUserEcho, setRecentUserEcho] = useState<{
@@ -3912,23 +4337,25 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const handleNewChat = () => {
     if (messages.length === 0) return;
     const newId = Date.now();
+    const nowIso = new Date().toISOString();
     activeIdRef.current = newId;
     setActiveChatId(newId);
     setRecentUserEcho(null);
     setDismissedSuggestionIds([]);
     setActiveBreakTimer(null);
-    setConversations((items) => [
-      {
-        id: newId,
-        title: language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "新对话" : "New conversation",
-        category: "Emotional Wellbeing",
-        day: "Today",
-        folderId: selectedFolderId || undefined,
-        reportAllowed: true,
-        messages: [],
-      },
-      ...items,
-    ]);
+    const createdChat: Conversation = {
+      id: newId,
+      title: language === "Bahasa Melayu" ? "Perbualan baru" : language === "中文" ? "新对话" : "New conversation",
+      category: "Emotional Wellbeing",
+      day: "Today",
+      folderId: selectedFolderId || undefined,
+      reportAllowed: true,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      messages: [],
+    };
+    setConversations((items) => [createdChat, ...items]);
+    onPersistConversation(createdChat);
     notify(language === "Bahasa Melayu" ? "Perbualan baru dimulakan" : language === "中文" ? "已开启新对话" : "Started new conversation");
   };
 
@@ -4385,6 +4812,29 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         onClose={() => setShowOverflowMenu(false)}
         chatViewMode={chatViewMode}
         onChangeChatViewMode={handleSwitchChatViewMode}
+        autoOrganizeChats={autoOrganizeChats}
+        onChangeAutoOrganizeChats={(mode) => {
+          setAutoOrganizeChats(mode);
+          notify(
+            mode === "suggest"
+              ? language === "Bahasa Melayu"
+                ? "Susun automatik: Cadangkan folder"
+                : language === "中文"
+                  ? "智能整理：建议分类（默认）"
+                  : "Auto-organize: Suggest folders"
+              : mode === "automatic"
+                ? language === "Bahasa Melayu"
+                  ? "Susun automatik: Automatik"
+                  : language === "中文"
+                    ? "智能整理：自动归类"
+                    : "Auto-organize: Automatic"
+                : language === "Bahasa Melayu"
+                  ? "Susun automatik: Dimatikan"
+                  : language === "中文"
+                    ? "智能整理：已关闭"
+                    : "Auto-organize: Off",
+          );
+        }}
         hasMessages={messages.length > 0}
         autoSpeak={autoSpeak}
         soundOn={soundOn}
@@ -7415,51 +7865,7 @@ function SettingChoices<T extends string = string>({
   );
 }
 
-function ChatHistory({ back, navigate, conversations, setConversations, activeChatId, setActiveChatId, folders, setFolders, selectedFolderId, setSelectedFolderId }: {
-  back: () => void; navigate: (s: Screen) => void; conversations: Conversation[];
-  setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; activeChatId: number | null; setActiveChatId: (id: number | null) => void;
-  folders: ChatFolder[]; setFolders: (value: ChatFolder[] | ((items: ChatFolder[]) => ChatFolder[])) => void;
-  selectedFolderId: number | null; setSelectedFolderId: (id: number | null) => void;
-}) {
-  const { t, language } = useLanguage();
-  const [editing, setEditing] = useState<number | null>(null);
-  const [query, setQuery] = useState("");
-  const [newFolder, setNewFolder] = useState("");
-  const [renamingFolder, setRenamingFolder] = useState<number | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
-  const update = (id: number, patch: Partial<Conversation>) => setConversations((items) => items.map((chat) => chat.id === id ? { ...chat, ...patch } : chat));
-  const visible = conversations.filter((chat) => {
-    const matchesFolder = selectedFolderId === null || chat.folderId === selectedFolderId;
-    const matchesArchive = Boolean(chat.archived) === showArchived;
-    const haystack = `${chat.title} ${chat.messages.map((message) => message.text).join(" ")}`.toLowerCase();
-    return matchesFolder && matchesArchive && haystack.includes(query.toLowerCase());
-  });
-  const createFolder = () => {
-    if (!newFolder.trim()) return;
-    const folder = { id: Date.now(), name: newFolder.trim() };
-    setFolders((items) => [...items, folder]);
-    setSelectedFolderId(folder.id);
-    setNewFolder("");
-  };
-  return <><PageHeader title={language === "Bahasa Melayu" ? "Sembang" : language === "中文" ? "历史对话" : "Chats"} subtitle={language === "Bahasa Melayu" ? "Perbualan berasingan, disusun mengikut cara anda" : language === "中文" ? "独立对话记录，按您的喜好整理" : "Separate conversations, organised your way"} back={back} action={<Button onClick={() => { setActiveChatId(null); back(); }}>{language === "Bahasa Melayu" ? "+ Sembang Baharu" : language === "中文" ? "+ 新建对话" : "+ New Chat"}</Button>} /><section className="page-pad">
-    <Button className="monthly-entry" variant="ghost" onClick={() => navigate("monthlyReport")}><Icon name="memory" /><span><strong>{language === "Bahasa Melayu" ? "Refleksi Bulanan" : language === "中文" ? "月度心绪总结" : "Monthly Reflection"}</strong><small>{language === "Bahasa Melayu" ? "Hanya menggunakan perbualan dan memori yang anda benarkan" : language === "中文" ? "仅使用您授权的对话与记忆片段" : "Uses only conversations and memories you allow"}</small></span><Icon name="chevron" /></Button>
-    <div className="search"><Icon name="search" /><TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === "Bahasa Melayu" ? "Cari tajuk dan mesej sembang" : language === "中文" ? "搜索对话标题和消息内容" : "Search chat titles and messages"} /></div>
-    <div className="folder-create"><TextInput value={newFolder} onChange={(event) => setNewFolder(event.target.value)} placeholder={language === "Bahasa Melayu" ? "Nama folder baharu" : language === "中文" ? "新文件夹名称" : "New folder name"} /><Button disabled={!newFolder.trim()} onClick={createFolder}>{language === "Bahasa Melayu" ? "Cipta" : language === "中文" ? "创建" : "Create"}</Button></div>
-    <div className="folder-strip"><Button variant={selectedFolderId === null ? "primary" : "secondary"} onClick={() => setSelectedFolderId(null)}>{language === "Bahasa Melayu" ? "Semua sembang" : language === "中文" ? "全部对话" : "All chats"}</Button>{folders.map((folder) => <Button key={folder.id} variant={selectedFolderId === folder.id ? "primary" : "secondary"} onClick={() => setSelectedFolderId(folder.id)}>{folder.name}</Button>)}</div>
-    {selectedFolderId !== null && <div className="folder-manage">{renamingFolder === selectedFolderId ? <><TextInput value={folders.find((folder) => folder.id === selectedFolderId)?.name || ""} onChange={(event) => setFolders((items) => items.map((folder) => folder.id === selectedFolderId ? { ...folder, name: event.target.value } : folder))} /><Button onClick={() => setRenamingFolder(null)}>{t.common_done}</Button></> : <><span>{folders.find((folder) => folder.id === selectedFolderId)?.name}</span><Button variant="ghost" onClick={() => setRenamingFolder(selectedFolderId)}>{language === "Bahasa Melayu" ? "Namakan semula" : language === "中文" ? "重命名" : "Rename"}</Button><Button variant="ghost" onClick={() => { setFolders((items) => items.filter((folder) => folder.id !== selectedFolderId)); setConversations((items) => items.map((chat) => chat.folderId === selectedFolderId ? { ...chat, folderId: undefined } : chat)); setSelectedFolderId(null); }}>{language === "Bahasa Melayu" ? "Padam folder" : language === "中文" ? "删除文件夹" : "Delete folder"}</Button><Button onClick={() => { setActiveChatId(null); back(); }}>{language === "Bahasa Melayu" ? "Sembang baharu di sini" : language === "中文" ? "在此新建对话" : "New chat here"}</Button></>}</div>}
-    <div className="archive-switch"><Button variant={!showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(false)}>{language === "Bahasa Melayu" ? "Aktif" : language === "中文" ? "活跃" : "Active"}</Button><Button variant={showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(true)}>{language === "Bahasa Melayu" ? "Diarkibkan" : language === "中文" ? "已归档" : "Archived"}</Button></div>
-    {visible.length === 0 && <div className="empty"><Icon name="chat" /><h3>{query ? (language === "Bahasa Melayu" ? "Tiada perbualan sepadan" : language === "中文" ? "未找到匹配对话" : "No matching conversations") : showArchived ? (language === "Bahasa Melayu" ? "Tiada perbualan diarkibkan" : language === "中文" ? "暂无归档对话" : "No archived conversations") : (language === "Bahasa Melayu" ? "Folder ini kosong" : language === "中文" ? "该文件夹为空" : "This folder is empty")}</h3><p>{query ? (language === "Bahasa Melayu" ? "Cuba carian lain." : language === "中文" ? "请尝试其他关键词。" : "Try another search.") : (language === "Bahasa Melayu" ? "Mulakan perbualan baharu di sini bila-bila masa anda bersedia." : language === "中文" ? "准备好时，随时在此开启新的对话。" : "Start a new conversation here whenever you’re ready.")}</p><Button onClick={() => { setActiveChatId(null); back(); }}>{language === "Bahasa Melayu" ? "Mulakan perbualan" : language === "中文" ? "开启对话" : "Start a conversation"}</Button></div>}
-    {(["Today", "Yesterday"] as const).map((day) => {
-      const dayChats = visible.filter((chat) => chat.day === day);
-      if (!dayChats.length) return null;
-      const dayLabel = day === "Today" ? (language === "Bahasa Melayu" ? "Hari Ini" : language === "中文" ? "今天" : "Today") : (language === "Bahasa Melayu" ? "Semalam" : language === "中文" ? "昨天" : "Yesterday");
-      return <div className="history-group" key={day}><h3>{dayLabel}</h3>{dayChats.map((chat) => <div className="chat-history-card" key={chat.id}>
-        {editing === chat.id ? <><TextInput value={chat.title} onChange={(event) => update(chat.id, { title: event.target.value })} /><label className="field-label">{language === "Bahasa Melayu" ? "Pindahkan ke folder" : language === "中文" ? "移动到文件夹" : "Move to folder"}</label><div className="chips history-categories"><Button variant={!chat.folderId ? "primary" : "secondary"} onClick={() => update(chat.id, { folderId: undefined })}>{language === "Bahasa Melayu" ? "Tiada folder" : language === "中文" ? "无文件夹" : "No folder"}</Button>{folders.map((folder) => <Button key={folder.id} variant={chat.folderId === folder.id ? "primary" : "secondary"} onClick={() => update(chat.id, { folderId: folder.id })}>{folder.name}</Button>)}</div><div className="setting-toggle"><div><strong>{language === "Bahasa Melayu" ? "Gunakan dalam laporan bulanan" : language === "中文" ? "用于月度反思总结" : "Use in monthly report"}</strong><p>{language === "Bahasa Melayu" ? "Benarkan tema daripada perbualan ini diringkaskan." : language === "中文" ? "允许将此对话的主题纳入月度摘要。" : "Allow themes from this conversation to be summarized."}</p></div><Toggle on={chat.reportAllowed !== false} setOn={(value) => update(chat.id, { reportAllowed: value })} /></div><Button className="full" onClick={() => setEditing(null)}>{t.common_done}</Button></> :
-        <><Button variant="ghost" className="history-open" onClick={() => { setActiveChatId(chat.id); setSelectedFolderId(chat.folderId || null); back(); }}><span><strong>{chat.title}</strong><small>{folders.find((folder) => folder.id === chat.folderId)?.name || (language === "Bahasa Melayu" ? "Tiada folder" : language === "中文" ? "无文件夹" : "No folder")} · {chat.reportAllowed === false ? (language === "Bahasa Melayu" ? "Dikecualikan daripada laporan" : language === "中文" ? "不纳入总结" : "Excluded from report") : (language === "Bahasa Melayu" ? "Dibenarkan dalam laporan" : language === "中文" ? "允许纳入总结" : "Report allowed")}</small></span><Icon name="chevron" /></Button><div className="memory-actions"><Button variant="ghost" onClick={() => setEditing(chat.id)}><Icon name="edit" />{language === "Bahasa Melayu" ? "Susun" : language === "中文" ? "管理" : "Organize"}</Button><Button variant="ghost" onClick={() => update(chat.id, { archived: !chat.archived })}>{chat.archived ? (language === "Bahasa Melayu" ? "Pulihkan" : language === "中文" ? "还原" : "Restore") : (language === "Bahasa Melayu" ? "Arkib" : language === "中文" ? "归档" : "Archive")}</Button><Button variant="ghost" onClick={() => { setConversations((items) => items.filter((item) => item.id !== chat.id)); if (activeChatId === chat.id) setActiveChatId(null); }}><Icon name="trash" />{language === "Bahasa Melayu" ? "Padam" : language === "中文" ? "删除" : "Delete"}</Button></div></>}
-      </div>)}</div>;
-    })}
-  </section></>;
-}
+
 
 function MonthlyReport({ back, moodEntries, setMoodEntries, conversations, setConversations, memories }: { back: () => void; moodEntries: MoodEntry[]; setMoodEntries: (entries: MoodEntry[]) => void; conversations: Conversation[]; setConversations: (value: Conversation[] | ((items: Conversation[]) => Conversation[])) => void; memories: Memory[] }) {
   const { t, language } = useLanguage();

@@ -668,7 +668,8 @@ export function applyTokensToDocument(
 
   root.style.setProperty("--theme-header-bg", tokens.headerBg);
   root.style.setProperty("--theme-header-border", tokens.headerBorder);
-  root.style.setProperty("--theme-nav-bg", tokens.navBarBg);
+  root.style.setProperty("--theme-nav-bg", tokens.surface);
+  root.style.setProperty("--theme-nav-bg-solid", tokens.surface);
   root.style.setProperty("--theme-nav-border", tokens.navBarBorder);
   root.style.setProperty("--theme-nav-active", tokens.navBarActive);
   root.style.setProperty("--theme-nav-inactive", tokens.navBarInactive);

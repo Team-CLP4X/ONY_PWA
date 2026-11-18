@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CompanionAvatar,
   type CompanionAnimal,
@@ -13,7 +14,7 @@ import type {
 } from "../services/contracts";
 import type { AppLanguage } from "../i18n/translations";
 import { getPersonaDetails } from "../i18n/translations";
-import type { ChatViewMode } from "../theme/ThemeContext";
+import type { AutoOrganizeChatsMode, ChatViewMode } from "../theme/ThemeContext";
 
 export interface ChatMessageItem {
   from: "ony" | "user";
@@ -1555,9 +1556,9 @@ export function ChatHistorySheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className="chat-sheet-backdrop"
       role="dialog"
@@ -1678,7 +1679,8 @@ export function ChatHistorySheet({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2180,6 +2182,8 @@ export interface ChatOverflowSheetProps {
   onClose: () => void;
   chatViewMode: ChatViewMode;
   onChangeChatViewMode: (mode: ChatViewMode) => void;
+  autoOrganizeChats?: AutoOrganizeChatsMode;
+  onChangeAutoOrganizeChats?: (mode: AutoOrganizeChatsMode) => void;
   hasMessages: boolean;
   autoSpeak: boolean;
   soundOn: boolean;
@@ -2202,6 +2206,8 @@ export function ChatOverflowSheet({
   onClose,
   chatViewMode,
   onChangeChatViewMode,
+  autoOrganizeChats,
+  onChangeAutoOrganizeChats,
   hasMessages,
   autoSpeak,
   soundOn,
@@ -2230,9 +2236,9 @@ export function ChatOverflowSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className="chat-sheet-backdrop"
       role="dialog"
@@ -2262,47 +2268,75 @@ export function ChatOverflowSheet({
           </button>
         </div>
 
-        {/* View Mode Switcher */}
-        <div className="chat-overflow-mode-box">
-          <span className="chat-overflow-section-label">
-            {isBm ? "MOD PAPARAN" : isZh ? "显示模式" : "CHAT VIEW MODE"}
-          </span>
-          <div className="chat-mode-segmented" role="radiogroup" aria-label="Chat view mode">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={chatViewMode === "companion"}
-              className={`chat-mode-seg-btn ${chatViewMode === "companion" ? "active" : ""}`}
-              onClick={() => {
-                onChangeChatViewMode("companion");
-                onClose();
-              }}
-            >
-              <ChatIcon name="companionView" />
-              <span>
-                {isBm ? "Paparan Teman" : isZh ? "伴侣模式" : "Companion view"}
-              </span>
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={chatViewMode === "classic"}
-              className={`chat-mode-seg-btn ${chatViewMode === "classic" ? "active" : ""}`}
-              onClick={() => {
-                onChangeChatViewMode("classic");
-                onClose();
-              }}
-            >
-              <ChatIcon name="classicView" />
-              <span>
-                {isBm ? "Sembang Klasik" : isZh ? "经典对话" : "Classic chat"}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Overflow Action Rows */}
+        {/* Scrollable Sheet Content (View Switchers + Action Rows) */}
         <div className="chat-overflow-list">
+          {/* View Mode Switcher */}
+          <div className="chat-overflow-mode-box">
+            <span className="chat-overflow-section-label">
+              {isBm ? "MOD PAPARAN" : isZh ? "显示模式" : "CHAT VIEW MODE"}
+            </span>
+            <div className="chat-mode-segmented" role="radiogroup" aria-label="Chat view mode">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={chatViewMode === "companion"}
+                className={`chat-mode-seg-btn ${chatViewMode === "companion" ? "active" : ""}`}
+                onClick={() => {
+                  onChangeChatViewMode("companion");
+                  onClose();
+                }}
+              >
+                <ChatIcon name="companionView" />
+                <span>
+                  {isBm ? "Paparan Teman" : isZh ? "伴侣模式" : "Companion view"}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={chatViewMode === "classic"}
+                className={`chat-mode-seg-btn ${chatViewMode === "classic" ? "active" : ""}`}
+                onClick={() => {
+                  onChangeChatViewMode("classic");
+                  onClose();
+                }}
+              >
+                <ChatIcon name="classicView" />
+                <span>
+                  {isBm ? "Sembang Klasik" : isZh ? "经典对话" : "Classic chat"}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {onChangeAutoOrganizeChats && autoOrganizeChats && (
+            <div className="chat-overflow-mode-box">
+              <span className="chat-overflow-section-label">
+                {isBm ? "SUSUN SEMBANG AUTOMATIK" : isZh ? "自动归类对话" : "AUTO-ORGANIZE CHATS"}
+              </span>
+              <div className="chat-lib-tri-segmented" role="radiogroup" aria-label="Auto-organize chats">
+                {(
+                  [
+                    { id: "suggest", label: isBm ? "Cadang" : isZh ? "建议" : "Suggest" },
+                    { id: "automatic", label: isBm ? "Automatik" : isZh ? "自动" : "Automatic" },
+                    { id: "off", label: isBm ? "Tutup" : isZh ? "关闭" : "Off" },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={autoOrganizeChats === opt.id}
+                    className={`chat-mode-seg-btn ${autoOrganizeChats === opt.id ? "active" : ""}`}
+                    onClick={() => onChangeAutoOrganizeChats(opt.id)}
+                  >
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
             className="chat-overflow-item"
@@ -2530,7 +2564,8 @@ export function ChatOverflowSheet({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2567,9 +2602,9 @@ export function ChatTonePickerSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className="chat-sheet-backdrop"
       role="dialog"
@@ -2647,7 +2682,8 @@ export function ChatTonePickerSheet({
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2682,9 +2718,9 @@ export function AiDisclaimerSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className="chat-sheet-backdrop"
       role="dialog"
@@ -2753,6 +2789,7 @@ export function AiDisclaimerSheet({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

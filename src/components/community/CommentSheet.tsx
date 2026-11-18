@@ -97,9 +97,12 @@ export function CommentSheet({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    const onTabChanged = () => onClose();
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("ony-tab-changed", onTabChanged);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("ony-tab-changed", onTabChanged);
       synth.stop();
     };
   }, [post, onClose]);

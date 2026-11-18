@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CompanionAvatar,
   type CompanionAnimal,
@@ -139,7 +140,7 @@ export function CompanionPreviewSheet({
   const isBm = lang.includes("melayu") || lang.includes("bm");
   const isZh = lang.includes("中文") || lang.includes("zh");
 
-  return (
+  const sheetBody = (
     <div
       className="ony-preview-sheet-backdrop"
       role="dialog"
@@ -148,15 +149,20 @@ export function CompanionPreviewSheet({
       onClick={onClose}
       style={{
         position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(10, 10, 15, 0.72)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
+        top: 0,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "100%",
+        maxWidth: "430px",
+        bottom: "var(--active-nav-clearance, 0px)",
+        zIndex: 145,
+        background: "rgba(10, 10, 15, 0.64)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "16px",
+        padding: "12px",
         overflowY: "auto",
       }}
     >
@@ -166,11 +172,11 @@ export function CompanionPreviewSheet({
         data-theme-mode={effectiveIsDark ? "dark" : "light"}
         style={{
           width: "100%",
-          maxWidth: "860px",
-          maxHeight: "92vh",
+          maxWidth: "410px",
+          maxHeight: "calc(100% - 12px)",
           display: "flex",
           flexDirection: "column",
-          borderRadius: "28px",
+          borderRadius: "24px",
           background: effectiveIsDark ? "var(--theme-surface, #1e1919)" : "var(--theme-surface, #ffffff)",
           border: "1px solid var(--theme-border, rgba(0,0,0,0.1))",
           boxShadow: effectiveIsDark
@@ -658,6 +664,9 @@ export function CompanionPreviewSheet({
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(sheetBody, document.body);
 }
 
 export default CompanionPreviewSheet;

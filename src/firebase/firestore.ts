@@ -130,6 +130,15 @@ export interface FirestoreJournalEntry {
   pageNumber?: number;
 }
 
+export interface FirestoreChatFolder {
+  id: number;
+  name: string;
+  color?: string;
+  icon?: string;
+  pinned?: boolean;
+  isDefault?: boolean;
+}
+
 export interface FirestoreConversation {
   id: string;
   title: string;
@@ -137,7 +146,13 @@ export interface FirestoreConversation {
   day: "Today" | "Yesterday";
   messages: { from: "user" | "ony"; text: string }[];
   folderId?: number;
+  archived?: boolean;
   reportAllowed?: boolean;
+  pinned?: boolean;
+  suggestedFolderId?: number;
+  suggestedFolderName?: string;
+  dismissedSuggestion?: boolean;
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -826,12 +841,54 @@ export async function loadUserBookshelfData(
   }
 }
 
+function stripUndefinedFields<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) {
+      result[k] = v;
+    }
+  }
+  return result;
+}
+
+// Chat Folders Operations (stored on users/{uid} so custom folders & colors/icons persist safely)
+export async function saveUserChatFolders(
+  uid: string,
+  folders: FirestoreChatFolder[],
+): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    const cleanFolders = folders.map((f) => stripUndefinedFields(f as unknown as Record<string, unknown>));
+    const userRef = doc(db, "users", uid);
+    await setDoc(userRef, { chatFolders: cleanFolders, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function loadUserChatFolders(uid: string): Promise<FirestoreChatFolder[] | null> {
+  const path = `users/${uid}`;
+  try {
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data.chatFolders) && data.chatFolders.length > 0) {
+        return data.chatFolders as FirestoreChatFolder[];
+      }
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
 // Conversation Operations
 export async function listConversations(uid: string): Promise<FirestoreConversation[]> {
   const path = `users/${uid}/conversations`;
   try {
     const colRef = collection(db, "users", uid, "conversations");
-    const q = query(colRef, orderBy("updatedAt", "desc"), limit(30));
+    const q = query(colRef, orderBy("updatedAt", "desc"), limit(300));
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({
       id: d.id,
@@ -850,7 +907,15 @@ export async function saveConversation(
   const path = `users/${uid}/conversations/${conversationId}`;
   try {
     const docRef = doc(db, "users", uid, "conversations", conversationId);
-    await setDoc(docRef, data, { merge: true });
+    const cleanMessages = (data.messages || []).map((m) => ({
+      from: m.from,
+      text: m.text,
+    }));
+    const payload = stripUndefinedFields({
+      ...data,
+      messages: cleanMessages,
+    });
+    await setDoc(docRef, payload, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

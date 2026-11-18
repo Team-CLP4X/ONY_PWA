@@ -274,8 +274,13 @@ export function ReportReasonSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    const onTabChanged = () => onClose();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("ony-tab-changed", onTabChanged);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("ony-tab-changed", onTabChanged);
+    };
   }, [post, onClose]);
 
   if (!post || typeof document === "undefined") return null;

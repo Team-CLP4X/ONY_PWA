@@ -90,13 +90,19 @@ export function CategoryHeader({
         setFilterSheetOpen(false);
       }
     };
+    const onTabChanged = () => {
+      setSwitcherOpen(false);
+      setFilterSheetOpen(false);
+    };
     document.addEventListener("mousedown", onOutside);
     document.addEventListener("touchstart", onOutside, { passive: true });
     document.addEventListener("keydown", onKey);
+    window.addEventListener("ony-tab-changed", onTabChanged);
     return () => {
       document.removeEventListener("mousedown", onOutside);
       document.removeEventListener("touchstart", onOutside);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("ony-tab-changed", onTabChanged);
     };
   }, [switcherOpen, filterSheetOpen]);
 
