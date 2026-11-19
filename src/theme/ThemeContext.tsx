@@ -16,6 +16,7 @@ import {
 } from "./palettes";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase/config";
+import { enqueueOfflineMutation } from "../services/offlineQueue";
 
 export type FontSizeScale = "small" | "default" | "large" | "extraLarge";
 export type ChatViewMode = "companion" | "classic";
@@ -90,6 +91,10 @@ export interface UserSettingsDoc {
   postsViewMode: PostsViewMode;
   chatLibraryView: ChatLibraryView;
   autoOrganizeChats: AutoOrganizeChatsMode;
+  autoTranslateMessages: boolean;
+  seenPostIds: string[];
+  recentColors: string[];
+  readNotificationIds: string[];
   language: string;
   companionPreferences: CompanionPreferences;
   notificationPreferences: NotificationPreferences;
@@ -106,7 +111,7 @@ export interface UserSettingsDoc {
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   userId: "",
   colorTheme: "peach",
   themeMode: "system",
@@ -116,6 +121,10 @@ export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
   postsViewMode: "list",
   chatLibraryView: "grid",
   autoOrganizeChats: "suggest",
+  autoTranslateMessages: true,
+  seenPostIds: [],
+  recentColors: [],
+  readNotificationIds: [],
   language: "English",
   companionPreferences: {
     companion: "Cat",
@@ -191,6 +200,16 @@ export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
 export const LOCAL_SETTINGS_STORAGE_KEY = "ony_user_settings_v2";
 export const PENDING_SYNC_QUEUE_KEY = "ony_user_settings_pending_sync_queue";
 
+function getLocalSettingsKey(uid?: string | null): string {
+  const clean = (uid || auth.currentUser?.uid || "").trim();
+  return clean ? `${LOCAL_SETTINGS_STORAGE_KEY}_${clean}` : LOCAL_SETTINGS_STORAGE_KEY;
+}
+
+function getPendingSyncKey(uid?: string | null): string {
+  const clean = (uid || auth.currentUser?.uid || "").trim();
+  return clean ? `${PENDING_SYNC_QUEUE_KEY}_${clean}` : PENDING_SYNC_QUEUE_KEY;
+}
+
 /**
  * Helper to compute SHA-256 hash for App Lock PIN
  */
@@ -219,16 +238,22 @@ export async function hashAppLockPin(pin: string): Promise<string> {
  * Synchronous local cache loader.
  * Safely migrates older stored settings or fills missing defaults.
  */
-export function loadCachedSettings(): UserSettingsDoc {
+export function loadCachedSettings(uid?: string | null): UserSettingsDoc {
   if (typeof window === "undefined") return DEFAULT_USER_SETTINGS;
   try {
+    const scopedRaw = localStorage.getItem(getLocalSettingsKey(uid));
+    if (scopedRaw) {
+      const parsed = JSON.parse(scopedRaw);
+      return mergeWithDefaults(parsed);
+    }
+
     const raw = localStorage.getItem(LOCAL_SETTINGS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       return mergeWithDefaults(parsed);
     }
 
-    // Migration fallback from older disparate keys
+    // Migration fallback from older disparate visual-only keys
     const legacyTheme = localStorage.getItem("ony_theme_preference");
     const legacyMode = localStorage.getItem("ony_appearance_theme_mode");
     const legacyScale = localStorage.getItem("ony_appearance_font_scale");
@@ -315,7 +340,7 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
       : DEFAULT_USER_SETTINGS.autoOrganizeChats;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     userId: incoming.userId || "",
     colorTheme,
     themeMode,
@@ -325,6 +350,19 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
     postsViewMode,
     chatLibraryView,
     autoOrganizeChats,
+    autoTranslateMessages:
+      typeof incoming.autoTranslateMessages === "boolean"
+        ? incoming.autoTranslateMessages
+        : DEFAULT_USER_SETTINGS.autoTranslateMessages,
+    seenPostIds: Array.isArray(incoming.seenPostIds)
+      ? Array.from(new Set(incoming.seenPostIds.map(String))).slice(-250)
+      : [],
+    recentColors: Array.isArray(incoming.recentColors)
+      ? Array.from(new Set(incoming.recentColors.map(String))).slice(0, 12)
+      : [],
+    readNotificationIds: Array.isArray(incoming.readNotificationIds)
+      ? Array.from(new Set(incoming.readNotificationIds.map(String))).slice(-200)
+      : [],
     language: incoming.language || DEFAULT_USER_SETTINGS.language,
     companionPreferences: {
       ...DEFAULT_USER_SETTINGS.companionPreferences,
@@ -350,8 +388,12 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
 export function saveCachedSettings(settings: UserSettingsDoc): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(LOCAL_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    // Keep backwards-compatible keys in sync
+    const serialized = JSON.stringify(settings);
+    if (settings.userId) {
+      localStorage.setItem(getLocalSettingsKey(settings.userId), serialized);
+    }
+    localStorage.setItem(LOCAL_SETTINGS_STORAGE_KEY, serialized);
+    // Keep visual cache keys in sync
     localStorage.setItem("ony_theme_preference", settings.colorTheme);
     localStorage.setItem("ony_appearance_theme_mode", settings.themeMode);
     localStorage.setItem("ony_appearance_font_scale", settings.fontSizeScale);
@@ -480,15 +522,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
         // Clear offline pending queue on success
         if (typeof window !== "undefined") {
+          localStorage.removeItem(getPendingSyncKey(uid));
           localStorage.removeItem(PENDING_SYNC_QUEUE_KEY);
         }
       } catch (err: unknown) {
-        console.warn("[ONY Theme] Remote sync warning, queuing offline:", err);
-        // Queue for background retry
-        if (typeof window !== "undefined") {
-          localStorage.setItem(PENDING_SYNC_QUEUE_KEY, JSON.stringify(payload));
+        const errCode = (err as { code?: string })?.code || "";
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isPermissionDenied =
+          errCode === "permission-denied" || errMsg.includes("Missing or insufficient permissions");
+
+        if (isPermissionDenied) {
+          console.warn("[ONY Theme] Remote settings write blocked by Firestore rules:", errMsg);
+          setSyncError("Cloud settings rules need deployment; changes kept locally.");
+        } else {
+          console.warn("[ONY Theme] Remote sync warning, queuing offline:", err);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(getPendingSyncKey(uid), JSON.stringify(payload));
+          }
+          enqueueOfflineMutation(uid, "save_user_settings", payload);
+          setSyncError("Settings saved offline. Will sync when back online.");
         }
-        setSyncError("Settings saved offline. Will sync when back online.");
       } finally {
         if (isMountedRef.current) {
           setIsSyncing(false);
@@ -502,10 +555,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const retryPendingSync = useCallback(async () => {
     if (typeof window === "undefined" || !navigator.onLine) return;
     try {
-      const queued = localStorage.getItem(PENDING_SYNC_QUEUE_KEY);
+      const uid = auth.currentUser?.uid;
+      const queued = localStorage.getItem(getPendingSyncKey(uid)) || localStorage.getItem(PENDING_SYNC_QUEUE_KEY);
       if (queued) {
         const parsed: UserSettingsDoc = JSON.parse(queued);
-        await pushSettingsToDatabase(parsed);
+        if (!uid || !parsed.userId || parsed.userId === uid) {
+          await pushSettingsToDatabase(parsed, uid || parsed.userId);
+        }
       }
     } catch {}
   }, [pushSettingsToDatabase]);
@@ -721,12 +777,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const resetSettingsOnLogout = useCallback(() => {
     const defaults = { ...DEFAULT_USER_SETTINGS, userId: "" };
     setSettings(defaults);
-    saveCachedSettings(defaults);
     applyTokensToDocument(defaults.colorTheme, defaults.themeMode, defaults.fontSizePercent);
     if (typeof window !== "undefined") {
-      localStorage.removeItem(PENDING_SYNC_QUEUE_KEY);
-      localStorage.removeItem("ony_chat_view_mode");
-      localStorage.removeItem("ony_posts_view_mode");
+      try {
+        const removeKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (
+            k &&
+            (k.startsWith(LOCAL_SETTINGS_STORAGE_KEY) || k.startsWith(PENDING_SYNC_QUEUE_KEY))
+          ) {
+            removeKeys.push(k);
+          }
+        }
+        removeKeys.forEach((k) => localStorage.removeItem(k));
+        localStorage.removeItem("ony_chat_view_mode");
+        localStorage.removeItem("ony_posts_view_mode");
+        localStorage.removeItem("ony_theme_preference");
+        localStorage.removeItem("ony_appearance_theme_mode");
+        localStorage.removeItem("ony_appearance_font_scale");
+        localStorage.removeItem("ony_language");
+      } catch {}
     }
   }, []);
 

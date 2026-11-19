@@ -1,3 +1,4 @@
+import { auth } from "../firebase/config";
 import type { FirestoreCommunityPost, PostLikeRecord } from "../firebase/firestore";
 import type { AppLanguage } from "../i18n/translations";
 
@@ -59,23 +60,61 @@ export function getReactionEmoji(reaction: SupportiveReactionType): string {
   return found ? found.emoji : "🤗";
 }
 
-/**
- * Local reaction-type map keyed by `${postId}:${userId}` so supportive reaction types
- * ("hug" | "relate" | "proud" | "strength") map onto the existing `likeRecords` array
- * in Firestore without mutating the database schema.
- */
-const REACTION_STORAGE_KEY = "ony_post_reactions_v1";
-const HIDDEN_POSTS_STORAGE_KEY = "ony_hidden_community_posts_v1";
-const SAVED_POSTS_STORAGE_KEY = "ony_saved_community_posts_v1";
-const SEEN_POSTS_STORAGE_KEY = "ony_seen_community_posts_v1";
-const DESK_LIST_PREF_KEY = "ony_desk_list_pref_v1";
+const REACTION_STORAGE_KEY_PREFIX = "ony_post_reactions_v2_";
+const HIDDEN_POSTS_STORAGE_KEY_PREFIX = "ony_hidden_community_posts_v2_";
+const SAVED_POSTS_STORAGE_KEY_PREFIX = "ony_saved_community_posts_v2_";
+const SEEN_POSTS_STORAGE_KEY_PREFIX = "ony_seen_community_posts_v2_";
+const DESK_LIST_PREF_KEY_PREFIX = "ony_desk_list_pref_v2_";
+const LEGACY_KEYS = [
+  "ony_post_reactions_v1",
+  "ony_hidden_community_posts_v1",
+  "ony_saved_community_posts_v1",
+  "ony_seen_community_posts_v1",
+  "ony_desk_list_pref_v1",
+];
+
+function resolveStorageUid(explicitUid?: string | null): string {
+  return (explicitUid || auth.currentUser?.uid || "signed_out").trim() || "signed_out";
+}
+
+function scopedKey(prefix: string, explicitUid?: string | null): string {
+  return `${prefix}${resolveStorageUid(explicitUid)}`;
+}
+
+export function clearCommunityPostCaches(uid?: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    LEGACY_KEYS.forEach((k) => window.localStorage.removeItem(k));
+    const prefixes = [
+      REACTION_STORAGE_KEY_PREFIX,
+      HIDDEN_POSTS_STORAGE_KEY_PREFIX,
+      SAVED_POSTS_STORAGE_KEY_PREFIX,
+      SEEN_POSTS_STORAGE_KEY_PREFIX,
+      DESK_LIST_PREF_KEY_PREFIX,
+    ];
+    if (uid) {
+      prefixes.forEach((prefix) => window.localStorage.removeItem(`${prefix}${uid}`));
+      return;
+    }
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && prefixes.some((prefix) => k.startsWith(prefix))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 type StoredReactionMap = Record<string, SupportiveReactionType>;
 
-function readStoredReactionMap(): StoredReactionMap {
+function readStoredReactionMap(uid?: string | null): StoredReactionMap {
   if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(REACTION_STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(REACTION_STORAGE_KEY_PREFIX, uid));
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object"
@@ -91,16 +130,20 @@ export function saveUserReactionChoice(
   userId: string,
   reaction: SupportiveReactionType | null,
 ): void {
-  if (typeof window === "undefined") return;
+  const cleanUid = userId.trim();
+  if (typeof window === "undefined" || !cleanUid) return;
   try {
-    const current = readStoredReactionMap();
-    const key = `${postId}::${userId}`;
+    const current = readStoredReactionMap(cleanUid);
+    const key = `${postId}::${cleanUid}`;
     if (!reaction) {
       delete current[key];
     } else {
       current[key] = reaction;
     }
-    localStorage.setItem(REACTION_STORAGE_KEY, JSON.stringify(current));
+    localStorage.setItem(
+      scopedKey(REACTION_STORAGE_KEY_PREFIX, cleanUid),
+      JSON.stringify(current),
+    );
   } catch {
     // ignore storage errors
   }
@@ -110,8 +153,10 @@ export function getUserReactionChoice(
   postId: string,
   userId: string,
 ): SupportiveReactionType | null {
-  const map = readStoredReactionMap();
-  const val = map[`${postId}::${userId}`];
+  const cleanUid = userId.trim();
+  if (!cleanUid) return null;
+  const map = readStoredReactionMap(cleanUid);
+  const val = map[`${postId}::${cleanUid}`];
   if (
     val === "hug" ||
     val === "relate" ||
@@ -149,13 +194,19 @@ export interface PostReactionSummary {
   activeTypes: SupportiveReactionType[];
 }
 
+function normalizeReactionType(val?: string | null): SupportiveReactionType | null {
+  if (val === "hug" || val === "relate" || val === "proud" || val === "strength") {
+    return val;
+  }
+  return null;
+}
+
 export function computePostReactionSummary(
   post: FirestoreCommunityPost,
   currentUid: string,
-  currentUserName: string,
+  _currentUserName?: string,
 ): PostReactionSummary {
-  const cleanUid = currentUid.trim() || "anonymous_user";
-  const cleanName = currentUserName.trim().toLowerCase();
+  const cleanUid = currentUid.trim();
   const records: PostLikeRecord[] = Array.isArray(post.likeRecords)
     ? post.likeRecords
     : [];
@@ -169,21 +220,19 @@ export function computePostReactionSummary(
 
   let likedByMe = false;
   let myReaction: SupportiveReactionType | null = null;
-  const storedMine = getUserReactionChoice(post.id, cleanUid);
+  const storedMine = cleanUid ? getUserReactionChoice(post.id, cleanUid) : null;
 
   records.forEach((rec, idx) => {
-    const isMe =
-      rec.userId === cleanUid ||
-      rec.userName.trim().toLowerCase() === cleanName;
+    const isMe = Boolean(cleanUid && rec.userId === cleanUid);
+    const firestoreReaction = normalizeReactionType((rec as PostLikeRecord & { reaction?: string }).reaction);
     if (isMe) {
       likedByMe = true;
-      const chosen = storedMine || "hug";
+      const chosen = firestoreReaction || storedMine || "hug";
       myReaction = chosen;
       countsByType[chosen] += 1;
     } else {
-      const storedOther = getUserReactionChoice(post.id, rec.userId);
       const mapped =
-        storedOther || deterministicReactionForRecord(post.id, rec, idx);
+        firestoreReaction || deterministicReactionForRecord(post.id, rec, idx);
       countsByType[mapped] += 1;
     }
   });
@@ -798,10 +847,10 @@ export const COMMUNITY_REPORT_REASONS: ReportReasonOption[] = [
   },
 ];
 
-export function loadHiddenPostIds(): Set<string> {
+export function loadHiddenPostIds(uid?: string | null): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = localStorage.getItem(HIDDEN_POSTS_STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(HIDDEN_POSTS_STORAGE_KEY_PREFIX, uid));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
@@ -810,11 +859,11 @@ export function loadHiddenPostIds(): Set<string> {
   }
 }
 
-export function saveHiddenPostIds(ids: Set<string>): void {
+export function saveHiddenPostIds(ids: Set<string>, uid?: string | null): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      HIDDEN_POSTS_STORAGE_KEY,
+      scopedKey(HIDDEN_POSTS_STORAGE_KEY_PREFIX, uid),
       JSON.stringify(Array.from(ids)),
     );
   } catch {
@@ -822,10 +871,10 @@ export function saveHiddenPostIds(ids: Set<string>): void {
   }
 }
 
-export function loadSavedPostIds(): Set<string> {
+export function loadSavedPostIds(uid?: string | null): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = localStorage.getItem(SAVED_POSTS_STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(SAVED_POSTS_STORAGE_KEY_PREFIX, uid));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
@@ -834,11 +883,11 @@ export function loadSavedPostIds(): Set<string> {
   }
 }
 
-export function saveSavedPostIds(ids: Set<string>): void {
+export function saveSavedPostIds(ids: Set<string>, uid?: string | null): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      SAVED_POSTS_STORAGE_KEY,
+      scopedKey(SAVED_POSTS_STORAGE_KEY_PREFIX, uid),
       JSON.stringify(Array.from(ids)),
     );
   } catch {
@@ -846,10 +895,10 @@ export function saveSavedPostIds(ids: Set<string>): void {
   }
 }
 
-export function loadSeenPostIds(): Set<string> {
+export function loadSeenPostIds(uid?: string | null): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = localStorage.getItem(SEEN_POSTS_STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(SEEN_POSTS_STORAGE_KEY_PREFIX, uid));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
@@ -858,11 +907,11 @@ export function loadSeenPostIds(): Set<string> {
   }
 }
 
-export function saveSeenPostIds(ids: Set<string>): void {
+export function saveSeenPostIds(ids: Set<string>, uid?: string | null): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      SEEN_POSTS_STORAGE_KEY,
+      scopedKey(SEEN_POSTS_STORAGE_KEY_PREFIX, uid),
       JSON.stringify(Array.from(ids).slice(-250)),
     );
   } catch {
@@ -870,19 +919,22 @@ export function saveSeenPostIds(ids: Set<string>): void {
   }
 }
 
-export function loadDeskListModePref(): boolean {
+export function loadDeskListModePref(uid?: string | null): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return localStorage.getItem(DESK_LIST_PREF_KEY) === "list";
+    return localStorage.getItem(scopedKey(DESK_LIST_PREF_KEY_PREFIX, uid)) === "list";
   } catch {
     return false;
   }
 }
 
-export function saveDeskListModePref(useList: boolean): void {
+export function saveDeskListModePref(useList: boolean, uid?: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(DESK_LIST_PREF_KEY, useList ? "list" : "scene");
+    localStorage.setItem(
+      scopedKey(DESK_LIST_PREF_KEY_PREFIX, uid),
+      useList ? "list" : "scene",
+    );
   } catch {
     // ignore storage errors
   }

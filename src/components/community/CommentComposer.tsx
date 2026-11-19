@@ -31,7 +31,11 @@ export interface CommentComposerProps {
   onCancelEdit: () => void;
   onClearError: () => void;
   onSubmitText: (text: string) => Promise<boolean>;
-  onSubmitVoice: (audio: { dataUrl: string; duration: number }) => Promise<boolean>;
+  onSubmitVoice: (audio: {
+    blob: Blob;
+    dataUrl: string;
+    duration: number;
+  }) => Promise<boolean>;
 }
 
 const MAX_VOICE_SECONDS = 60;
@@ -225,6 +229,7 @@ export function CommentComposer({
     if (!recordedAudio || submitting || cooldownActive) return;
     cleanupPreviewAudio();
     const ok = await onSubmitVoice({
+      blob: recordedAudio.blob,
       dataUrl: recordedAudio.dataUrl,
       duration: Math.max(1, recordedAudio.duration || recordingSeconds || 1),
     });

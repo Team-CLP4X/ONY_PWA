@@ -475,7 +475,7 @@ export function CommunityWorldScene({
                       cx="294"
                       cy="44"
                       r="18"
-                      fill="color-mix(in srgb, var(--theme-accent) 55%, #fde68a)"
+                      fill="color-mix(in srgb, var(--theme-accent) 55%, var(--theme-sun-glow))"
                       opacity="0.72"
                     />
                     <path
@@ -493,7 +493,7 @@ export function CommunityWorldScene({
                   <g className="world-sky-night">
                     <path
                       d="M294 28a13 13 0 1 0 15 17A10.5 10.5 0 0 1 294 28Z"
-                      fill="color-mix(in srgb, var(--theme-accent) 65%, #fef3c7)"
+                      fill="color-mix(in srgb, var(--theme-accent) 65%, var(--theme-sun-glow))"
                     />
                     <circle cx="48" cy="32" r="1.8" fill="var(--theme-accent)" className="anim-twinkle" />
                     <circle cx="98" cy="48" r="1.4" fill="var(--theme-text-primary)" opacity="0.6" />

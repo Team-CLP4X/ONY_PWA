@@ -1,3 +1,4 @@
+import { auth } from "../firebase/config";
 import type { FirestoreCommunityMessage } from "../firebase/firestore";
 
 export type InboxMessage = FirestoreCommunityMessage & {
@@ -17,10 +18,45 @@ export interface BlockedSenderEntry {
   blockedAt: string;
 }
 
-const READ_IDS_STORAGE_KEY = "ony_node_read_ids_v1";
-const UNREAD_OVERRIDE_IDS_STORAGE_KEY = "ony_node_unread_ids_v1";
-const BLOCKED_SENDERS_STORAGE_KEY = "ony_node_blocked_senders_v1";
-export const AUTO_TRANSLATE_STORAGE_KEY = "ony_auto_translate_messages";
+const READ_IDS_STORAGE_KEY_PREFIX = "ony_node_read_ids_v2_";
+const UNREAD_OVERRIDE_IDS_STORAGE_KEY_PREFIX = "ony_node_unread_ids_v2_";
+const BLOCKED_SENDERS_STORAGE_KEY_PREFIX = "ony_node_blocked_senders_v2_";
+const AUTO_TRANSLATE_STORAGE_KEY_PREFIX = "ony_auto_translate_messages_v2_";
+const LEGACY_KEYS = [
+  "ony_node_read_ids_v1",
+  "ony_node_unread_ids_v1",
+  "ony_node_blocked_senders_v1",
+  "ony_auto_translate_messages",
+];
+
+function resolveInboxUid(explicitUid?: string | null): string {
+  return (explicitUid || auth.currentUser?.uid || "signed_out").trim() || "signed_out";
+}
+
+export function clearNodeInboxCaches(uid?: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    LEGACY_KEYS.forEach((k) => window.localStorage.removeItem(k));
+    const prefixes = [
+      READ_IDS_STORAGE_KEY_PREFIX,
+      UNREAD_OVERRIDE_IDS_STORAGE_KEY_PREFIX,
+      BLOCKED_SENDERS_STORAGE_KEY_PREFIX,
+      AUTO_TRANSLATE_STORAGE_KEY_PREFIX,
+    ];
+    if (uid) {
+      prefixes.forEach((p) => window.localStorage.removeItem(`${p}${uid}`));
+      return;
+    }
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && prefixes.some((p) => k.startsWith(p))) keys.push(k);
+    }
+    keys.forEach((k) => window.localStorage.removeItem(k));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export function parseMessageTimestamp(createdAt: unknown): number {
   if (!createdAt) return Date.now();
@@ -144,26 +180,26 @@ export function saveStoredIdSet(key: string, ids: Set<string>): void {
   }
 }
 
-export function loadReadMessageIds(): Set<string> {
-  return loadStoredIdSet(READ_IDS_STORAGE_KEY);
+export function loadReadMessageIds(uid?: string | null): Set<string> {
+  return loadStoredIdSet(`${READ_IDS_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`);
 }
 
-export function saveReadMessageIds(ids: Set<string>): void {
-  saveStoredIdSet(READ_IDS_STORAGE_KEY, ids);
+export function saveReadMessageIds(ids: Set<string>, uid?: string | null): void {
+  saveStoredIdSet(`${READ_IDS_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`, ids);
 }
 
-export function loadUnreadOverrideIds(): Set<string> {
-  return loadStoredIdSet(UNREAD_OVERRIDE_IDS_STORAGE_KEY);
+export function loadUnreadOverrideIds(uid?: string | null): Set<string> {
+  return loadStoredIdSet(`${UNREAD_OVERRIDE_IDS_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`);
 }
 
-export function saveUnreadOverrideIds(ids: Set<string>): void {
-  saveStoredIdSet(UNREAD_OVERRIDE_IDS_STORAGE_KEY, ids);
+export function saveUnreadOverrideIds(ids: Set<string>, uid?: string | null): void {
+  saveStoredIdSet(`${UNREAD_OVERRIDE_IDS_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`, ids);
 }
 
-export function loadBlockedSenders(): BlockedSenderEntry[] {
+export function loadBlockedSenders(uid?: string | null): BlockedSenderEntry[] {
   try {
     if (typeof window === "undefined") return [];
-    const raw = localStorage.getItem(BLOCKED_SENDERS_STORAGE_KEY);
+    const raw = localStorage.getItem(`${BLOCKED_SENDERS_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -176,29 +212,32 @@ export function loadBlockedSenders(): BlockedSenderEntry[] {
   }
 }
 
-export function saveBlockedSenders(entries: BlockedSenderEntry[]): void {
+export function saveBlockedSenders(entries: BlockedSenderEntry[], uid?: string | null): void {
   try {
     if (typeof window === "undefined") return;
-    localStorage.setItem(BLOCKED_SENDERS_STORAGE_KEY, JSON.stringify(entries));
+    localStorage.setItem(
+      `${BLOCKED_SENDERS_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`,
+      JSON.stringify(entries),
+    );
   } catch {
     // ignore storage errors
   }
 }
 
-export function loadAutoTranslatePref(): boolean {
+export function loadAutoTranslatePref(uid?: string | null): boolean {
   try {
     if (typeof window === "undefined") return true;
-    const raw = localStorage.getItem(AUTO_TRANSLATE_STORAGE_KEY);
+    const raw = localStorage.getItem(`${AUTO_TRANSLATE_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`);
     return raw !== null ? raw === "true" : true;
   } catch {
     return true;
   }
 }
 
-export function saveAutoTranslatePref(val: boolean): void {
+export function saveAutoTranslatePref(val: boolean, uid?: string | null): void {
   try {
     if (typeof window === "undefined") return;
-    localStorage.setItem(AUTO_TRANSLATE_STORAGE_KEY, String(val));
+    localStorage.setItem(`${AUTO_TRANSLATE_STORAGE_KEY_PREFIX}${resolveInboxUid(uid)}`, String(val));
   } catch {
     // ignore storage errors
   }

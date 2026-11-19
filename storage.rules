@@ -1,0 +1,52 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAllowedImage() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function isAllowedAudio() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Private user media (profile avatars, private journal photos, feedback screenshots)
+    match /users/{userId}/{folder}/{fileName} {
+      allow read: if isOwner(userId);
+      allow delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && folder in ['avatars', 'journals', 'feedback']
+        && isAllowedImage();
+    }
+
+    // Community shared media (feed photos, comment/globe voice notes)
+    match /communityMedia/{userId}/{folder}/{fileName} {
+      allow read: if isAuthenticated();
+      allow delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && folder in ['posts', 'comments', 'voice']
+        && (
+          (folder == 'posts' && (isAllowedImage() || isAllowedAudio())) ||
+          (folder in ['comments', 'voice'] && isAllowedAudio())
+        );
+    }
+  }
+}

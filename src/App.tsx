@@ -25,14 +25,17 @@ import { auth } from "./firebase/config";
 import {
   registerWithEmailPassword,
   loginWithEmailPassword,
+  loginWithGoogle,
   sendPasswordReset,
   logoutUser,
   deleteUserAccount,
   subscribeToAuthChanges,
 } from "./firebase/auth";
 import {
+  getDeterministicNodeNumber,
   getUserProfile,
   updateUserProfile,
+  saveUserSettingsDoc,
   listMoodEntries,
   saveMoodEntry,
   updateMoodEntry,
@@ -48,19 +51,34 @@ import {
   deleteConversation,
   loadUserChatFolders,
   saveUserChatFolders,
+  ensureOwnGlobeNode,
   listGlobeUsers,
   subscribeVisibleGlobeUsers,
   updateGlobeUserNode,
   listCommunityPosts,
+  subscribeCommunityPosts,
   deduplicateCommunityPostList,
   createCommunityPost,
   toggleCommunityPostLike,
   validateCommunityCommentText,
+  listSavedPostIds,
+  setPostSavedState,
+  listHiddenPostIds,
+  setPostHiddenState,
+  listBlockedUserIds,
+  blockCommunityUser,
+  unblockCommunityUser,
+  submitModerationReport,
   listMerchants,
+  listVoucherClaims,
+  claimMarketplaceVoucher,
+  recordToolkitCompletion,
   listCommunityMessages,
+  subscribeIncomingCommunityMessages,
+  listSentCommunityMessagesToNode,
+  markCommunityMessagesRead,
+  updateCommunityMessageTranscript,
   createCommunityMessage,
-  seedInitialDatabaseData,
-  seedInitialUserData,
   syncRegisteredAccount,
   findRegisteredAccountByUid,
   sendTrustedContactRequest,
@@ -68,11 +86,6 @@ import {
   listTrustedContactRequests,
   respondToTrustedContactRequest,
   deleteTrustedContactRequest,
-  DEFAULT_GLOBE_USERS,
-  DEFAULT_COMMUNITY_POSTS,
-  DEFAULT_MERCHANTS,
-  DEFAULT_USER_CONVERSATIONS,
-  DEFAULT_COMMUNITY_MESSAGES,
   writeSystemLog,
   listSystemLogs,
   formatLogsAsTextFile,
@@ -83,7 +96,10 @@ import {
   deleteJournalEntry,
   loadCachedJournalEntries,
   saveCachedJournalEntries,
-  DEFAULT_JOURNAL_ENTRIES,
+  clearLocalJournalCache,
+  type UserProfileData,
+  type FirestoreMerchant,
+  type FirestoreVoucherClaim,
   type FirestoreJournalEntry,
   type SystemLogEntry,
   type SystemLogLevel,
@@ -92,9 +108,19 @@ import {
   type PostCommentReplyRecord,
   type FirestoreCommunityPost,
   type FirestoreCommunityMessage,
+  type FirestoreGlobeUser,
   type FirestoreTrustedContactRequest,
   deleteCommunityMessage,
 } from "./firebase/firestore";
+import { uploadCommunityMedia, uploadUserMedia } from "./firebase/storage";
+import {
+  setOfflineQueueFlushHandler,
+  enqueueOfflineMutation,
+  useOfflineSyncStatus,
+  clearOfflineQueue,
+} from "./services/offlineQueue";
+import { vaultService } from "./services/vaultService";
+import { clearCommunityTranslationCache } from "./services/communityTranslationService";
 import GlobeView, { type GlobeCameraTarget } from "./components/globe/GlobeView";
 import Fallback2DMap from "./components/globe/Fallback2DMap";
 import { ListViewPanel } from "./components/globe/ClusterLayer";
@@ -162,6 +188,7 @@ import { ReportReasonSheet } from "./components/community/PostMenu";
 import { PostFeed } from "./components/community/PostFeed";
 import { CommentSheet } from "./components/community/CommentSheet";
 import {
+  clearCommunityPostCaches,
   extractWorldCategories,
   filterPostsBySubtopic,
   getUserReactionChoice,
@@ -177,6 +204,11 @@ import {
   type SubtopicFilterId,
   type SupportiveReactionType,
 } from "./utils/communityPostHelpers";
+import {
+  clearNodeInboxCaches,
+  type BlockedSenderEntry,
+  type InboxMessage,
+} from "./utils/nodeInboxHelpers";
 import { DigitalJournal } from "./components/DigitalJournal";
 import {
   SettingsHeader,
@@ -196,8 +228,6 @@ import {
   TermsScreen,
   PrivacyPolicyScreen,
   loadStoredProfile,
-  loadStoredAppearance,
-  applyAppearanceToDom,
 } from "./components/SettingsComponents";
 import { ToolkitPage } from "./components/ToolkitPage";
 import {
@@ -211,7 +241,13 @@ import {
   AiDisclaimerSheet,
   type ActiveBreakTimerState,
 } from "./components/ChatComponents";
-import { ThemeProvider, useTheme, type ChatViewMode } from "./theme/ThemeContext";
+import {
+  ThemeProvider,
+  useTheme,
+  hashAppLockPin,
+  type ChatViewMode,
+  type UserSettingsDoc,
+} from "./theme/ThemeContext";
 import type { ThemeId } from "./theme/palettes";
 import {
   CompanionAvatar as VectorCompanionAvatar,
@@ -276,7 +312,7 @@ type Screen =
 type Theme = "ocean" | "sunset" | "forest" | "lavender" | "peach" | "neutral";
 type Companion = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
 type ContactStatus = "none" | "pending" | "accepted" | "rejected";
-type SubscriptionStatus = "free" | "trial" | "trialEnded" | "payg" | "monthly";
+type SubscriptionStatus = "free";
 type Persona = "gentle" | "friendly" | "calm";
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -311,11 +347,19 @@ function getMoodDateKey(entry: Pick<MoodEntry, "dateKey" | "createdAt">): string
   return getLocalDateKey(entry.createdAt);
 }
 
-const MOOD_STORAGE_KEY = "ony_daily_mood_checkins_v1";
+const MOOD_CACHE_PREFIX = "ony_daily_mood_checkins_v2_";
+const CHAT_FOLDERS_CACHE_PREFIX = "ony_chat_folders_v2_";
+const CHAT_CONVERSATIONS_CACHE_PREFIX = "ony_chat_conversations_v2_";
 
-function loadCachedMoodEntries(): MoodEntry[] {
+function resolveCacheUid(uid?: string | null): string {
+  return (uid || "").trim();
+}
+
+function loadCachedMoodEntries(uid?: string | null): MoodEntry[] {
+  const cleanUid = resolveCacheUid(uid);
+  if (!cleanUid) return [];
   try {
-    const raw = localStorage.getItem(MOOD_STORAGE_KEY);
+    const raw = localStorage.getItem(`${MOOD_CACHE_PREFIX}${cleanUid}`);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -325,96 +369,21 @@ function loadCachedMoodEntries(): MoodEntry[] {
   }
 }
 
-function saveCachedMoodEntries(entries: MoodEntry[]): void {
+function saveCachedMoodEntries(entries: MoodEntry[], uid?: string | null): void {
+  const cleanUid = resolveCacheUid(uid);
+  if (!cleanUid) return;
   try {
-    localStorage.setItem(MOOD_STORAGE_KEY, JSON.stringify(entries));
+    localStorage.setItem(`${MOOD_CACHE_PREFIX}${cleanUid}`, JSON.stringify(entries));
   } catch {
     // ignore storage quota errors
   }
 }
 
-const CHAT_FOLDERS_STORAGE_KEY = "ony_chat_folders_v1";
-const CHAT_CONVERSATIONS_STORAGE_KEY = "ony_chat_conversations_v1";
-
-function createDefaultStarterConversations(): Conversation[] {
-  const now = Date.now();
-  return [
-    {
-      id: 101,
-      title: "Feeling overwhelmed",
-      category: "Emotional Wellbeing",
-      day: "Today",
-      folderId: 4,
-      reportAllowed: true,
-      createdAt: new Date(now - 45 * 60000).toISOString(),
-      updatedAt: new Date(now - 35 * 60000).toISOString(),
-      messages: [
-        { from: "user", text: "Everything feels like a lot today." },
-        { from: "ony", text: "I hear you. We can slow this down together—what feels most urgent right now?" },
-      ],
-    },
-    {
-      id: 102,
-      title: "Internship search",
-      category: "Career",
-      day: "Today",
-      folderId: 1,
-      reportAllowed: true,
-      createdAt: new Date(now - 3 * 3600000).toISOString(),
-      updatedAt: new Date(now - 2 * 3600000).toISOString(),
-      messages: [
-        { from: "user", text: "I want to find an internship." },
-        { from: "ony", text: "Let’s begin with the kind of work and environment you want." },
-      ],
-    },
-    {
-      id: 103,
-      title: "Study pressure",
-      category: "Study",
-      day: "Today",
-      folderId: 1,
-      reportAllowed: true,
-      createdAt: new Date(now - 6 * 3600000).toISOString(),
-      updatedAt: new Date(now - 5 * 3600000).toISOString(),
-      messages: [
-        { from: "user", text: "My exams are getting close." },
-        { from: "ony", text: "That pressure makes sense. Let’s choose one small task for today." },
-      ],
-    },
-    {
-      id: 104,
-      title: "Relationship thoughts",
-      category: "Relationships",
-      day: "Yesterday",
-      folderId: 2,
-      reportAllowed: true,
-      createdAt: new Date(now - 27 * 3600000).toISOString(),
-      updatedAt: new Date(now - 26 * 3600000).toISOString(),
-      messages: [
-        { from: "user", text: "I keep replaying a difficult conversation." },
-        { from: "ony", text: "It sounds like it stayed with you. Which part keeps coming back?" },
-      ],
-    },
-    {
-      id: 105,
-      title: "Feeling anxious",
-      category: "Emotional Wellbeing",
-      day: "Yesterday",
-      folderId: 3,
-      reportAllowed: true,
-      createdAt: new Date(now - 31 * 3600000).toISOString(),
-      updatedAt: new Date(now - 30 * 3600000).toISOString(),
-      messages: [
-        { from: "user", text: "I’m feeling anxious." },
-        { from: "ony", text: "I’m here. Would something calming help, or would you like to talk it through?" },
-      ],
-    },
-  ];
-}
-
-function loadCachedChatFolders(): ChatFolder[] {
+function loadCachedChatFolders(uid?: string | null): ChatFolder[] {
+  const cleanUid = resolveCacheUid(uid);
+  if (!cleanUid) return DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f }));
   try {
-    const raw = localStorage.getItem(CHAT_FOLDERS_STORAGE_KEY);
+    const raw = localStorage.getItem(`${CHAT_FOLDERS_CACHE_PREFIX}${cleanUid}`);
     if (!raw) return DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f }));
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) {
@@ -426,33 +395,80 @@ function loadCachedChatFolders(): ChatFolder[] {
   }
 }
 
-function saveCachedChatFolders(folders: ChatFolder[]): void {
+function saveCachedChatFolders(folders: ChatFolder[], uid?: string | null): void {
+  const cleanUid = resolveCacheUid(uid);
+  if (!cleanUid) return;
   try {
-    localStorage.setItem(CHAT_FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+    localStorage.setItem(`${CHAT_FOLDERS_CACHE_PREFIX}${cleanUid}`, JSON.stringify(folders));
   } catch {
     // ignore storage errors
   }
 }
 
-function loadCachedConversations(): Conversation[] {
+function loadCachedConversations(uid?: string | null): Conversation[] {
+  const cleanUid = resolveCacheUid(uid);
+  if (!cleanUid) return [];
   try {
-    const raw = localStorage.getItem(CHAT_CONVERSATIONS_STORAGE_KEY);
-    if (!raw) return createDefaultStarterConversations();
+    const raw = localStorage.getItem(`${CHAT_CONVERSATIONS_CACHE_PREFIX}${cleanUid}`);
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return createDefaultStarterConversations();
-    }
+    if (!Array.isArray(parsed)) return [];
     return parsed.filter((item) => item && typeof item.id === "number" && Array.isArray(item.messages));
   } catch {
-    return createDefaultStarterConversations();
+    return [];
   }
 }
 
-function saveCachedConversations(conversations: Conversation[]): void {
+function saveCachedConversations(conversations: Conversation[], uid?: string | null): void {
+  const cleanUid = resolveCacheUid(uid);
+  if (!cleanUid) return;
   try {
-    localStorage.setItem(CHAT_CONVERSATIONS_STORAGE_KEY, JSON.stringify(conversations));
+    localStorage.setItem(`${CHAT_CONVERSATIONS_CACHE_PREFIX}${cleanUid}`, JSON.stringify(conversations));
   } catch {
     // ignore storage errors
+  }
+}
+
+function clearAppLocalCaches(uid?: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    const legacyKeys = [
+      "ony_daily_mood_checkins_v1",
+      "ony_chat_folders_v1",
+      "ony_chat_conversations_v1",
+      "ony_preferred_language",
+      "ony_read_notifications_v1",
+      "ony_notification_prefs_v1",
+      "ony_quiet_hours_v1",
+      "ony_globe_node_prefs_v1",
+    ];
+    legacyKeys.forEach((k) => window.localStorage.removeItem(k));
+    if (uid) {
+      window.localStorage.removeItem(`${MOOD_CACHE_PREFIX}${uid}`);
+      window.localStorage.removeItem(`${CHAT_FOLDERS_CACHE_PREFIX}${uid}`);
+      window.localStorage.removeItem(`${CHAT_CONVERSATIONS_CACHE_PREFIX}${uid}`);
+      window.localStorage.removeItem(`ony_profile_customization_v2_${uid}`);
+    } else {
+      const toRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (
+          k &&
+          (k.startsWith(MOOD_CACHE_PREFIX) ||
+            k.startsWith(CHAT_FOLDERS_CACHE_PREFIX) ||
+            k.startsWith(CHAT_CONVERSATIONS_CACHE_PREFIX) ||
+            k.startsWith("ony_profile_customization_v2_"))
+        ) {
+          toRemove.push(k);
+        }
+      }
+      toRemove.forEach((k) => window.localStorage.removeItem(k));
+    }
+    window.sessionStorage.removeItem("ony-show-posts");
+    window.sessionStorage.removeItem("ony_community_view");
+    window.sessionStorage.removeItem("ony_posts_selected_category");
+  } catch {
+    // ignore cleanup errors
   }
 }
 
@@ -475,8 +491,8 @@ function deduplicateMoodEntriesByDay(entries: MoodEntry[]): MoodEntry[] {
       (b.createdAt || "").localeCompare(a.createdAt || ""),
   );
 }
-type GlobeUser = { id: number; moodGlow: "bright" | "soft" | "dim" | "neutral"; moodKey?: string; moodLabel: string; discoverable: boolean; acceptsMessages: boolean; minLevel: number; lon: number; lat: number; isMe?: boolean };
-type Merchant = { name: string; category: string; offer: string; value: string; description: string; image: string; validity: string };
+type GlobeUser = FirestoreGlobeUser;
+type Merchant = FirestoreMerchant;
 type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string; imageUrl?: string; firestoreId?: string };
 type Post = FirestoreCommunityPost;
 
@@ -1054,12 +1070,159 @@ function AuthFlow(props: AuthFlowProps) {
   return <AuthFlowContent {...props} />;
 }
 
+function AppLockGate({
+  expectedHash,
+  biometricEnabled,
+  userEmail,
+  language,
+  onUnlock,
+  onSignOut,
+}: {
+  expectedHash: string;
+  biometricEnabled: boolean;
+  userEmail: string;
+  language: AppLanguage;
+  onUnlock: () => void;
+  onSignOut: () => void;
+}) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (pin.trim().length < 4) {
+      setError(
+        language === "Bahasa Melayu"
+          ? "Masukkan PIN sekurang-kurangnya 4 digit."
+          : language === "中文"
+            ? "请输入至少 4 位 PIN 码。"
+            : "Enter your 4+ digit App Lock PIN.",
+      );
+      return;
+    }
+    setChecking(true);
+    setError("");
+    try {
+      const hashed = await hashAppLockPin(pin.trim());
+      if (hashed === expectedHash) {
+        setPin("");
+        onUnlock();
+      } else {
+        setError(
+          language === "Bahasa Melayu"
+            ? "PIN tidak sepadan. Sila cuba lagi."
+            : language === "中文"
+              ? "PIN 码不正确，请重试。"
+              : "Incorrect PIN. Please try again.",
+        );
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="ONY App Lock"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 9999,
+        background: "var(--theme-bg, #0d161b)",
+        color: "var(--theme-text-primary, #f1f5f9)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "58px",
+          height: "58px",
+          borderRadius: "18px",
+          background: "var(--theme-surface-elevated)",
+          border: "1px solid var(--theme-border)",
+          display: "grid",
+          placeItems: "center",
+          color: "var(--theme-accent)",
+          marginBottom: "14px",
+        }}
+      >
+        <Icon name="shield" />
+      </div>
+      <h2 style={{ margin: "0 0 6px" }}>
+        {language === "Bahasa Melayu"
+          ? "ONY Dikunci"
+          : language === "中文"
+            ? "ONY 已锁定"
+            : "ONY is Locked"}
+      </h2>
+      <p style={{ margin: "0 0 18px", color: "var(--muted)", fontSize: "13px", maxWidth: "280px" }}>
+        {userEmail
+          ? `${userEmail} · ${biometricEnabled ? "PIN" : "PIN"}`
+          : language === "Bahasa Melayu"
+            ? "Masukkan PIN kunci aplikasi anda untuk meneruskan."
+            : language === "中文"
+              ? "请输入您的应用锁 PIN 码以继续访问。"
+              : "Enter your App Lock PIN to unlock your sanctuary."}
+      </p>
+      <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: "280px", display: "grid", gap: "10px" }}>
+        <TextInput
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          value={pin}
+          onChange={(e) => {
+            setPin(e.target.value);
+            if (error) setError("");
+          }}
+          placeholder="••••"
+          style={{ textAlign: "center", letterSpacing: "0.35em", fontSize: "18px" }}
+        />
+        {error && (
+          <div className="form-error" role="alert">
+            <Icon name="info" />
+            <span>{error}</span>
+          </div>
+        )}
+        <Button className="full" type="submit" disabled={checking}>
+          {checking
+            ? language === "Bahasa Melayu"
+              ? "Menyemak…"
+              : language === "中文"
+                ? "正在验证…"
+                : "Unlocking…"
+            : language === "Bahasa Melayu"
+              ? "Buka Kunci"
+              : language === "中文"
+                ? "解锁应用"
+                : "Unlock ONY"}
+        </Button>
+        <Button className="full" variant="ghost" onClick={onSignOut}>
+          {language === "Bahasa Melayu"
+            ? "Log keluar akaun"
+            : language === "中文"
+              ? "退出当前账号"
+              : "Sign out instead"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 function AppInner() {
   const { language, setLanguage } = useLanguage();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [userPhone, setUserPhone] = useState("");
+  const [userProfileData, setUserProfileData] = useState<UserProfileData | null>(null);
   const [pendingInvite, setPendingInvite] = useState<TrustedInvitePayload | null>(() =>
     loadStoredPendingInvite(),
   );
@@ -1078,8 +1241,11 @@ function AppInner() {
     fontSizePercent,
     tokens,
     isDark,
+    settings,
+    updateSettings,
     syncWithDatabase,
     resetSettingsOnLogout,
+    retryPendingSync,
   } = useTheme();
   const theme = themeId as Theme;
   const setTheme = (newTheme: Theme) => {
@@ -1091,38 +1257,39 @@ function AppInner() {
   const [volume, setVolume] = useState(55);
   const [currentTrack, setCurrentTrack] = useState<CalmingTrack>(() => ambientMusicEngine.getCurrentTrack());
   const [showMusicModal, setShowMusicModal] = useState(false);
-  const [trustedName, setTrustedName] = useState("Alex Tan");
-  const [trustedEmail, setTrustedEmail] = useState("alex@ony.app");
-  const [trustedNumber, setTrustedNumber] = useState("012-345 6789");
+  const [trustedName, setTrustedName] = useState("");
+  const [trustedEmail, setTrustedEmail] = useState("");
+  const [trustedNumber, setTrustedNumber] = useState("");
   const [contactStatus, setContactStatus] = useState<ContactStatus>("none");
   const [outgoingTrustedRequests, setOutgoingTrustedRequests] = useState<FirestoreTrustedContactRequest[]>([]);
   const [incomingTrustedRequests, setIncomingTrustedRequests] = useState<FirestoreTrustedContactRequest[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [selectedMerchantName, setSelectedMerchantName] = useState("Ruang Rasa");
+  const [selectedMerchantName, setSelectedMerchantName] = useState("");
   const [selectedProvider, setSelectedProvider] = useState<HealthcareProvider>(() => VERIFIED_MALAYSIAN_PROVIDERS[0]);
   const [userCoords, setUserCoords] = useState<UserCoordinates | null>(() => loadCachedLocation());
-  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("trial");
-  const [freeUsage, setFreeUsage] = useState(0);
-  const freeLimit = 100;
-  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>(() => loadCachedMoodEntries());
+  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
   const [selectedCommunityUser, setSelectedCommunityUser] = useState<GlobeUser | null>(null);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
-  const [globeUsers, setGlobeUsers] = useState<GlobeUser[]>(DEFAULT_GLOBE_USERS);
-  const [posts, setPosts] = useState<Post[]>(DEFAULT_COMMUNITY_POSTS);
-  const [merchants, setMerchants] = useState<Merchant[]>(DEFAULT_MERCHANTS);
+  const [globeUsers, setGlobeUsers] = useState<GlobeUser[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [voucherClaims, setVoucherClaims] = useState<FirestoreVoucherClaim[]>([]);
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+  const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
+  const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([]);
   const [dbSyncing, setDbSyncing] = useState(false);
-  const [folders, setFolders] = useState<ChatFolder[]>(() => loadCachedChatFolders());
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadCachedConversations());
-  const [memories, setMemories] = useState<Memory[]>([
-    { id: 1, text: "I have exams coming up.", reason: "You mentioned this during a study-pressure chat.", active: true, category: "Study" },
-    { id: 2, text: "I prefer shorter replies.", reason: "You chose this in your conversation preferences.", active: true, category: "Preference" },
-    { id: 3, text: "I enjoy listening to music when stressed.", reason: "You said music helps you feel grounded.", active: true, category: "Wellbeing" },
-  ]);
-  const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
-  const [journalEntries, setJournalEntries] = useState<FirestoreJournalEntry[]>(() =>
-    loadCachedJournalEntries(),
+  const [folders, setFolders] = useState<ChatFolder[]>(() =>
+    DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f })),
   );
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
+  const [journalEntries, setJournalEntries] = useState<FirestoreJournalEntry[]>([]);
+  const [pwaUpdateReady, setPwaUpdateReady] = useState(false);
+  const [isAppLocked, setIsAppLocked] = useState(false);
+  const lockHiddenAtRef = useRef<number | null>(null);
+  const offlineStatus = useOfflineSyncStatus(currentUser?.uid ?? null);
   const [tab, setTab] = useState<Tab>("chat");
   const [screen, setScreen] = useState<Screen>("main");
   const [selectedToolkitGuideId, setSelectedToolkitGuideId] = useState<string | undefined>(undefined);
@@ -1176,12 +1343,14 @@ function AppInner() {
   };
 
   useEffect(() => {
-    saveCachedChatFolders(folders);
-  }, [folders]);
+    if (!currentUser?.uid) return;
+    saveCachedChatFolders(folders, currentUser.uid);
+  }, [folders, currentUser?.uid]);
 
   useEffect(() => {
-    saveCachedConversations(conversations);
-  }, [conversations]);
+    if (!currentUser?.uid) return;
+    saveCachedConversations(conversations, currentUser.uid);
+  }, [conversations, currentUser?.uid]);
 
   const isBottomNavVisible =
     authenticated &&
@@ -1209,9 +1378,83 @@ function AppInner() {
     return unsub;
   }, []);
 
+  // Register unified offline queue flush handler
   useEffect(() => {
-    applyAppearanceToDom(loadStoredAppearance());
+    setOfflineQueueFlushHandler(async (mutation) => {
+      if (!mutation.uid) return;
+      const p = (mutation.payload && typeof mutation.payload === "object"
+        ? mutation.payload
+        : {}) as Record<string, unknown>;
+      if (mutation.kind === "save_user_settings") {
+        await saveUserSettingsDoc(mutation.uid, p);
+      } else if (mutation.kind === "save_mood_checkin") {
+        await saveMoodEntry(mutation.uid, p as Parameters<typeof saveMoodEntry>[1]);
+      } else if (mutation.kind === "save_toolkit_completion") {
+        await recordToolkitCompletion(
+          mutation.uid,
+          String(p.toolId || ""),
+          String(p.title || ""),
+        );
+      } else if (mutation.kind === "save_conversation" && typeof p.id === "string") {
+        await saveConversation(
+          mutation.uid,
+          p.id,
+          p as Parameters<typeof saveConversation>[2],
+        );
+      } else if (mutation.kind === "save_journal_entry") {
+        await saveJournalEntry(
+          mutation.uid,
+          p as Parameters<typeof saveJournalEntry>[1],
+        );
+      } else if (mutation.kind === "upsert_globe_node") {
+        await updateGlobeUserNode(mutation.uid, p);
+      }
+    });
+    return () => {
+      setOfflineQueueFlushHandler(null);
+    };
   }, []);
+
+  // Listen for PWA service worker update notifications
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onUpdateReady = () => setPwaUpdateReady(true);
+    window.addEventListener("ony-pwa-update-ready", onUpdateReady);
+    return () => {
+      window.removeEventListener("ony-pwa-update-ready", onUpdateReady);
+    };
+  }, []);
+
+  // Enforce App Lock PIN on visibility return according to user's lock delay
+  useEffect(() => {
+    const appLockEnabled = Boolean(settings.appLock?.enabled && settings.appLock?.pinHash);
+    if (!authenticated || !appLockEnabled) {
+      setIsAppLocked(false);
+      lockHiddenAtRef.current = null;
+      return;
+    }
+
+    const delaySetting = settings.appLock?.lockAfter || settings.appLock?.lockDelay || "immediately";
+    const thresholdMs =
+      delaySetting === "5min" ? 300_000 : delaySetting === "1min" ? 60_000 : 0;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        lockHiddenAtRef.current = Date.now();
+      } else if (document.visibilityState === "visible") {
+        const hiddenAt = lockHiddenAtRef.current;
+        if (hiddenAt !== null && Date.now() - hiddenAt >= thresholdMs) {
+          setIsAppLocked(true);
+        }
+        lockHiddenAtRef.current = null;
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [authenticated, settings.appLock]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.visualViewport) return;
@@ -1297,67 +1540,65 @@ function AppInner() {
     };
   }, [pendingInvite?.inviterUid]);
 
-  // Seed shared database collections (Globe, Community Posts, Merchants) and subscribe live from Firestore
+  // Subscribe to public Community posts stream on mount (authenticated flows hydrate per-UID inside subscribeToAuthChanges)
   useEffect(() => {
     let active = true;
-    let unsubGlobe: (() => void) | null = null;
-
-    async function syncDatabase() {
-      setDbSyncing(true);
-      try {
-        await seedInitialDatabaseData().catch((e) => console.warn("[ONY] Seed warning:", e));
-
-        const [loadedGlobe, loadedPosts, loadedMerchants] = await Promise.all([
-          listGlobeUsers().catch(() => []),
-          listCommunityPosts().catch(() => []),
-          listMerchants().catch(() => []),
-        ]);
-
-        if (active) {
-          if (loadedGlobe && loadedGlobe.length > 0) {
-            setGlobeUsers(loadedGlobe);
-          }
-          if (loadedPosts && loadedPosts.length > 0) {
-            setPosts((prev) =>
-              deduplicateCommunityPostList([...loadedPosts, ...prev.filter((p) => !/^post_\d+$/.test(p.id) && !loadedPosts.some((lp) => lp.id === p.id))]),
-            );
-          }
-          if (loadedMerchants && loadedMerchants.length > 0) {
-            setMerchants(loadedMerchants);
-          }
-          writeSystemLog({
-            level: "info",
-            category: "sync",
-            action: "DATABASE_SYNCED",
-            message: "Connected to Cloud Firestore (ai-studio-onypwa-289f0eda-a42f-43da-8c66-8ac63f5d46a8). Synced live collections.",
-          }).catch(() => {});
-
-          unsubGlobe = subscribeVisibleGlobeUsers((liveUsers) => {
-            if (active && liveUsers.length > 0) {
-              setGlobeUsers(liveUsers);
-            }
-          });
+    setDbSyncing(true);
+    listCommunityPosts()
+      .then((loadedPosts) => {
+        if (active && loadedPosts) {
+          setPosts(deduplicateCommunityPostList(loadedPosts));
         }
-      } catch (err) {
-        console.warn("[ONY] Database fetch warning:", err);
-      } finally {
+      })
+      .catch((err) => console.warn("[ONY] Initial posts fetch notice:", err))
+      .finally(() => {
         if (active) setDbSyncing(false);
-      }
-    }
-    syncDatabase();
+      });
+
+    const unsubPosts = subscribeCommunityPosts(
+      (livePosts) => {
+        if (active) {
+          setPosts(deduplicateCommunityPostList(livePosts));
+        }
+      },
+      (err) => console.warn("[ONY] Community posts stream notice:", err),
+    );
+
     return () => {
       active = false;
-      if (unsubGlobe) unsubGlobe();
+      unsubPosts();
     };
   }, []);
 
-  // Listen to Firebase Authentication state and hydrate Firestore profile data
+  // Listen to Firebase Authentication state and hydrate Firestore per-UID data + real-time streams
   useEffect(() => {
-    const unsub = subscribeToAuthChanges(async (user) => {
+    const userUnsubsRef = { current: [] as (() => void)[] };
+    const cleanupUserListeners = () => {
+      userUnsubsRef.current.forEach((fn) => {
+        try {
+          fn();
+        } catch {
+          // ignore
+        }
+      });
+      userUnsubsRef.current = [];
+    };
+
+    const unsubAuth = subscribeToAuthChanges(async (user) => {
+      cleanupUserListeners();
       setCurrentUser(user);
       if (user) {
         setAuthenticated(true);
         if (user.displayName) setDisplayName(user.displayName);
+
+        // Immediately hydrate UID-scoped local caches while Firestore fetches resolve
+        const cachedMoods = loadCachedMoodEntries(user.uid);
+        if (cachedMoods.length > 0) setMoodEntries(cachedMoods);
+        const cachedJournals = loadCachedJournalEntries(user.uid);
+        if (cachedJournals.length > 0) setJournalEntries(cachedJournals);
+        setFolders(loadCachedChatFolders(user.uid));
+        setConversations(loadCachedConversations(user.uid));
+
         writeSystemLog({
           level: "audit",
           category: "auth",
@@ -1366,10 +1607,45 @@ function AppInner() {
           userId: user.uid,
           userEmail: user.email,
         }).catch(() => {});
+
         try {
-          await seedInitialUserData(user.uid).catch((e) => console.warn("[ONY] User seed notice:", e));
           await syncWithDatabase(user.uid).catch((e) => console.warn("[ONY] Theme sync notice:", e));
-          const profile = await getUserProfile(user.uid);
+          const [
+            profile,
+            loadedMerchants,
+            loadedClaims,
+            loadedBlocked,
+            loadedSavedIds,
+            loadedHiddenIds,
+            loadedMoods,
+            loadedMemories,
+            loadedJournals,
+            loadedFolders,
+            loadedChats,
+            loadedInbox,
+          ] = await Promise.all([
+            getUserProfile(user.uid).catch(() => null),
+            listMerchants().catch(() => []),
+            listVoucherClaims(user.uid).catch(() => []),
+            listBlockedUserIds(user.uid).catch(() => []),
+            listSavedPostIds(user.uid).catch(() => []),
+            listHiddenPostIds(user.uid).catch(() => []),
+            listMoodEntries(user.uid).catch(() => []),
+            listMemories(user.uid).catch(() => []),
+            listJournalEntries(user.uid).catch(() => []),
+            loadUserChatFolders(user.uid).catch(() => []),
+            listConversations(user.uid).catch(() => []),
+            listCommunityMessages(user.uid).catch(() => []),
+          ]);
+
+          setUserProfileData(profile);
+          if (loadedMerchants) setMerchants(loadedMerchants);
+          setVoucherClaims(loadedClaims);
+          setBlockedUserIds(loadedBlocked);
+          setSavedPostIds(loadedSavedIds);
+          setHiddenPostIds(loadedHiddenIds);
+          setMySupportMessages(loadedInbox);
+
           const resolvedName =
             profile?.displayName || user.displayName || user.email?.split("@")[0] || "Friend";
           const resolvedPhone = profile?.phoneNumber || "";
@@ -1382,7 +1658,7 @@ function AppInner() {
               displayName: resolvedName,
               email: user.email,
               phoneNumber: resolvedPhone || undefined,
-            });
+            }).catch(() => {});
           }
           if (profile) {
             if (profile.displayName) setDisplayName(profile.displayName);
@@ -1397,7 +1673,8 @@ function AppInner() {
             if (typeof profile.useActiveMemories === "boolean") setUseActiveMemories(profile.useActiveMemories);
             if (profile.onboardingCompleted) setOnboarding(9);
           }
-          const loadedMoods = await listMoodEntries(user.uid);
+
+          // Merge mood entries (Firestore authoritative; backfill offline-only UID-cached entries)
           const firestoreByDate = new Map<string, MoodEntry>();
           loadedMoods.forEach((m, idx) => {
             const dKey =
@@ -1415,10 +1692,7 @@ function AppInner() {
               reportAllowed: m.reportAllowed ?? true,
             });
           });
-
-          // Merge any locally cached daily mood entries and ensure they are persisted to Firestore
-          const cachedLocal = loadCachedMoodEntries();
-          for (const localEntry of cachedLocal) {
+          for (const localEntry of cachedMoods) {
             const dKey = getMoodDateKey(localEntry);
             if (!firestoreByDate.has(dKey)) {
               firestoreByDate.set(dKey, { ...localEntry, dateKey: dKey });
@@ -1433,37 +1707,37 @@ function AppInner() {
               }).catch((e) => console.warn("[ONY] Mood backfill notice:", e));
             }
           }
-
           const mergedMoods = deduplicateMoodEntriesByDay(Array.from(firestoreByDate.values()));
           setMoodEntries(mergedMoods);
-          saveCachedMoodEntries(mergedMoods);
-          const loadedMemories = await listMemories(user.uid);
-          if (loadedMemories.length > 0) {
-            setMemories(
-              loadedMemories.map((m, idx) => ({
-                id: idx + 1,
-                firestoreId: m.id,
-                text: m.text,
-                reason: m.reason,
-                category: m.category,
-                active: m.active,
-                kind: m.kind,
-              })),
-            );
-          }
-          const loadedJournals = await listJournalEntries(user.uid);
-          if (loadedJournals.length > 0) {
-            setJournalEntries(loadedJournals);
-            saveCachedJournalEntries(loadedJournals);
-          }
-          const [loadedFolders, loadedChats] = await Promise.all([
-            loadUserChatFolders(user.uid).catch(() => []),
-            listConversations(user.uid).catch(() => []),
-          ]);
+          saveCachedMoodEntries(mergedMoods, user.uid);
+
+          // Memories from Firestore (preserve firestoreId & imageUrl)
+          setMemories(
+            loadedMemories.map((m, idx) => ({
+              id: idx + 1,
+              firestoreId: m.id,
+              text: m.text,
+              reason: m.reason,
+              category: m.category,
+              active: m.active,
+              kind: m.kind,
+              imageUrl: m.imageUrl,
+            })),
+          );
+
+          // Journal entries from Firestore
+          setJournalEntries(loadedJournals);
+          saveCachedJournalEntries(loadedJournals, user.uid);
+
+          // Folders and chats from Firestore
           if (loadedFolders && loadedFolders.length > 0) {
             setFolders(loadedFolders);
-            saveCachedChatFolders(loadedFolders);
+            saveCachedChatFolders(loadedFolders, user.uid);
+          } else {
+            const defaultFolders = DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f }));
+            setFolders(defaultFolders);
           }
+
           if (loadedChats.length > 0) {
             const hydrated: Conversation[] = loadedChats.map((c, idx) => ({
               id: Number(c.id.replace(/\D/g, "")) || 101 + idx,
@@ -1481,24 +1755,80 @@ function AppInner() {
               messages: c.messages,
             }));
             setConversations(hydrated);
-            saveCachedConversations(hydrated);
+            saveCachedConversations(hydrated, user.uid);
+          } else {
+            setConversations([]);
           }
+
+          // Ensure signed-in user has their own Firestore globe node and subscribe to live globe + inbox
+          const latestMergedMood = mergedMoods[0];
+          const moodKey = latestMergedMood ? normalizeMoodKey(latestMergedMood.label, latestMergedMood.level) : "calm";
+          const moodGlow: "bright" | "soft" | "dim" | "neutral" = latestMergedMood
+            ? latestMergedMood.level >= 4
+              ? "bright"
+              : latestMergedMood.level === 3
+                ? "soft"
+                : "dim"
+            : "bright";
+          await ensureOwnGlobeNode(user.uid, {
+            moodKey,
+            moodLabel: moodKey,
+            moodGlow,
+          }).catch((e) => console.warn("[ONY] Ensure globe node notice:", e));
+
+          const initialGlobe = await listGlobeUsers(user.uid).catch(() => []);
+          setGlobeUsers(initialGlobe);
+
+          userUnsubsRef.current.push(
+            subscribeVisibleGlobeUsers(
+              (liveUsers) => {
+                setGlobeUsers(liveUsers);
+              },
+              user.uid,
+              (err) => console.warn("[ONY Globe] Stream notice:", err),
+            ),
+            subscribeIncomingCommunityMessages(
+              user.uid,
+              (liveMessages) => {
+                setMySupportMessages(liveMessages);
+              },
+              (err) => console.warn("[ONY Inbox] Stream notice:", err),
+            ),
+          );
         } catch (err) {
           console.warn("[ONY] Firestore initial fetch notice:", err);
         }
       } else {
-        // When not logged in / logged out, the first page must default strictly to English
+        setAuthenticated(false);
         setLanguage("English");
         setDisplayName("");
         setUserPhone("");
-        try {
-          localStorage.setItem("ony_preferred_language", "English");
-        } catch {
-          // ignore
-        }
+        setUserProfileData(null);
+        setGlobeUsers([]);
+        setMerchants([]);
+        setMoodEntries([]);
+        setMemories([]);
+        setJournalEntries([]);
+        setConversations([]);
+        setFolders(DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f })));
+        setMySupportMessages([]);
+        setVoucherClaims([]);
+        setBlockedUserIds([]);
+        setSavedPostIds([]);
+        setHiddenPostIds([]);
+        setTrustedName("");
+        setTrustedEmail("");
+        setTrustedNumber("");
+        setContactStatus("none");
+        setOutgoingTrustedRequests([]);
+        setIncomingTrustedRequests([]);
+        setIsAppLocked(false);
       }
     });
-    return () => unsub();
+    return () => {
+      cleanupUserListeners();
+      unsubAuth();
+    };
   }, []);
 
   // If the user opened an invite link from a friend, open the Trusted Contact screen automatically once signed in
@@ -1509,9 +1839,8 @@ function AppInner() {
     }
   }, [authenticated, pendingInvite?.inviterUid]);
 
-  const effectiveUid = currentUser?.uid || "guest_local_user";
-  const effectiveEmail =
-    currentUser?.email || `${displayName.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "guest"}@ony.app`;
+  const effectiveUid = currentUser?.uid || "";
+  const effectiveEmail = currentUser?.email || "";
 
   const refreshTrustedContactData = async () => {
     try {
@@ -1603,52 +1932,30 @@ function AppInner() {
 
   const pendingIncomingTrusted = incomingTrustedRequests.filter((r) => r.status === "pending");
 
-  const [mySupportMessages, setMySupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
-    DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
-      id: `seed_me_${i}`,
-      ...m,
-    })),
-  );
+  const [mySupportMessages, setMySupportMessages] = useState<FirestoreCommunityMessage[]>([]);
 
   const fetchMySupportMessages = async () => {
+    if (!currentUser?.uid) {
+      setMySupportMessages([]);
+      return;
+    }
     try {
-      let msgs = await listCommunityMessages("0");
-      if (!msgs || msgs.length === 0) {
-        const myDefaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0");
-        for (const item of myDefaults) {
-          await createCommunityMessage(item).catch(() => {});
-        }
-        msgs = await listCommunityMessages("0");
-      }
-      if (msgs && msgs.length > 0) {
-        setMySupportMessages(msgs);
-      }
+      const msgs = await listCommunityMessages(currentUser.uid);
+      setMySupportMessages(msgs);
     } catch (err) {
       console.warn("[ONY] Support message fetch notice:", err);
     }
   };
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated || !currentUser?.uid) return;
     void fetchMySupportMessages();
-  }, [authenticated]);
+  }, [authenticated, currentUser?.uid]);
 
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem("ony_read_notifications_v1");
-      if (!raw) return new Set();
-      const parsed = JSON.parse(raw);
-      return new Set(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      return new Set();
-    }
-  });
-
-  const saveReadNotificationIds = (nextSet: Set<string>) => {
-    try {
-      localStorage.setItem("ony_read_notifications_v1", JSON.stringify(Array.from(nextSet)));
-    } catch {}
-  };
+  const readNotificationIds = useMemo(
+    () => new Set<string>(settings.readNotificationIds || []),
+    [settings.readNotificationIds],
+  );
 
   const allNotifications: AppNotificationItem[] = useMemo(() => {
     const list: AppNotificationItem[] = [];
@@ -1813,8 +2120,7 @@ function AppInner() {
   const handleMarkAllRead = () => {
     const nextSet = new Set(readNotificationIds);
     allNotifications.forEach((n) => nextSet.add(n.id));
-    setReadNotificationIds(nextSet);
-    saveReadNotificationIds(nextSet);
+    updateSettings({ readNotificationIds: Array.from(nextSet).slice(-200) });
     notify("All notifications marked as read");
   };
 
@@ -1822,61 +2128,64 @@ function AppInner() {
     if (readNotificationIds.has(id)) return;
     const nextSet = new Set(readNotificationIds);
     nextSet.add(id);
-    setReadNotificationIds(nextSet);
-    saveReadNotificationIds(nextSet);
+    updateSettings({ readNotificationIds: Array.from(nextSet).slice(-200) });
+  };
+
+  const resetClientSessionState = (prevUid?: string | null) => {
+    clearAppLocalCaches(prevUid);
+    clearCommunityTranslationCache();
+    clearCommunityPostCaches(prevUid);
+    clearNodeInboxCaches(prevUid);
+    clearLocalJournalCache(prevUid);
+    clearOfflineQueue(prevUid);
+    vaultService.clearSearchIndex();
+    resetSettingsOnLogout();
+    setAuthenticated(false);
+    setOnboarding(0);
+    setDisplayName("");
+    setUserPhone("");
+    setUserProfileData(null);
+    setMoodEntries([]);
+    setMemories([]);
+    setJournalEntries([]);
+    setConversations([]);
+    setFolders(DEFAULT_CHAT_FOLDERS.map((f) => ({ ...f })));
+    setGlobeUsers([]);
+    setMySupportMessages([]);
+    setVoucherClaims([]);
+    setBlockedUserIds([]);
+    setSavedPostIds([]);
+    setHiddenPostIds([]);
+    setTrustedName("");
+    setTrustedEmail("");
+    setTrustedNumber("");
+    setContactStatus("none");
+    setIsAppLocked(false);
+    setLanguage("English");
   };
 
   const handleLogout = async () => {
+    const prevUid = currentUser?.uid ?? null;
     try {
       await logoutUser();
-      resetSettingsOnLogout();
-      setAuthenticated(false);
-      setOnboarding(0);
-      setDisplayName("");
-      setUserPhone("");
-      setLanguage("English");
-      try {
-        localStorage.setItem("ony_preferred_language", "English");
-      } catch {
-        // ignore
-      }
+      resetClientSessionState(prevUid);
       notify("Logged out successfully");
     } catch (e) {
       console.warn("[ONY] Logout notice:", e);
-      resetSettingsOnLogout();
-      setAuthenticated(false);
-      setOnboarding(0);
-      setDisplayName("");
-      setUserPhone("");
-      setLanguage("English");
-      try {
-        localStorage.setItem("ony_preferred_language", "English");
-      } catch {
-        // ignore
-      }
+      resetClientSessionState(prevUid);
     }
   };
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteAccount = async (reauthPassword?: string) => {
+    const prevUid = currentUser?.uid ?? null;
     try {
-      await deleteUserAccount();
-      resetSettingsOnLogout();
-      setAuthenticated(false);
-      setOnboarding(0);
-      setDisplayName("");
-      setUserPhone("");
-      setMoodEntries([]);
-      setMemories([]);
-      setLanguage("English");
-      try {
-        localStorage.setItem("ony_preferred_language", "English");
-      } catch {
-        // ignore
-      }
+      await deleteUserAccount(reauthPassword);
+      resetClientSessionState(prevUid);
       notify("Your account and all personal data have been deleted.");
     } catch (err) {
       console.warn("[ONY] Account deletion error:", err);
-      notify("Could not delete account. Please sign in again and retry.");
+      notify("Could not delete account. Please verify your credentials and retry.");
+      throw err;
     }
   };
 
@@ -2098,48 +2407,47 @@ function AppInner() {
   };
 
   const handleSetMoodEntries = (action: MoodEntry[] | ((prev: MoodEntry[]) => MoodEntry[])) => {
+    const uid = currentUser?.uid;
     setMoodEntries((prev) => {
       const rawNext = typeof action === "function" ? action(prev) : action;
       const next = deduplicateMoodEntriesByDay(rawNext);
-      saveCachedMoodEntries(next);
+      if (uid) {
+        saveCachedMoodEntries(next, uid);
 
-      if (currentUser) {
         const prevByDate = new Map(prev.map((item) => [getMoodDateKey(item), item]));
         const nextByDate = new Map(next.map((item) => [getMoodDateKey(item), item]));
 
-        // Save new or updated daily entries to Firestore (users/{uid}/moodCheckins/{YYYY-MM-DD})
         for (const [dKey, entry] of nextByDate.entries()) {
           const existing = prevByDate.get(dKey);
+          const payload = {
+            dateKey: dKey,
+            level: entry.level,
+            emoji: entry.emoji,
+            label: entry.label,
+            note: entry.note,
+            reportAllowed: entry.reportAllowed,
+            createdAt: entry.createdAt,
+          };
           if (!existing) {
-            saveMoodEntry(currentUser.uid, {
-              dateKey: dKey,
-              level: entry.level,
-              emoji: entry.emoji,
-              label: entry.label,
-              note: entry.note,
-              reportAllowed: entry.reportAllowed,
-              createdAt: entry.createdAt,
-            }).catch((e) => console.warn("[ONY] Mood save error:", e));
+            saveMoodEntry(uid, payload).catch((e) => {
+              console.warn("[ONY] Mood save queued offline:", e);
+              enqueueOfflineMutation(uid, "save_mood_checkin", payload);
+            });
           } else if (
             existing.reportAllowed !== entry.reportAllowed ||
             existing.level !== entry.level ||
             existing.note !== entry.note
           ) {
-            updateMoodEntry(currentUser.uid, dKey, {
-              level: entry.level,
-              emoji: entry.emoji,
-              label: entry.label,
-              note: entry.note,
-              reportAllowed: entry.reportAllowed,
-              dateKey: dKey,
-            }).catch((e) => console.warn("[ONY] Mood update error:", e));
+            updateMoodEntry(uid, dKey, payload).catch((e) => {
+              console.warn("[ONY] Mood update queued offline:", e);
+              enqueueOfflineMutation(uid, "save_mood_checkin", payload);
+            });
           }
         }
 
-        // Delete removed daily entries from Firestore
         for (const [dKey] of prevByDate.entries()) {
           if (!nextByDate.has(dKey)) {
-            deleteMoodEntry(currentUser.uid, dKey).catch((e) =>
+            deleteMoodEntry(uid, dKey).catch((e) =>
               console.warn("[ONY] Mood delete error:", e),
             );
           }
@@ -2153,17 +2461,55 @@ function AppInner() {
   const todayMoodEntry = moodEntries.find((entry) => getMoodDateKey(entry) === todayDateKey) || null;
 
   const handleSetMemories = (action: Memory[] | ((prev: Memory[]) => Memory[])) => {
+    const uid = currentUser?.uid;
     setMemories((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
-      if (currentUser && next.length > prev.length) {
-        const newest = next[0];
-        saveMemory(currentUser.uid, {
-          text: newest.text,
-          reason: newest.reason,
-          category: newest.category || "General",
-          active: newest.active,
-          kind: newest.kind,
-        }).catch((e) => console.warn("[ONY] Memory save error:", e));
+      if (uid) {
+        const prevById = new Map(prev.map((m) => [m.id, m]));
+        const nextIds = new Set(next.map((m) => m.id));
+
+        for (const item of next) {
+          const existing = prevById.get(item.id);
+          if (!existing) {
+            saveMemory(uid, {
+              text: item.text,
+              reason: item.reason,
+              category: item.category || "General",
+              active: item.active,
+              kind: item.kind,
+              imageUrl: item.imageUrl,
+            })
+              .then((fsId) => {
+                setMemories((curr) =>
+                  curr.map((m) => (m.id === item.id && !m.firestoreId ? { ...m, firestoreId: fsId } : m)),
+                );
+              })
+              .catch((e) => console.warn("[ONY] Memory save error:", e));
+          } else if (
+            existing.firestoreId &&
+            (existing.text !== item.text ||
+              existing.category !== item.category ||
+              existing.active !== item.active ||
+              existing.kind !== item.kind ||
+              existing.imageUrl !== item.imageUrl)
+          ) {
+            updateMemory(uid, existing.firestoreId, {
+              text: item.text,
+              category: item.category || "General",
+              active: item.active,
+              kind: item.kind,
+              imageUrl: item.imageUrl,
+            }).catch((e) => console.warn("[ONY] Memory update error:", e));
+          }
+        }
+
+        for (const oldItem of prev) {
+          if (!nextIds.has(oldItem.id) && oldItem.firestoreId) {
+            deleteMemory(uid, oldItem.firestoreId).catch((e) =>
+              console.warn("[ONY] Memory delete error:", e),
+            );
+          }
+        }
       }
       return next;
     });
@@ -2175,36 +2521,47 @@ function AppInner() {
   };
 
   const handleCreatePost = async (newPost: Omit<FirestoreCommunityPost, "id">) => {
-    try {
-      const id = await createCommunityPost(newPost);
-      const created: Post = {
-        ...newPost,
-        id: id || String(Date.now()),
-        likes: newPost.likeRecords?.length || 0,
-        likeRecords: newPost.likeRecords || [],
-        comments: newPost.comments || [],
-      };
-      setPosts((prev) => deduplicateCommunityPostList([created, ...prev]));
-      notify(language === "Bahasa Melayu" ? "Siaran berjaya diterbitkan" : language === "中文" ? "帖子已发布" : "Post published");
-    } catch (e) {
-      console.warn("[ONY] Post save warning:", e);
-      const fallbackCreated: Post = {
-        ...newPost,
-        id: String(Date.now()),
-        likes: newPost.likeRecords?.length || 0,
-        likeRecords: newPost.likeRecords || [],
-        comments: newPost.comments || [],
-      };
-      setPosts((prev) => deduplicateCommunityPostList([fallbackCreated, ...prev]));
-      notify("Post published");
+    if (!currentUser?.uid) {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Sila log masuk untuk menerbitkan siaran."
+          : language === "中文"
+            ? "请先登录后再发布帖子。"
+            : "Please sign in to publish a post.",
+      );
+      throw new Error("Authentication required to create post.");
     }
+    const id = await createCommunityPost({
+      ...newPost,
+      authorId: currentUser.uid,
+    });
+    const created: Post = {
+      ...newPost,
+      authorId: currentUser.uid,
+      id,
+      likes: newPost.likeRecords?.length || 0,
+      likeRecords: newPost.likeRecords || [],
+      comments: newPost.comments || [],
+    };
+    setPosts((prev) => deduplicateCommunityPostList([created, ...prev]));
+    notify(language === "Bahasa Melayu" ? "Siaran berjaya diterbitkan" : language === "中文" ? "帖子已发布" : "Post published");
   };
 
   const handleLikePost = async (postId: string) => {
+    if (!currentUser?.uid) {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Sila log masuk untuk bertindak balas."
+          : language === "中文"
+            ? "请先登录后再互动。"
+            : "Please sign in to react to posts.",
+      );
+      return;
+    }
     const post = posts.find((p) => p.id === postId) || (selectedPost?.id === postId ? selectedPost : undefined);
     if (!post) return;
-    const cleanUid = effectiveUid.trim() || "anonymous_user";
-    const cleanName = (displayName || "ONY Member").trim();
+    const cleanUid = currentUser.uid;
+    const cleanName = (displayName || currentUser.displayName || "ONY Member").trim();
     const currentLikes = Array.isArray(post.likeRecords) ? post.likeRecords : [];
     const alreadyLiked = currentLikes.some(
       (item) =>
@@ -2235,18 +2592,23 @@ function AppInner() {
       const saved = await toggleCommunityPostLike(post, { uid: cleanUid, name: cleanName });
       syncUpdatedPostInState(saved);
     } catch (e) {
+      syncUpdatedPostInState(post);
       console.warn("[ONY] Like post update notice:", e);
+      notify(
+        language === "Bahasa Melayu"
+          ? "Gagal mengemas kini reaksi."
+          : language === "中文"
+            ? "更新点赞失败，请重试。"
+            : "Could not update reaction.",
+      );
     }
   };
 
   const handleRefreshCommunityPosts = async (limitCount = 50) => {
     try {
       const fresh = await listCommunityPosts(limitCount);
-      if (fresh && fresh.length > 0) {
-        setPosts((prev) => {
-          const merged = deduplicateCommunityPostList([...fresh, ...prev.filter((p) => !fresh.some((f) => f.id === p.id))]);
-          return merged;
-        });
+      if (fresh) {
+        setPosts(deduplicateCommunityPostList(fresh));
       }
     } catch (e) {
       console.warn("[ONY] Community posts refresh notice:", e);
@@ -2274,21 +2636,14 @@ function AppInner() {
       saveJournalEntry(currentUser.uid, newEntry).catch((err) =>
         console.warn("[ONY] Journal post save notice:", err),
       );
-      saveMemory(currentUser.uid, {
-        text: `${post.title} — ${post.body}`,
-        reason: `Saved from ONY Community (${post.category})`,
-        category: post.category || "Community",
-        active: true,
-      }).catch(() => {});
     }
-    setMemories((prev) => [
+    handleSetMemories((prev) => [
       {
         id: Date.now(),
         text: `${post.title} — ${post.body}`,
         reason: `Saved from ONY Community (${post.category})`,
         category: post.category || "Community",
         active: true,
-        createdAt: now,
       },
       ...prev,
     ]);
@@ -2300,6 +2655,68 @@ function AppInner() {
           : "Saved to Memory Vault",
     );
   };
+
+  const handleBlockUserUid = async (targetUid: string) => {
+    const cleanTarget = targetUid.trim();
+    if (!cleanTarget || !currentUser?.uid || cleanTarget === currentUser.uid) return;
+    setBlockedUserIds((prev) => (prev.includes(cleanTarget) ? prev : [...prev, cleanTarget]));
+    try {
+      await blockCommunityUser(currentUser.uid, cleanTarget);
+    } catch (e) {
+      console.warn("[ONY] Block user warning:", e);
+    }
+  };
+
+  const handleUnblockUserUid = async (targetUid: string) => {
+    const cleanTarget = targetUid.trim();
+    if (!cleanTarget || !currentUser?.uid) return;
+    setBlockedUserIds((prev) => prev.filter((id) => id !== cleanTarget));
+    try {
+      await unblockCommunityUser(currentUser.uid, cleanTarget);
+    } catch (e) {
+      console.warn("[ONY] Unblock user warning:", e);
+    }
+  };
+
+  const handleToggleSavedPost = async (postId: string, saved: boolean) => {
+    if (!currentUser?.uid) return;
+    setSavedPostIds((prev) =>
+      saved ? (prev.includes(postId) ? prev : [...prev, postId]) : prev.filter((id) => id !== postId),
+    );
+    await setPostSavedState(currentUser.uid, postId, saved).catch((e) =>
+      console.warn("[ONY] Saved post state warning:", e),
+    );
+  };
+
+  const handleSetHiddenPost = async (postId: string, hidden: boolean) => {
+    if (!currentUser?.uid) return;
+    setHiddenPostIds((prev) =>
+      hidden ? (prev.includes(postId) ? prev : [...prev, postId]) : prev.filter((id) => id !== postId),
+    );
+    await setPostHiddenState(currentUser.uid, postId, hidden).catch((e) =>
+      console.warn("[ONY] Hidden post state warning:", e),
+    );
+  };
+
+  const handleClaimVoucher = async (merchant: Merchant) => {
+    if (!currentUser?.uid) {
+      throw new Error("Please sign in to claim a voucher.");
+    }
+    const claim = await claimMarketplaceVoucher(currentUser.uid, {
+      id: merchant.id,
+      name: merchant.name,
+      offer: merchant.offer,
+      value: merchant.value,
+    });
+    setVoucherClaims((prev) => [claim, ...prev.filter((c) => c.id !== claim.id)]);
+    return claim;
+  };
+
+  const activeClaimedVoucher = voucherClaims.find(
+    (c) =>
+      c.merchantName === selectedMerchantName ||
+      c.merchantId === selectedMerchantName.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+  );
 
   return (
     <NotificationsContext.Provider
@@ -2318,15 +2735,149 @@ function AppInner() {
           }
         >
           <div className={`environment environment-${theme}`} aria-hidden="true"><i /><i /><i /></div>
+          {(!offlineStatus.isOnline || offlineStatus.pendingCount > 0) && (
+            <div
+              role="status"
+              style={{
+                padding: "6px 12px",
+                background: "var(--theme-surface-elevated)",
+                borderBottom: "1px solid var(--theme-border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "8px",
+                fontSize: "12px",
+                color: "var(--theme-text-primary)",
+                zIndex: 60,
+              }}
+            >
+              <span>
+                {!offlineStatus.isOnline
+                  ? language === "Bahasa Melayu"
+                    ? `Luar talian · ${offlineStatus.pendingCount} perubahan beratur`
+                    : language === "中文"
+                      ? `离线模式 · ${offlineStatus.pendingCount} 项更改待同步`
+                      : `Offline · ${offlineStatus.pendingCount} change(s) queued`
+                  : language === "Bahasa Melayu"
+                    ? `Menyegerakkan ${offlineStatus.pendingCount} perubahan…`
+                    : language === "中文"
+                      ? `正在同步 ${offlineStatus.pendingCount} 项更改…`
+                      : `Syncing ${offlineStatus.pendingCount} pending change(s)…`}
+              </span>
+              {offlineStatus.isOnline && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void offlineStatus.retrySync();
+                    void retryPendingSync();
+                  }}
+                  style={{
+                    background: "var(--theme-primary)",
+                    color: "#fff",
+                    border: 0,
+                    borderRadius: "8px",
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {language === "Bahasa Melayu" ? "Cuba lagi" : language === "中文" ? "重试同步" : "Retry"}
+                </button>
+              )}
+            </div>
+          )}
+          {pwaUpdateReady && (
+            <div
+              role="status"
+              style={{
+                padding: "6px 12px",
+                background: "var(--theme-primary)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "8px",
+                fontSize: "12px",
+                zIndex: 60,
+              }}
+            >
+              <span>
+                {language === "Bahasa Melayu"
+                  ? "Versi baharu ONY tersedia"
+                  : language === "中文"
+                    ? "ONY 有新版本可用"
+                    : "A new version of ONY is ready"}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  (window as unknown as { __onyApplyPwaUpdate?: () => void }).__onyApplyPwaUpdate?.();
+                }}
+                style={{
+                  background: "rgba(255,255,255,0.2)",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.4)",
+                  borderRadius: "8px",
+                  padding: "4px 10px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {language === "Bahasa Melayu" ? "Muat semula" : language === "中文" ? "立即更新" : "Refresh"}
+              </button>
+            </div>
+          )}
+          {isAppLocked && settings.appLock?.enabled && settings.appLock?.pinHash && (
+            <AppLockGate
+              expectedHash={settings.appLock.pinHash}
+              biometricEnabled={Boolean(settings.appLock.biometricEnabled)}
+              userEmail={effectiveEmail}
+              language={language}
+              onUnlock={() => setIsAppLocked(false)}
+              onSignOut={() => void handleLogout()}
+            />
+          )}
           {screen === "main" ? (
             <>
               <main className={`main-content ${tab === "chat" ? "chat-tab-active" : ""}`}>
-                {tab === "chat" && <ChatHome navigate={navigate} goTab={goTab} displayName={displayName} companion={companion} persona={persona} setPersona={handleSetPersona} language={language} conversationStyle={conversationStyle} responseLength={responseLength} memoryConsent={memoryConsent} useActiveMemories={useActiveMemories} soundOn={soundOn} setSoundOn={handleSetSoundOn} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} conversations={conversations} setConversations={setConversations} activeChatId={activeChatId} setActiveChatId={setActiveChatId} selectedFolderId={selectedFolderId} folders={folders} onCreateFolder={handleCreateFolder} onPersistConversation={persistSingleConversation} onUpdateConversation={handleUpdateConversation} memories={memories} setMemories={handleSetMemories} todayMoodEntry={todayMoodEntry} subscriptionStatus={subscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} registerFreeUse={() => {
-                  if (subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly") return;
-                  const next = freeUsage + 1;
-                  setFreeUsage(next);
-                  if (next >= freeLimit) window.setTimeout(() => navigate("subscription"), 750);
-                }} notify={notify} onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} onOpenToolkitGuide={handleOpenToolkitGuide} preloadedTopic={preloadedChatTopic} onClearPreloadedTopic={() => setPreloadedChatTopic(undefined)} />}
+                {tab === "chat" && (
+                  <ChatHome
+                    navigate={navigate}
+                    goTab={goTab}
+                    displayName={displayName}
+                    companion={companion}
+                    persona={persona}
+                    setPersona={handleSetPersona}
+                    language={language}
+                    conversationStyle={conversationStyle}
+                    responseLength={responseLength}
+                    memoryConsent={memoryConsent}
+                    useActiveMemories={useActiveMemories}
+                    soundOn={soundOn}
+                    setSoundOn={handleSetSoundOn}
+                    currentTrack={currentTrack}
+                    onOpenMusicModal={() => setShowMusicModal(true)}
+                    conversations={conversations}
+                    setConversations={setConversations}
+                    activeChatId={activeChatId}
+                    setActiveChatId={setActiveChatId}
+                    selectedFolderId={selectedFolderId}
+                    folders={folders}
+                    onCreateFolder={handleCreateFolder}
+                    onPersistConversation={persistSingleConversation}
+                    onUpdateConversation={handleUpdateConversation}
+                    memories={memories}
+                    setMemories={handleSetMemories}
+                    todayMoodEntry={todayMoodEntry}
+                    notify={notify}
+                    onOpenMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }}
+                    onOpenToolkitGuide={handleOpenToolkitGuide}
+                    preloadedTopic={preloadedChatTopic}
+                    onClearPreloadedTopic={() => setPreloadedChatTopic(undefined)}
+                  />
+                )}
                 {tab === "memory" && (
                   <DigitalJournal
                     journalEntries={journalEntries}
@@ -2344,8 +2895,56 @@ function AppInner() {
                     onOpenBookChange={setIsWritingJournalBook}
                   />
                 )}
-                {tab === "community" && <Community navigate={navigate} onOpenCreatePost={(cat) => { setCreatePostInitialCategory(cat && cat !== "All" ? cat : "General"); navigate("post"); }} globeUsers={globeUsers} setGlobeUsers={setGlobeUsers} posts={posts} setPosts={setPosts} currentUid={effectiveUid} currentUserName={displayName} onLikePost={handleLikePost} onPostUpdated={syncUpdatedPostInState} onSavePostToVault={handleSaveCommunityPostToVault} onRefreshPosts={handleRefreshCommunityPosts} dbSyncing={dbSyncing} latestMood={moodEntries[0]} openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }} openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }} notify={notify} mySupportMessages={mySupportMessages} setMySupportMessages={setMySupportMessages} userCoords={userCoords} setUserCoords={setUserCoords} />}
-                {tab === "market" && <Marketplace navigate={navigate} merchants={merchants} dbSyncing={dbSyncing} openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }} />}
+                {tab === "community" && (
+                  <Community
+                    navigate={navigate}
+                    onOpenCreatePost={(cat) => { setCreatePostInitialCategory(cat && cat !== "All" ? cat : "General"); navigate("post"); }}
+                    globeUsers={globeUsers}
+                    setGlobeUsers={setGlobeUsers}
+                    posts={posts}
+                    setPosts={setPosts}
+                    currentUid={effectiveUid}
+                    currentUserName={displayName}
+                    blockedUserIds={blockedUserIds}
+                    onBlockUser={handleBlockUserUid}
+                    onUnblockUser={handleUnblockUserUid}
+                    savedPostIds={savedPostIds}
+                    onToggleSavedPost={handleToggleSavedPost}
+                    hiddenPostIds={hiddenPostIds}
+                    onSetHiddenPost={handleSetHiddenPost}
+                    seenPostIds={settings.seenPostIds || []}
+                    onMarkPostSeen={(postId) => {
+                      const prevSeen = settings.seenPostIds || [];
+                      if (!prevSeen.includes(postId)) {
+                        updateSettings({ seenPostIds: [...prevSeen, postId].slice(-300) });
+                      }
+                    }}
+                    autoTranslate={Boolean(settings.autoTranslateMessages)}
+                    onSetAutoTranslate={(val) => updateSettings({ autoTranslateMessages: val })}
+                    onLikePost={handleLikePost}
+                    onPostUpdated={syncUpdatedPostInState}
+                    onSavePostToVault={handleSaveCommunityPostToVault}
+                    onRefreshPosts={handleRefreshCommunityPosts}
+                    dbSyncing={dbSyncing}
+                    latestMood={moodEntries[0]}
+                    openPost={(post) => { setSelectedPost(post); navigate("postDetail"); }}
+                    openMember={(user) => { setSelectedCommunityUser(user); navigate("communityMember"); }}
+                    notify={notify}
+                    mySupportMessages={mySupportMessages}
+                    setMySupportMessages={setMySupportMessages}
+                    userCoords={userCoords}
+                    setUserCoords={setUserCoords}
+                  />
+                )}
+                {tab === "market" && (
+                  <Marketplace
+                    navigate={navigate}
+                    merchants={merchants}
+                    voucherClaims={voucherClaims}
+                    dbSyncing={dbSyncing}
+                    openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }}
+                  />
+                )}
                 {tab === "profile" && (
                   <Profile
                     navigate={navigate}
@@ -2358,7 +2957,6 @@ function AppInner() {
                     contactStatus={contactStatus}
                     pendingIncomingCount={pendingIncomingTrusted.length}
                     unreadNotificationsCount={unreadNotificationsCount}
-                    subscriptionStatus={subscriptionStatus}
                     onLogout={handleLogout}
                     onSelectLanguage={handleSelectLanguage}
                     effectiveEmail={effectiveEmail}
@@ -2381,7 +2979,7 @@ function AppInner() {
               {screen === "trend" && <MoodTrend back={back} entries={moodEntries} setEntries={handleSetMoodEntries} />}
               {screen === "safety" && <SafetyFlow back={back} navigate={navigate} />}
               {screen === "help" && <Help back={back} navigate={navigate} />}
-              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => void handleSelectLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={handleSetSoundOn} volume={volume} setVolume={handleSetVolume} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} notify={notify} onSave={() => {
+              {screen === "personalise" && <Personalise back={back} language={language} setLanguage={(v) => void handleSelectLanguage(v as AppLanguage)} conversationStyle={conversationStyle} setConversationStyle={setConversationStyle} responseLength={responseLength} setResponseLength={setResponseLength} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} theme={theme} setTheme={setTheme} companion={companion} setCompanion={setCompanion} persona={persona} setPersona={setPersona} soundOn={soundOn} setSoundOn={handleSetSoundOn} volume={volume} setVolume={setVolume} currentTrack={currentTrack} onOpenMusicModal={() => setShowMusicModal(true)} notify={notify} onSave={() => {
                 if (currentUser) {
                   updateUserProfile(currentUser.uid, {
                     theme,
@@ -2426,9 +3024,26 @@ function AppInner() {
                   notify={notify}
                 />
               )}
-            {screen === "subscription" && <Subscription back={back} openHelp={() => navigate("help")} status={subscriptionStatus} setStatus={setSubscriptionStatus} freeUsage={freeUsage} freeLimit={freeLimit} resetFreeUsage={() => setFreeUsage(0)} notify={notify} />}
-            {screen === "merchant" && <MerchantDetail back={back} navigate={navigate} merchants={merchants} merchantName={selectedMerchantName} notify={notify} />}
-            {screen === "voucher" && <Voucher back={back} merchants={merchants} merchantName={selectedMerchantName} />}
+            {screen === "subscription" && <Subscription back={back} openHelp={() => navigate("help")} />}
+            {screen === "merchant" && (
+              <MerchantDetail
+                back={back}
+                navigate={navigate}
+                merchants={merchants}
+                merchantName={selectedMerchantName}
+                claimedVoucher={activeClaimedVoucher}
+                onClaimVoucher={handleClaimVoucher}
+                notify={notify}
+              />
+            )}
+            {screen === "voucher" && (
+              <Voucher
+                back={back}
+                merchants={merchants}
+                merchantName={selectedMerchantName}
+                claimedVoucher={activeClaimedVoucher}
+              />
+            )}
             {screen === "post" && <CreatePost back={back} notify={notify} displayName={displayName} currentUid={effectiveUid} initialCategory={createPostInitialCategory} onPostCreated={handleCreatePost} />}
             {screen === "privacy" && <Privacy back={back} notify={notify} memoryCount={memories.length} useActiveMemories={useActiveMemories} setUseActiveMemories={setUseActiveMemories} reviewMemories={() => goTab("memory")} clearMemories={handleClearMemories} onDeleteAccount={handleDeleteAccount} navigate={navigate} />}
             {screen === "systemLogs" && <SystemLogsView back={back} notify={notify} currentUser={currentUser} />}
@@ -2478,7 +3093,15 @@ function AppInner() {
                 notify={notify}
               />
             )}
-            {screen === "communityMember" && selectedCommunityUser && <CommunityMember back={back} user={selectedCommunityUser} notify={notify} />}
+            {screen === "communityMember" && selectedCommunityUser && (
+              <CommunityMember
+                back={back}
+                user={selectedCommunityUser}
+                currentUid={effectiveUid}
+                onBlockUid={handleBlockUserUid}
+                notify={notify}
+              />
+            )}
             {screen === "guidelines" && <CommunityGuidelines back={back} />}
             {screen === "chatHistory" && (
               <ChatsLibraryScreen
@@ -2512,9 +3135,20 @@ function AppInner() {
                 post={posts.find((p) => p.id === selectedPost.id) || selectedPost}
                 currentUid={effectiveUid}
                 currentUserName={displayName}
+                isSaved={savedPostIds.includes(selectedPost.id)}
                 onLikePost={handleLikePost}
                 onPostUpdated={syncUpdatedPostInState}
                 onSavePostToVault={handleSaveCommunityPostToVault}
+                onReportPost={async (post, reason) => {
+                  if (!currentUser?.uid) return;
+                  await submitModerationReport({
+                    reporterUid: currentUser.uid,
+                    targetType: "post",
+                    targetId: post.id,
+                    targetAuthorId: post.authorId,
+                    reason,
+                  });
+                }}
                 onOpenHelp={() => navigate("help")}
                 notify={notify}
               />
@@ -2527,6 +3161,18 @@ function AppInner() {
                 onOpenMusicModal={() => setShowMusicModal(true)}
                 isMusicPlaying={soundOn}
                 onToggleMusic={() => handleSetSoundOn(!soundOn)}
+                onRecordCompletion={async (guideId, guideTitle) => {
+                  if (!currentUser?.uid) return;
+                  try {
+                    await recordToolkitCompletion(currentUser.uid, guideId, guideTitle);
+                  } catch (e) {
+                    enqueueOfflineMutation(currentUser.uid, "save_toolkit_completion", {
+                      toolId: guideId,
+                      title: guideTitle,
+                    });
+                    console.warn("[ONY] Toolkit completion queued:", e);
+                  }
+                }}
                 onSaveToVault={async (text, guideTitle) => {
                   const now = new Date().toISOString();
                   const dateKey = now.slice(0, 10);
@@ -2547,21 +3193,14 @@ function AppInner() {
                     saveJournalEntry(currentUser.uid, newEntry).catch((err) =>
                       console.warn("[ONY] Journal entry save notice:", err),
                     );
-                    saveMemory(currentUser.uid, {
-                      text,
-                      reason: `Toolkit exercise: ${guideTitle}`,
-                      category: "Reflections",
-                      active: true,
-                    }).catch(() => {});
                   }
-                  setMemories((prev) => [
+                  handleSetMemories((prev) => [
                     {
                       id: Date.now(),
                       text,
                       reason: `Toolkit exercise: ${guideTitle}`,
                       category: "Reflections",
                       active: true,
-                      createdAt: now,
                     },
                     ...prev,
                   ]);
@@ -2591,6 +3230,7 @@ function AppInner() {
                   }
                 }}
                 currentEmail={effectiveEmail}
+                initialProfile={userProfileData}
                 notify={notify}
                 currentUser={currentUser}
               />
@@ -2621,6 +3261,7 @@ function AppInner() {
                 back={back}
                 notify={notify}
                 userEmail={effectiveEmail}
+                currentUid={effectiveUid}
               />
             )}
             {screen === "reportProblem" && (
@@ -2629,6 +3270,7 @@ function AppInner() {
                 back={back}
                 notify={notify}
                 userEmail={effectiveEmail}
+                currentUid={effectiveUid}
               />
             )}
             {screen === "exportData" && (
@@ -2643,6 +3285,7 @@ function AppInner() {
               <DeleteAccountScreen
                 back={back}
                 onConfirmDelete={handleDeleteAccount}
+                currentUser={currentUser}
                 notify={notify}
               />
             )}
@@ -2738,10 +3381,29 @@ function AuthFlowContent({
     if (msg.includes("invalid-email")) {
       return "Please enter a valid email address.";
     }
+    if (msg.includes("popup-closed-by-user") || msg.includes("cancelled-popup-request")) {
+      return "Google sign-in was cancelled. You can try again anytime.";
+    }
+    if (msg.includes("account-exists-with-different-credential")) {
+      return "An account already exists with this email using another sign-in method.";
+    }
     if (msg.includes("network-request-failed")) {
       return "Network error. Please check your connection.";
     }
     return "Authentication failed. Please verify your details and try again.";
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await loginWithGoogle();
+      onComplete();
+    } catch (err) {
+      setError(translateFirebaseError(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogin = async (event: FormEvent) => {
@@ -2845,6 +3507,10 @@ function AuthFlowContent({
           <p>{t.auth_welcome_lead}</p>
           <Button className="full" onClick={() => setStage("register")}>{t.auth_create_account}</Button>
           <Button className="full" variant="secondary" onClick={() => setStage("login")}>{t.auth_login}</Button>
+          <Button className="full" variant="ghost" disabled={loading} onClick={() => void handleGoogleLogin()}>
+            {loading ? t.common_loading : "Continue with Google"}
+          </Button>
+          {error && <div className="form-error"><Icon name="info" />{error}</div>}
         </div>
       )}
       {stage === "login" && (
@@ -2863,6 +3529,9 @@ function AuthFlowContent({
           <TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="current-password" />
           {error && <div className="form-error"><Icon name="info" />{error}</div>}
           <Button className="full" type="submit" disabled={loading}>{loading ? t.common_loading : t.auth_login}</Button>
+          <Button className="full" variant="secondary" disabled={loading} onClick={() => void handleGoogleLogin()}>
+            Continue with Google
+          </Button>
           <Button variant="ghost" className="full" onClick={() => { setStage("forgot"); setError(""); }}>{t.auth_forgot_password_btn}</Button>
         </form>
       )}
@@ -2879,7 +3548,7 @@ function AuthFlowContent({
           <label className="field-label">{t.auth_email_label}</label>
           <TextInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" />
           <label className="field-label">{t.auth_phone_label}</label>
-          <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />
+          <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. +60 1X-XXX XXXX" autoComplete="tel" />
           <label className="field-label">{t.auth_password_label}</label>
           <TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
           <label className="field-label">{t.auth_confirm_password_label}</label>
@@ -2910,7 +3579,7 @@ function AuthFlowContent({
           <label className="field-label">{t.auth_name_label}</label>
           <TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={30} placeholder="Write your name or nickname..." />
           <label className="field-label">{t.auth_phone_label}</label>
-          <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. 012-345 6789" autoComplete="tel" />
+          <TextInput type="tel" value={userPhone} onChange={(event) => setUserPhone(event.target.value)} placeholder="e.g. +60 1X-XXX XXXX" autoComplete="tel" />
           {error && <div className="form-error"><Icon name="info" />{error}</div>}
           <Button className="full" type="submit">{t.onboarding_btn_continue}</Button>
         </form>
@@ -3554,7 +4223,7 @@ export function getOnyTimeGreeting(
   };
 }
 
-function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, folders, onCreateFolder, onPersistConversation, onUpdateConversation, memories, setMemories, todayMoodEntry, subscriptionStatus, freeUsage, freeLimit, registerFreeUse, notify, onOpenMerchant, currentTrack, onOpenMusicModal, onOpenToolkitGuide, preloadedTopic, onClearPreloadedTopic }: {
+function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona, language, conversationStyle, responseLength, memoryConsent, useActiveMemories, soundOn, setSoundOn, conversations, setConversations, activeChatId, setActiveChatId, selectedFolderId, folders, onCreateFolder, onPersistConversation, onUpdateConversation, memories, setMemories, todayMoodEntry, notify, onOpenMerchant, currentTrack, onOpenMusicModal, onOpenToolkitGuide, preloadedTopic, onClearPreloadedTopic }: {
   navigate: (s: Screen) => void; goTab: (t: Tab) => void; displayName: string; companion: Companion; persona: Persona;
   setPersona?: (p: Persona) => void;
   language: AppLanguage; conversationStyle: string; responseLength: string; memoryConsent: string; useActiveMemories: boolean;
@@ -3567,8 +4236,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   onUpdateConversation: (id: number, patch: Partial<Conversation>) => void;
   memories: Memory[]; setMemories: (items: Memory[]) => void;
   todayMoodEntry?: MoodEntry | null;
-  subscriptionStatus: SubscriptionStatus; freeUsage: number; freeLimit: number;
-  registerFreeUse: () => void; notify: (input: string | { text: string; actionLabel?: string; onAction?: () => void }) => void;
+  notify: (input: string | { text: string; actionLabel?: string; onAction?: () => void }) => void;
   onOpenMerchant?: (name: string) => void;
   currentTrack?: CalmingTrack;
   onOpenMusicModal?: () => void;
@@ -3880,8 +4548,6 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   }, [language]);
   const suggestions = useMemo(() => suggestedCards.map((c) => c.prompt), [suggestedCards]);
 
-  const isSubscribed = subscriptionStatus === "trial" || subscriptionStatus === "payg" || subscriptionStatus === "monthly";
-  const isLimitReached = !isSubscribed && freeUsage >= freeLimit;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -4010,10 +4676,6 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         setSpeakingMsgId(nextId);
         OnySpeechSynthesizer.getInstance().speak(response.message, nextId, language);
       }
-
-      if (response.safetyAction !== "urgent_safety_flow" && response.model !== "ony-resilient-fallback") {
-        registerFreeUse();
-      }
     } catch (err) {
       const message =
         err instanceof ChatServiceError
@@ -4038,11 +4700,6 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const reply = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || typing) return;
-    if (isLimitReached) {
-      notify("Message limit reached. Please choose a subscription plan.");
-      navigate("subscription");
-      return;
-    }
     setSavedMemoryId(null);
     setChatError(null);
     setFailedUserText(null);
@@ -4325,7 +4982,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!typing && !isLimitReached && input.trim()) {
+      if (!typing && input.trim()) {
         reply(input);
         if (textareaRef.current) {
           textareaRef.current.style.height = "auto";
@@ -4461,7 +5118,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
           welcomeGreeting={onyxGreeting.greeting}
           welcomeQuestion={onyxGreeting.question}
           starterCards={suggestedCards}
-          isLimitReached={isLimitReached}
+          isLimitReached={false}
           recentUserEcho={recentUserEcho}
           chatError={chatError}
           failedUserText={failedUserText}
@@ -4474,11 +5131,7 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
           jobContext={jobContext}
           relationshipContext={relationshipContext}
           onSelectStarter={(prompt) => {
-            if (!isLimitReached) {
-              reply(prompt);
-            } else {
-              navigate("subscription");
-            }
+            reply(prompt);
           }}
           onToggleSpeakMessage={toggleSpeakMessage}
           onOpenMerchant={onOpenMerchant}
@@ -4635,13 +5288,9 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
                       key={card.prompt}
                       type="button"
                       className="hero-suggestion-card"
-                      disabled={typing || isLimitReached}
+                      disabled={typing}
                       onClick={() => {
-                        if (!isLimitReached) {
-                          reply(card.prompt);
-                        } else {
-                          navigate("subscription");
-                        }
+                        reply(card.prompt);
                       }}
                     >
                       <div className="suggestion-card-left">
@@ -4710,9 +5359,9 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         micNotice={micNotice}
         typing={typing}
         keyboardOpen={keyboardOpen}
-        isLimitReached={isLimitReached}
-        freeUsage={freeUsage}
-        freeLimit={freeLimit}
+        isLimitReached={false}
+        freeUsage={0}
+        freeLimit={999999}
         persona={persona}
         personaOptions={personaOptions}
         language={language}
@@ -5524,23 +6173,60 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
   const [active, setActive] = useState(editing?.active ?? true);
   const [kind, setKind] = useState<"text" | "image">(editing?.kind || "text");
   const [imageUrl, setImageUrl] = useState<string | undefined>(editing?.imageUrl);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageFileName, setImageFileName] = useState<string | undefined>(editing?.imageUrl ? "Uploaded memory photo" : undefined);
+  const [saving, setSaving] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const save = () => {
-    const item: Memory = {
-      id: editing?.id || Date.now(),
-      text: text || (language === "Bahasa Melayu" ? "Memori imej istimewa" : language === "中文" ? "特别的心情照片" : "A special image memory"),
-      category: category || undefined,
-      active,
-      kind,
-      imageUrl: kind === "image" ? imageUrl : undefined,
-      imageTone: kind === "image" ? "forest" : undefined,
-      reason: editing?.reason || (language === "Bahasa Melayu" ? "Anda menambah ini terus ke Kubah Memori anda." : language === "中文" ? "您直接将其添加到了记忆宝库中。" : "You added this directly to your Memory Vault.")
-    };
-    setMemories(editing ? memories.map((memory) => memory.id === editing.id ? item : memory) : [item, ...memories]);
-    notify(editing ? t.memory_updated_toast : t.memory_added_toast);
-    back();
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      let resolvedImageUrl: string | undefined =
+        kind === "image" && imageUrl && !imageUrl.startsWith("data:") ? imageUrl : undefined;
+
+      if (kind === "image" && imageFile) {
+        const uid = auth.currentUser?.uid;
+        if (!uid) {
+          throw new Error(
+            language === "Bahasa Melayu"
+              ? "Sila log masuk untuk memuat naik foto memori."
+              : language === "中文"
+                ? "请先登录后再上传记忆照片。"
+                : "Please sign in before uploading a memory photo.",
+          );
+        }
+        const uploaded = await uploadUserMedia(uid, "journals", imageFile);
+        resolvedImageUrl = uploaded.url;
+      } else if (kind === "image" && !resolvedImageUrl) {
+        throw new Error(
+          language === "Bahasa Melayu"
+            ? "Sila pilih foto yang sah untuk dimuat naik."
+            : language === "中文"
+              ? "请选择需要上传的图片。"
+              : "Please select a photo to upload.",
+        );
+      }
+
+      const item: Memory = {
+        id: editing?.id || Date.now(),
+        firestoreId: editing?.firestoreId,
+        text: text || (language === "Bahasa Melayu" ? "Memori imej istimewa" : language === "中文" ? "特别的心情照片" : "A special image memory"),
+        category: category || undefined,
+        active,
+        kind,
+        imageUrl: kind === "image" ? resolvedImageUrl : undefined,
+        imageTone: kind === "image" ? "forest" : undefined,
+        reason: editing?.reason || (language === "Bahasa Melayu" ? "Anda menambah ini terus ke Kubah Memori anda." : language === "中文" ? "您直接将其添加到了记忆宝库中。" : "You added this directly to your Memory Vault."),
+      };
+      setMemories(editing ? memories.map((memory) => (memory.id === editing.id ? item : memory)) : [item, ...memories]);
+      notify(editing ? t.memory_updated_toast : t.memory_added_toast);
+      back();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not save memory.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -5562,6 +6248,7 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
+                  setImageFile(file);
                   const reader = new FileReader();
                   reader.onload = () => {
                     setImageUrl(reader.result as string);
@@ -5601,8 +6288,10 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
           <div><strong>{t.memory_allow_use}</strong><p>{t.memory_allow_use_sub}</p></div>
           <Toggle on={active} setOn={setActive} />
         </div>
-        <Button className="full" disabled={kind === "text" ? !text.trim() : !imageUrl} onClick={save}>{t.memory_save_btn}</Button>
-        <Button className="full" variant="secondary" onClick={back}>{t.common_cancel}</Button>
+        <Button className="full" disabled={saving || (kind === "text" ? !text.trim() : !imageUrl)} onClick={() => void save()}>
+          {saving ? t.common_loading : t.memory_save_btn}
+        </Button>
+        <Button className="full" variant="secondary" disabled={saving} onClick={back}>{t.common_cancel}</Button>
       </section>
     </>
   );
@@ -5610,38 +6299,29 @@ function AddMemory({ back, memories, setMemories, editing, notify }: {
 
 
 
-const GLOBE_PREFS_STORAGE_KEY = "ony_globe_node_prefs_v1";
-
-function loadCachedGlobePrefs(): { discoverable?: boolean; acceptsMessages?: boolean } {
-  try {
-    const raw = localStorage.getItem(GLOBE_PREFS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as { discoverable?: boolean; acceptsMessages?: boolean };
-  } catch {
-    // ignore storage errors
-  }
-  return {};
-}
-
-function saveCachedGlobePrefs(prefs: { discoverable: boolean; acceptsMessages: boolean }) {
-  try {
-    localStorage.setItem(GLOBE_PREFS_STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // ignore storage errors
-  }
-}
-
 function Community({
   navigate,
   onOpenCreatePost,
   openPost,
   openMember,
   notify,
-  globeUsers = DEFAULT_GLOBE_USERS,
+  globeUsers = [],
   setGlobeUsers,
   posts = [],
   setPosts,
-  currentUid = "guest_local_user",
+  currentUid = "",
   currentUserName = "ONY Member",
+  blockedUserIds = [],
+  onBlockUser,
+  onUnblockUser,
+  savedPostIds: propSavedPostIds,
+  onToggleSavedPost,
+  hiddenPostIds: propHiddenPostIds,
+  onSetHiddenPost,
+  seenPostIds: propSeenPostIds,
+  onMarkPostSeen,
+  autoTranslate: propAutoTranslate,
+  onSetAutoTranslate,
   onLikePost,
   onPostUpdated,
   onSavePostToVault,
@@ -5664,6 +6344,17 @@ function Community({
   setPosts?: React.Dispatch<React.SetStateAction<Post[]>>;
   currentUid?: string;
   currentUserName?: string;
+  blockedUserIds?: string[];
+  onBlockUser?: (uid: string) => Promise<void> | void;
+  onUnblockUser?: (uid: string) => Promise<void> | void;
+  savedPostIds?: string[];
+  onToggleSavedPost?: (postId: string, saved: boolean) => Promise<void> | void;
+  hiddenPostIds?: string[];
+  onSetHiddenPost?: (postId: string, hidden: boolean) => Promise<void> | void;
+  seenPostIds?: string[];
+  onMarkPostSeen?: (postId: string) => void;
+  autoTranslate?: boolean;
+  onSetAutoTranslate?: (value: boolean) => void;
   onLikePost?: (postId: string) => void;
   onPostUpdated?: (updated: Post) => void;
   onSavePostToVault?: (post: Post) => void;
@@ -5677,6 +6368,7 @@ function Community({
 }) {
   const { t, language } = useLanguage();
   const { postsViewMode, setPostsViewMode } = useTheme();
+  const cleanUid = currentUid.trim();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem("ony_posts_selected_category");
@@ -5691,11 +6383,24 @@ function Community({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [reportTargetPost, setReportTargetPost] = useState<Post | null>(null);
-  const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(() => loadHiddenPostIds());
-  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(() => loadSavedPostIds());
-  const [seenPostIds, setSeenPostIds] = useState<Set<string>>(() => loadSeenPostIds());
+  const [localHiddenPostIds, setLocalHiddenPostIds] = useState<Set<string>>(() => loadHiddenPostIds(cleanUid));
+  const [localSavedPostIds, setLocalSavedPostIds] = useState<Set<string>>(() => loadSavedPostIds(cleanUid));
+  const [localSeenPostIds, setLocalSeenPostIds] = useState<Set<string>>(() => loadSeenPostIds(cleanUid));
   const [postsFetchLimit, setPostsFetchLimit] = useState(50);
   const [reactionTick, setReactionTick] = useState(0);
+
+  const hiddenPostIds = useMemo(
+    () => (propHiddenPostIds ? new Set(propHiddenPostIds) : localHiddenPostIds),
+    [propHiddenPostIds, localHiddenPostIds],
+  );
+  const savedPostIds = useMemo(
+    () => (propSavedPostIds ? new Set(propSavedPostIds) : localSavedPostIds),
+    [propSavedPostIds, localSavedPostIds],
+  );
+  const seenPostIds = useMemo(
+    () => (propSeenPostIds ? new Set(propSeenPostIds) : localSeenPostIds),
+    [propSeenPostIds, localSeenPostIds],
+  );
 
   useEffect(() => {
     try {
@@ -5723,14 +6428,18 @@ function Community({
     return "globe";
   });
 
-  const meFromDb = globeUsers.find((u) => u.id === 0 || u.isMe);
-  const cachedPrefs = useMemo(() => loadCachedGlobePrefs(), []);
+  const isOwnGlobeNode = useCallback(
+    (u: GlobeUser) => Boolean(u.isMe || (cleanUid && u.ownerUid === cleanUid)),
+    [cleanUid],
+  );
+
+  const meFromDb = globeUsers.find(isOwnGlobeNode);
 
   const [discoverable, setDiscoverableState] = useState<boolean>(
-    () => cachedPrefs.discoverable ?? meFromDb?.discoverable ?? true,
+    () => meFromDb?.discoverable ?? false,
   );
   const [acceptMessages, setAcceptMessagesState] = useState<boolean>(
-    () => cachedPrefs.acceptsMessages ?? meFromDb?.acceptsMessages ?? true,
+    () => meFromDb?.acceptsMessages ?? true,
   );
 
   // Sync from live Firestore updates on own node
@@ -5738,10 +6447,6 @@ function Community({
     if (!meFromDb) return;
     setDiscoverableState(meFromDb.discoverable);
     setAcceptMessagesState(meFromDb.acceptsMessages);
-    saveCachedGlobePrefs({
-      discoverable: meFromDb.discoverable,
-      acceptsMessages: meFromDb.acceptsMessages,
-    });
   }, [meFromDb?.discoverable, meFromDb?.acceptsMessages]);
 
   const [selectedNodeInfo, setSelectedNodeInfo] = useState<{
@@ -5809,24 +6514,33 @@ function Community({
     [],
   );
 
-  // Coarsened coordinates derived from either userCoords or node 0's saved location
+  // Coarsened coordinates derived from either userCoords or user's saved node location
   const myCoarsenedLocation = useMemo(() => {
-    const rawLat = userCoords ? userCoords.lat : meFromDb?.lat ?? DEFAULT_GLOBE_USERS[0].lat;
-    const rawLon = userCoords ? userCoords.lng : meFromDb?.lon ?? DEFAULT_GLOBE_USERS[0].lon;
-    return coarsenCoordinates(rawLat, rawLon, 0);
-  }, [userCoords, meFromDb?.lat, meFromDb?.lon]);
+    const rawLat = userCoords ? userCoords.lat : meFromDb?.lat ?? 3.139;
+    const rawLon = userCoords ? userCoords.lng : meFromDb?.lon ?? 101.6869;
+    return coarsenCoordinates(rawLat, rawLon, cleanUid || "self");
+  }, [userCoords, meFromDb?.lat, meFromDb?.lon, cleanUid]);
 
   // Persist "Appear on the globe" toggle directly to Firestore + state (live update, no restart)
   const handleSetDiscoverable = useCallback(
     (next: boolean) => {
+      if (!cleanUid) {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Sila log masuk untuk mengemas kini keterlihatan nod."
+            : language === "中文"
+              ? "请先登录后再设置节点可见状态。"
+              : "Please sign in to update your node visibility.",
+        );
+        return;
+      }
       setDiscoverableState(next);
-      saveCachedGlobePrefs({ discoverable: next, acceptsMessages: acceptMessages });
       if (setGlobeUsers) {
         setGlobeUsers((prev) =>
-          prev.map((u) => (u.id === 0 || u.isMe ? { ...u, discoverable: next } : u)),
+          prev.map((u) => (isOwnGlobeNode(u) ? { ...u, discoverable: next } : u)),
         );
       }
-      void updateGlobeUserNode(0, {
+      void updateGlobeUserNode(cleanUid, {
         discoverable: next,
         moodGlow: myMoodGlow,
         moodKey: myMoodKey,
@@ -5858,20 +6572,29 @@ function Community({
         );
       }
     },
-    [acceptMessages, setGlobeUsers, myMoodGlow, myMoodKey, myCoarsenedLocation, notify, language],
+    [cleanUid, isOwnGlobeNode, setGlobeUsers, myMoodGlow, myMoodKey, myCoarsenedLocation, notify, language],
   );
 
   // Persist "Receive supportive messages" toggle directly to Firestore + state
   const handleSetAcceptMessages = useCallback(
     (next: boolean) => {
+      if (!cleanUid) {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Sila log masuk untuk mengemas kini tetapan mesej."
+            : language === "中文"
+              ? "请先登录后再调整留言设置。"
+              : "Please sign in to update messaging preferences.",
+        );
+        return;
+      }
       setAcceptMessagesState(next);
-      saveCachedGlobePrefs({ discoverable, acceptsMessages: next });
       if (setGlobeUsers) {
         setGlobeUsers((prev) =>
-          prev.map((u) => (u.id === 0 || u.isMe ? { ...u, acceptsMessages: next } : u)),
+          prev.map((u) => (isOwnGlobeNode(u) ? { ...u, acceptsMessages: next } : u)),
         );
       }
-      void updateGlobeUserNode(0, {
+      void updateGlobeUserNode(cleanUid, {
         acceptsMessages: next,
       }).catch((e) => console.warn("[ONY Globe] Could not persist acceptsMessages:", e));
 
@@ -5889,7 +6612,7 @@ function Community({
               : "Supportive messages turned off for your node",
       );
     },
-    [discoverable, setGlobeUsers, notify, language],
+    [cleanUid, isOwnGlobeNode, setGlobeUsers, notify, language],
   );
 
   const handleEnableLocation = async () => {
@@ -5897,20 +6620,23 @@ function Community({
     setLocationError(null);
     try {
       const coords = await requestDeviceLocation();
-      const coarse = coarsenCoordinates(coords.lat, coords.lng, 0);
+      const coarse = coarsenCoordinates(coords.lat, coords.lng, cleanUid || "self");
       if (setUserCoords) setUserCoords(coords);
       setLocationChoice("allowed");
       if (setGlobeUsers) {
         setGlobeUsers((prev) =>
           prev.map((u) =>
-            u.id === 0 || u.isMe ? { ...u, lat: coarse.lat, lon: coarse.lon } : u,
+            isOwnGlobeNode(u) ? { ...u, lat: coarse.lat, lon: coarse.lon, regionName: `${coarse.state}, ${coarse.country}` } : u,
           ),
         );
       }
-      void updateGlobeUserNode(0, {
-        lat: coarse.lat,
-        lon: coarse.lon,
-      }).catch(() => {});
+      if (cleanUid) {
+        void updateGlobeUserNode(cleanUid, {
+          lat: coarse.lat,
+          lon: coarse.lon,
+          regionName: `${coarse.state}, ${coarse.country}`,
+        }).catch(() => {});
+      }
       flyTo(coarse.lon, coarse.lat, 5.2, coarse.country, coarse.state);
       notify(
         language === "Bahasa Melayu"
@@ -5930,21 +6656,24 @@ function Community({
 
   const handleSelectManualArea = (area: MalaysianAreaItem) => {
     const coords = createManualLocation(area);
-    const coarse = coarsenCoordinates(coords.lat, coords.lng, 0);
+    const coarse = coarsenCoordinates(coords.lat, coords.lng, cleanUid || "self");
     if (setUserCoords) setUserCoords(coords);
     setLocationChoice("allowed");
     setLocationError(null);
     if (setGlobeUsers) {
       setGlobeUsers((prev) =>
         prev.map((u) =>
-          u.id === 0 || u.isMe ? { ...u, lat: coarse.lat, lon: coarse.lon } : u,
+          isOwnGlobeNode(u) ? { ...u, lat: coarse.lat, lon: coarse.lon, regionName: `${coarse.state}, ${coarse.country}` } : u,
         ),
       );
     }
-    void updateGlobeUserNode(0, {
-      lat: coarse.lat,
-      lon: coarse.lon,
-    }).catch(() => {});
+    if (cleanUid) {
+      void updateGlobeUserNode(cleanUid, {
+        lat: coarse.lat,
+        lon: coarse.lon,
+        regionName: `${coarse.state}, ${coarse.country}`,
+      }).catch(() => {});
+    }
     flyTo(coarse.lon, coarse.lat, 5.2, coarse.country, coarse.state);
     notify(
       language === "Bahasa Melayu"
@@ -5959,15 +6688,14 @@ function Community({
     clearCachedLocation();
     if (setUserCoords) setUserCoords(null);
     setLocationChoice("none");
-    const defaultCoarse = coarsenCoordinates(
-      DEFAULT_GLOBE_USERS[0].lat,
-      DEFAULT_GLOBE_USERS[0].lon,
-      0,
-    );
-    void updateGlobeUserNode(0, {
-      lat: defaultCoarse.lat,
-      lon: defaultCoarse.lon,
-    }).catch(() => {});
+    const defaultCoarse = coarsenCoordinates(3.139, 101.6869, cleanUid || "self");
+    if (cleanUid) {
+      void updateGlobeUserNode(cleanUid, {
+        lat: defaultCoarse.lat,
+        lon: defaultCoarse.lon,
+        regionName: `${defaultCoarse.state}, ${defaultCoarse.country}`,
+      }).catch(() => {});
+    }
     notify(
       language === "Bahasa Melayu"
         ? "Lokasi peranti dipadamkan"
@@ -5977,40 +6705,22 @@ function Community({
     );
   };
 
-  // Support messages sent specifically from others to MY node ("0" / "me" / currentUser.uid)
-  const [internalSupportMessages, setInternalSupportMessages] = useState<FirestoreCommunityMessage[]>(() =>
-    DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
-      id: `seed_me_${i}`,
-      ...m,
-    })),
-  );
+  const [internalSupportMessages, setInternalSupportMessages] = useState<FirestoreCommunityMessage[]>([]);
   const mySupportMessages = propMySupportMessages || internalSupportMessages;
   const setMySupportMessages = propSetMySupportMessages || setInternalSupportMessages;
   const [loadingMyMessages, setLoadingMyMessages] = useState(false);
   const [myMessagesError, setMyMessagesError] = useState<string | null>(null);
 
   const fetchMySupportMessages = async () => {
+    if (!cleanUid) {
+      setMySupportMessages([]);
+      return;
+    }
     setLoadingMyMessages(true);
     setMyMessagesError(null);
     try {
-      let msgs = await listCommunityMessages("0");
-      if (!msgs || msgs.length === 0) {
-        const myDefaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0");
-        for (const item of myDefaults) {
-          await createCommunityMessage(item).catch(() => {});
-        }
-        msgs = await listCommunityMessages("0");
-      }
-      if (msgs && msgs.length > 0) {
-        setMySupportMessages(msgs);
-      } else {
-        setMySupportMessages(
-          DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0").map((m, i) => ({
-            id: `seed_me_${i}`,
-            ...m,
-          })),
-        );
-      }
+      const msgs = await listCommunityMessages(cleanUid);
+      setMySupportMessages(msgs || []);
     } catch {
       setMyMessagesError(
         language === "Bahasa Melayu"
@@ -6025,40 +6735,61 @@ function Community({
   };
 
   useEffect(() => {
+    if (!cleanUid) return;
     void fetchMySupportMessages();
-  }, []);
+  }, [cleanUid]);
 
   useEffect(() => {
-    if (view === "myNode") {
+    if (view === "myNode" && cleanUid) {
       void fetchMySupportMessages();
     }
-  }, [view]);
+  }, [view, cleanUid]);
 
-  // Ensure the user's own node (id === 0 / isMe) reflects persisted privacy toggles, mood & coarsened coordinates
+  const blockedUidSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds]);
+
+  const ownFallbackNode: GlobeUser = useMemo(
+    () => ({
+      id: cleanUid ? getDeterministicNodeNumber(cleanUid) : 1,
+      ownerUid: cleanUid || "",
+      isMe: true,
+      moodGlow: myMoodGlow,
+      moodKey: myMoodKey,
+      moodLabel: myMoodKey,
+      discoverable,
+      acceptsMessages: acceptMessages,
+      minLevel: 1,
+      lat: myCoarsenedLocation.lat,
+      lon: myCoarsenedLocation.lon,
+      regionName: `${myCoarsenedLocation.state}, ${myCoarsenedLocation.country}`,
+    }),
+    [cleanUid, myMoodGlow, myMoodKey, discoverable, acceptMessages, myCoarsenedLocation],
+  );
+
+  // Ensure the user's own node reflects persisted privacy toggles, mood & coarsened coordinates
   const normalizedGlobeUsers: GlobeUser[] = useMemo(() => {
-    const hasMe = globeUsers.some((u) => u.id === 0 || u.isMe);
-    const baseList = hasMe ? globeUsers : [DEFAULT_GLOBE_USERS[0], ...globeUsers];
-    return baseList.map((u) =>
-      u.id === 0 || u.isMe
-        ? {
-            ...u,
-            id: 0,
-            isMe: true,
-            moodGlow: myMoodGlow,
-            moodKey: myMoodKey,
-            moodLabel: myMoodKey,
-            discoverable,
-            acceptsMessages: acceptMessages,
-            lat: myCoarsenedLocation.lat,
-            lon: myCoarsenedLocation.lon,
-          }
-        : u,
+    const visiblePeers = globeUsers.filter(
+      (u) => !isOwnGlobeNode(u) && !(u.ownerUid && blockedUidSet.has(u.ownerUid)),
     );
-  }, [globeUsers, myMoodGlow, myMoodKey, discoverable, acceptMessages, myCoarsenedLocation]);
+    const currentOwn = meFromDb
+      ? {
+          ...meFromDb,
+          isMe: true,
+          ownerUid: meFromDb.ownerUid || cleanUid || "",
+          moodGlow: myMoodGlow,
+          moodKey: myMoodKey,
+          moodLabel: myMoodKey,
+          discoverable,
+          acceptsMessages: acceptMessages,
+          lat: myCoarsenedLocation.lat,
+          lon: myCoarsenedLocation.lon,
+        }
+      : ownFallbackNode;
+    return [currentOwn, ...visiblePeers];
+  }, [globeUsers, isOwnGlobeNode, blockedUidSet, meFromDb, cleanUid, myMoodGlow, myMoodKey, discoverable, acceptMessages, myCoarsenedLocation, ownFallbackNode]);
 
   const myNodeResolved = useMemo(
-    () => resolveAndCoarsenLocation(myCoarsenedLocation.lat, myCoarsenedLocation.lon, 0),
-    [myCoarsenedLocation],
+    () => resolveAndCoarsenLocation(myCoarsenedLocation.lat, myCoarsenedLocation.lon, cleanUid || "self"),
+    [myCoarsenedLocation, cleanUid],
   );
 
   const displayData = useMemo(
@@ -6077,7 +6808,7 @@ function Community({
     [normalizedGlobeUsers, blockedNodeIds, myNodeResolved.country, myNodeResolved.state],
   );
 
-  const myNodeObject = normalizedGlobeUsers.find((u) => u.id === 0 || u.isMe) || DEFAULT_GLOBE_USERS[0];
+  const myNodeObject = normalizedGlobeUsers.find(isOwnGlobeNode) || ownFallbackNode;
 
   const cameraBreadcrumbCount = useMemo(
     () => getCameraVisibleCount(normalizedGlobeUsers, cameraLocation, blockedNodeIds),
@@ -6208,8 +6939,16 @@ function Community({
 
   const handleReportSupportMessage = useCallback(
     (msgId: string) => {
-      // TODO: Persist supportive message moderation reports (`communityMessageReports`) when backend endpoint is added.
-      void msgId;
+      if (cleanUid) {
+        const targetMsg = mySupportMessages.find((m) => m.id === msgId);
+        void submitModerationReport({
+          reporterUid: cleanUid,
+          targetType: "message",
+          targetId: msgId,
+          targetAuthorId: targetMsg?.fromUserId,
+          reason: "Reported from Anonymous Node inbox",
+        }).catch((e) => console.warn("[ONY] Message report notice:", e));
+      }
       notify(
         language === "Bahasa Melayu"
           ? "Mesej telah dilaporkan kepada penyederhana"
@@ -6218,14 +6957,17 @@ function Community({
             : "Message reported to moderators for review",
       );
     },
-    [language, notify],
+    [cleanUid, mySupportMessages, language, notify],
   );
 
   const deduplicatedPosts = useMemo(() => deduplicateCommunityPostList(posts), [posts]);
 
   const allVisiblePosts = useMemo(
-    () => deduplicatedPosts.filter((p) => !hiddenPostIds.has(p.id)),
-    [deduplicatedPosts, hiddenPostIds],
+    () =>
+      deduplicatedPosts.filter(
+        (p) => !hiddenPostIds.has(p.id) && !(p.authorId && blockedUidSet.has(p.authorId)),
+      ),
+    [deduplicatedPosts, hiddenPostIds, blockedUidSet],
   );
 
   const worldCategories = useMemo(
@@ -6233,15 +6975,22 @@ function Community({
     [deduplicatedPosts, hiddenPostIds, seenPostIds],
   );
 
-  const markPostViewed = useCallback((postId: string) => {
-    setSeenPostIds((prev) => {
-      if (prev.has(postId)) return prev;
-      const next = new Set(prev);
-      next.add(postId);
-      saveSeenPostIds(next);
-      return next;
-    });
-  }, []);
+  const markPostViewed = useCallback(
+    (postId: string) => {
+      if (onMarkPostSeen) {
+        onMarkPostSeen(postId);
+      } else {
+        setLocalSeenPostIds((prev) => {
+          if (prev.has(postId)) return prev;
+          const next = new Set(prev);
+          next.add(postId);
+          saveSeenPostIds(next, cleanUid);
+          return next;
+        });
+      }
+    },
+    [onMarkPostSeen, cleanUid],
+  );
 
   const shown = useMemo(() => {
     const activeCat = selectedCategory || "All";
@@ -6270,9 +7019,18 @@ function Community({
 
   const handleSelectPostReaction = useCallback(
     (postId: string, reaction: SupportiveReactionType) => {
+      if (!cleanUid) {
+        notify(
+          language === "Bahasa Melayu"
+            ? "Sila log masuk untuk bertindak balas."
+            : language === "中文"
+              ? "请先登录后再互动。"
+              : "Please sign in to react to posts.",
+        );
+        return;
+      }
       const targetPost = posts.find((p) => p.id === postId);
       if (!targetPost) return;
-      const cleanUid = currentUid.trim() || "anonymous_user";
       const cleanName = currentUserName.trim().toLowerCase();
       const records = Array.isArray(targetPost.likeRecords) ? targetPost.likeRecords : [];
       const alreadyLiked = records.some(
@@ -6295,17 +7053,21 @@ function Community({
         onLikePost?.(postId);
       }
     },
-    [posts, currentUid, currentUserName, onLikePost],
+    [posts, cleanUid, currentUserName, onLikePost, notify, language],
   );
 
   const handleHideCommunityPost = useCallback(
     (postId: string) => {
-      setHiddenPostIds((prev) => {
-        const next = new Set(prev);
-        next.add(postId);
-        saveHiddenPostIds(next);
-        return next;
-      });
+      if (onSetHiddenPost) {
+        void onSetHiddenPost(postId, true);
+      } else {
+        setLocalHiddenPostIds((prev) => {
+          const next = new Set(prev);
+          next.add(postId);
+          saveHiddenPostIds(next, cleanUid);
+          return next;
+        });
+      }
       notify({
         text:
           language === "Bahasa Melayu"
@@ -6315,16 +7077,20 @@ function Community({
               : "Post hidden from your feed",
         actionLabel: language === "Bahasa Melayu" ? "Buat asal" : language === "中文" ? "撤销" : "Undo",
         onAction: () => {
-          setHiddenPostIds((prev) => {
-            const next = new Set(prev);
-            next.delete(postId);
-            saveHiddenPostIds(next);
-            return next;
-          });
+          if (onSetHiddenPost) {
+            void onSetHiddenPost(postId, false);
+          } else {
+            setLocalHiddenPostIds((prev) => {
+              const next = new Set(prev);
+              next.delete(postId);
+              saveHiddenPostIds(next, cleanUid);
+              return next;
+            });
+          }
         },
       });
     },
-    [language, notify],
+    [onSetHiddenPost, cleanUid, language, notify],
   );
 
   const handleReportCommunityPost = useCallback(
@@ -6335,7 +7101,16 @@ function Community({
   );
 
   const handleConfirmReportCommunityPost = useCallback(
-    (_post: Post, _reason: string) => {
+    (post: Post, reason: string) => {
+      if (cleanUid) {
+        void submitModerationReport({
+          reporterUid: cleanUid,
+          targetType: "post",
+          targetId: post.id,
+          targetAuthorId: post.authorId,
+          reason,
+        }).catch((e) => console.warn("[ONY] Post report warning:", e));
+      }
       notify(
         language === "Bahasa Melayu"
           ? "Terima kasih. Siaran ditandakan untuk semakan moderasi."
@@ -6344,7 +7119,7 @@ function Community({
             : "Thank you. Post flagged for community moderation.",
       );
     },
-    [language, notify],
+    [cleanUid, language, notify],
   );
 
   const handleSavePostToVaultClick = useCallback(
@@ -6359,12 +7134,16 @@ function Community({
         );
         return;
       }
-      setSavedPostIds((prev) => {
-        const next = new Set(prev);
-        next.add(post.id);
-        saveSavedPostIds(next);
-        return next;
-      });
+      if (onToggleSavedPost) {
+        void onToggleSavedPost(post.id, true);
+      } else {
+        setLocalSavedPostIds((prev) => {
+          const next = new Set(prev);
+          next.add(post.id);
+          saveSavedPostIds(next, cleanUid);
+          return next;
+        });
+      }
       if (onSavePostToVault) {
         onSavePostToVault(post);
       } else {
@@ -6377,7 +7156,31 @@ function Community({
         );
       }
     },
-    [savedPostIds, onSavePostToVault, language, notify],
+    [savedPostIds, onToggleSavedPost, cleanUid, onSavePostToVault, language, notify],
+  );
+
+  const blockedSendersForMyNode: BlockedSenderEntry[] = useMemo(
+    () =>
+      blockedUserIds.map((id) => ({
+        id,
+        label:
+          language === "Bahasa Melayu"
+            ? "Ahli komuniti disekat"
+            : language === "中文"
+              ? "已屏蔽成员"
+              : "Blocked community member",
+        blockedAt: "",
+      })),
+    [blockedUserIds, language],
+  );
+
+  const handleBlockSenderFromInbox = useCallback(
+    async (msg: InboxMessage) => {
+      const targetUid = (msg.fromUserId || "").trim();
+      if (!targetUid || !onBlockUser) return;
+      await onBlockUser(targetUid);
+    },
+    [onBlockUser],
   );
 
   const handleRefreshPosts = useCallback(async () => {
@@ -6507,7 +7310,7 @@ function Community({
           node={selectedNodeInfo?.user ?? null}
           countryName={selectedNodeInfo?.country}
           stateName={selectedNodeInfo?.state}
-          isMe={Boolean(selectedNodeInfo && (selectedNodeInfo.user.isMe || selectedNodeInfo.user.id === 0))}
+          isMe={Boolean(selectedNodeInfo && isOwnGlobeNode(selectedNodeInfo.user))}
           isHiddenSelf={Boolean(selectedNodeInfo?.isHiddenSelf)}
           mySupportCount={mySupportMessages.length}
           language={language}
@@ -6525,7 +7328,15 @@ function Community({
             openMember(node);
           }}
           onReport={(node) => {
-            // TODO: Wire to a persistent Firestore moderation/reports collection when backend endpoint is added.
+            if (cleanUid) {
+              void submitModerationReport({
+                reporterUid: cleanUid,
+                targetType: "node",
+                targetId: node.ownerUid || String(node.id),
+                targetAuthorId: node.ownerUid,
+                reason: "Reported from 3D Community Globe",
+              }).catch((e) => console.warn("[ONY] Node report notice:", e));
+            }
             notify(
               language === "Bahasa Melayu"
                 ? `Terima kasih atas laporan anda untuk Ahli #${node.id}. Nod dihantar untuk semakan.`
@@ -6536,7 +7347,9 @@ function Community({
             setSelectedNodeInfo(null);
           }}
           onBlock={(node) => {
-            // TODO: Persist blocked node IDs once user blocklist backend endpoint is introduced.
+            if (node.ownerUid && onBlockUser) {
+              void onBlockUser(node.ownerUid);
+            }
             setBlockedNodeIds((prev) => {
               const next = new Set(prev);
               next.add(node.id);
@@ -6545,10 +7358,10 @@ function Community({
             setSelectedNodeInfo(null);
             notify(
               language === "Bahasa Melayu"
-                ? "Ahli tanpa nama disekat dan disembunyikan dalam sesi ini"
+                ? "Ahli tanpa nama telah disekat"
                 : language === "中文"
-                  ? "已屏蔽该匿名成员并从此视图移除"
-                  : "Anonymous member blocked and hidden for this session",
+                  ? "已屏蔽该匿名成员"
+                  : "Anonymous member blocked and hidden",
             );
           }}
         />
@@ -6768,10 +7581,13 @@ function Community({
     )}
     {view === "myNode" && (
       <MyNodeTab
+        currentUid={cleanUid}
         discoverable={discoverable}
         acceptMessages={acceptMessages}
         onSetDiscoverable={handleSetDiscoverable}
         onSetAcceptMessages={handleSetAcceptMessages}
+        autoTranslate={propAutoTranslate}
+        onSetAutoTranslate={onSetAutoTranslate}
         myMoodEmoji={latestMood ? latestMood.emoji : "🌱"}
         myMoodLabel={myMoodLabel}
         myMoodGlow={myMoodGlow}
@@ -6789,6 +7605,21 @@ function Community({
         onRefreshMessages={fetchMySupportMessages}
         onDeleteMessage={(id) => handleDeleteSupportMessage(id, true)}
         onReportMessage={handleReportSupportMessage}
+        onMarkMessagesRead={async (ids, unread) => {
+          await markCommunityMessagesRead(ids, !unread).catch((e) =>
+            console.warn("[ONY] Mark read notice:", e),
+          );
+        }}
+        onTranscriptResolved={(id, transcript) => {
+          void updateCommunityMessageTranscript(id, transcript).catch((e) =>
+            console.warn("[ONY] Transcript sync notice:", e),
+          );
+        }}
+        blockedSenders={blockedSendersForMyNode}
+        onBlockSender={handleBlockSenderFromInbox}
+        onUnblockSender={async (id) => {
+          if (onUnblockUser) await onUnblockUser(id);
+        }}
         detectingLocation={detectingLocation}
         locationChoice={locationChoice}
         onEnableLocation={handleEnableLocation}
@@ -6821,7 +7652,7 @@ function CreatePost({
   back,
   notify,
   displayName = "Anonymous",
-  currentUid = "guest_local_user",
+  currentUid = "",
   initialCategory = "General",
   onPostCreated,
 }: {
@@ -6844,6 +7675,7 @@ function CreatePost({
   const [media, setMedia] = useState<"text" | "image" | "voice">("text");
   const [guidelineError, setGuidelineError] = useState<string | null>(null);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageFileName, setImageFileName] = useState("");
 
   // Real voice recording state
@@ -6946,6 +7778,7 @@ function CreatePost({
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) {
+              setImageFile(f);
               const r = new FileReader();
               r.onload = () => {
                 setUploadedImage(r.result as string);
@@ -7052,43 +7885,72 @@ function CreatePost({
       </div>
     )}
     <div className="community-note"><Icon name="info" />{t.community_mod_notice}</div>
-    <Button className="full" disabled={submitting || !title || (media === "text" && !body) || (media === "voice" && !recordedAudio)} onClick={async () => {
-      const titleCheck = validateCommunityCommentText(title);
-      if (!titleCheck.valid) {
-        setGuidelineError(titleCheck.reason || "Title violates community guidelines.");
-        notify(language === "Bahasa Melayu" ? "Siaran disekat: melanggar garis panduan komuniti" : language === "中文" ? "发帖已拦截：违反社区准则" : "Post blocked: violates community guidelines");
-        return;
-      }
-      if (body.trim()) {
-        const bodyCheck = validateCommunityCommentText(body);
-        if (!bodyCheck.valid) {
-          setGuidelineError(bodyCheck.reason || "Post content violates community guidelines.");
+    <Button
+      className="full"
+      disabled={submitting || !title.trim() || (media === "text" && !body.trim()) || (media === "image" && !imageFile) || (media === "voice" && !recordedAudio)}
+      onClick={async () => {
+        const cleanUid = (currentUid || auth.currentUser?.uid || "").trim();
+        if (!cleanUid) {
+          notify(language === "Bahasa Melayu" ? "Sila log masuk untuk menerbitkan siaran." : language === "中文" ? "请先登录后再发布帖子。" : "Please sign in to publish a post.");
+          return;
+        }
+        const titleCheck = validateCommunityCommentText(title);
+        if (!titleCheck.valid) {
+          setGuidelineError(titleCheck.reason || "Title violates community guidelines.");
           notify(language === "Bahasa Melayu" ? "Siaran disekat: melanggar garis panduan komuniti" : language === "中文" ? "发帖已拦截：违反社区准则" : "Post blocked: violates community guidelines");
           return;
         }
-      }
-      const authorName = postAs === "Anonymous" ? "Anonymous" : `${displayName} · ONY profile`;
-      const postPayload: Omit<FirestoreCommunityPost, "id"> = {
-        author: authorName,
-        authorId: currentUid,
-        title: title.trim(),
-        body: (body || "Voice message shared with the community.").trim(),
-        category,
-        likes: 0,
-        likeRecords: [],
-        comments: [],
-        media: media === "text" ? undefined : media,
-        audioUrl: media === "voice" && recordedAudio ? recordedAudio.dataUrl : undefined,
-        audioDuration: media === "voice" && recordedAudio ? recordedAudio.duration : undefined,
-        createdAt: new Date().toISOString(),
-      };
-      if (onPostCreated) {
+        if (body.trim()) {
+          const bodyCheck = validateCommunityCommentText(body);
+          if (!bodyCheck.valid) {
+            setGuidelineError(bodyCheck.reason || "Post content violates community guidelines.");
+            notify(language === "Bahasa Melayu" ? "Siaran disekat: melanggar garis panduan komuniti" : language === "中文" ? "发帖已拦截：违反社区准则" : "Post blocked: violates community guidelines");
+            return;
+          }
+        }
         setSubmitting(true);
-        await onPostCreated(postPayload);
-        setSubmitting(false);
-      }
-      setPosted(true);
-    }}>{submitting ? (language === "Bahasa Melayu" ? "Menerbitkan…" : language === "中文" ? "正在发布…" : "Publishing…") : (language === "Bahasa Melayu" ? "Terbitkan siaran" : language === "中文" ? "发布帖子" : "Publish post")}</Button></section></>;
+        try {
+          let hostedImageUrl: string | undefined;
+          let hostedAudioUrl: string | undefined;
+          if (media === "image" && imageFile) {
+            const uploadedImg = await uploadCommunityMedia(cleanUid, "posts", imageFile);
+            hostedImageUrl = uploadedImg.url;
+          }
+          if (media === "voice" && recordedAudio?.blob) {
+            const uploadedVoice = await uploadCommunityMedia(cleanUid, "voice", recordedAudio.blob);
+            hostedAudioUrl = uploadedVoice.url;
+          }
+
+          const authorName = postAs === "Anonymous" ? "Anonymous" : `${displayName} · ONY profile`;
+          const postPayload: Omit<FirestoreCommunityPost, "id"> = {
+            author: authorName,
+            authorId: cleanUid,
+            title: title.trim(),
+            body: (body || "Voice message shared with the community.").trim(),
+            category,
+            likes: 0,
+            likeRecords: [],
+            comments: [],
+            media: media === "text" ? undefined : media,
+            imageUrl: hostedImageUrl,
+            audioUrl: hostedAudioUrl,
+            audioDuration: media === "voice" && recordedAudio ? recordedAudio.duration : undefined,
+            createdAt: new Date().toISOString(),
+          };
+          if (onPostCreated) {
+            await onPostCreated(postPayload);
+          }
+          setPosted(true);
+        } catch (err) {
+          notify(err instanceof Error ? err.message : "Could not publish post.");
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    >
+      {submitting ? (language === "Bahasa Melayu" ? "Menerbitkan…" : language === "中文" ? "正在发布…" : "Publishing…") : (language === "Bahasa Melayu" ? "Terbitkan siaran" : language === "中文" ? "发布帖子" : "Publish post")}
+    </Button>
+  </section></>;
 }
 
 function VoiceNote({
@@ -7183,9 +8045,19 @@ function VoiceNote({
 
 
 
-const fallbackMerchants: Merchant[] = DEFAULT_MERCHANTS;
-
-function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, dbSyncing }: { navigate: (s: Screen) => void; openMerchant: (name: string) => void; merchants?: Merchant[]; dbSyncing?: boolean }) {
+function Marketplace({
+  navigate,
+  openMerchant,
+  merchants = [],
+  voucherClaims = [],
+  dbSyncing,
+}: {
+  navigate: (s: Screen) => void;
+  openMerchant: (name: string) => void;
+  merchants?: Merchant[];
+  voucherClaims?: FirestoreVoucherClaim[];
+  dbSyncing?: boolean;
+}) {
   const { t, language } = useLanguage();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -7219,7 +8091,11 @@ function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, db
     }
     return c;
   };
-  const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
+  const list = merchants || [];
+  const claimedSet = useMemo(
+    () => new Set(voucherClaims.map((c) => c.merchantName.toLowerCase())),
+    [voucherClaims],
+  );
   const shown = list.filter((m) => (category === "All" || m.category === category) && `${m.name} ${m.offer}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <>
@@ -7289,26 +8165,128 @@ function Marketplace({ navigate, openMerchant, merchants = fallbackMerchants, db
             {t.market_view_all}
           </Button>
         </div>
-    <div className="voucher-list">{shown.map((m) => <button className="voucher-ticket" key={m.name} onClick={() => openMerchant(m.name)}><span className="voucher-ticket-stub"><img src={m.image} alt="" /><small>{getCatLabel(m.category)}</small><strong>{m.value}</strong></span><span className="voucher-ticket-body"><small>{getCatLabel(m.category)} · {language === "Bahasa Melayu" ? "Rakan" : language === "中文" ? "合作商户" : "Partner"}</small><strong>{m.name}</strong><b>{m.offer}</b><span>{m.description}</span><em>{m.validity}</em><i>{t.market_claim_voucher}</i></span></button>)}</div>
-    <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>{t.market_prof_banner_title}</strong><small>{t.market_prof_banner_desc}</small></span><Icon name="chevron" /></button>
-    <p className="disclaimer"><Icon name="info" /> {language === "Bahasa Melayu" ? "Semua keistimewaan rakan kongsi dan tawaran kesejahteraan telah disahkan bersama komuniti peniaga tempatan kami." : language === "中文" ? "所有合作专属礼遇及身心健康优惠均经由我们本地合作商户社区实名核实。" : "All partner privileges and wellness offers are verified with our local merchant community."}</p>
-  </section>
+        {shown.length === 0 ? (
+          <div className="empty mini-empty">
+            <Icon name="market" />
+            <p>
+              {dbSyncing
+                ? t.common_loading
+                : language === "Bahasa Melayu"
+                  ? "Tiada tawaran rakan kesejahteraan tersedia buat masa ini."
+                  : language === "中文"
+                    ? "暂无可用的合作商户礼遇。"
+                    : "No wellness partner offers are available right now."}
+            </p>
+          </div>
+        ) : (
+          <div className="voucher-list">
+            {shown.map((m) => {
+              const isClaimed = claimedSet.has(m.name.toLowerCase());
+              return (
+                <button className="voucher-ticket" key={m.id || m.name} onClick={() => openMerchant(m.name)}>
+                  <span className="voucher-ticket-stub">
+                    <img src={m.image} alt="" />
+                    <small>{getCatLabel(m.category)}</small>
+                    <strong>{m.value}</strong>
+                  </span>
+                  <span className="voucher-ticket-body">
+                    <small>{getCatLabel(m.category)} · {language === "Bahasa Melayu" ? "Rakan" : language === "中文" ? "合作商户" : "Partner"}</small>
+                    <strong>{m.name}</strong>
+                    <b>{m.offer}</b>
+                    <span>{m.description}</span>
+                    <em>{m.validity}</em>
+                    <i>{isClaimed ? (language === "Bahasa Melayu" ? "Baucar Aktif ›" : language === "中文" ? "已领取 ›" : "Claimed ›") : t.market_claim_voucher}</i>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>{t.market_prof_banner_title}</strong><small>{t.market_prof_banner_desc}</small></span><Icon name="chevron" /></button>
+        <p className="disclaimer"><Icon name="info" /> {language === "Bahasa Melayu" ? "Semua keistimewaan rakan kongsi dan tawaran kesejahteraan telah disahkan bersama komuniti peniaga tempatan kami." : language === "中文" ? "所有合作专属礼遇及身心健康优惠均经由我们本地合作商户社区实名核实。" : "All partner privileges and wellness offers are verified with our local merchant community."}</p>
+      </section>
     </>
   );
 }
 
-function MerchantDetail({ back, navigate, merchantName, notify, merchants = fallbackMerchants }: { back: () => void; navigate: (s: Screen) => void; merchantName: string; notify: (s: string) => void; merchants?: Merchant[] }) {
+function MerchantDetail({
+  back,
+  navigate,
+  merchantName,
+  notify,
+  merchants = [],
+  claimedVoucher,
+  onClaimVoucher,
+}: {
+  back: () => void;
+  navigate: (s: Screen) => void;
+  merchantName: string;
+  notify: (s: string) => void;
+  merchants?: Merchant[];
+  claimedVoucher?: FirestoreVoucherClaim;
+  onClaimVoucher?: (merchant: Merchant) => Promise<FirestoreVoucherClaim>;
+}) {
   const { t, language } = useLanguage();
-  const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
-  const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <><PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>{language === "Bahasa Melayu" ? "Tawaran Rakan" : language === "中文" ? "合作伙伴特惠" : "Partner Offer"}</span></div><div className="physical-voucher-main"><small>{merchant.category} · {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">ONY · PASS · 2026</div></div><div className="voucher-terms"><h3>{t.voucher_terms_title}</h3><p>{language === "Bahasa Melayu" ? "Sah untuk kegunaan sekali bagi setiap ahli di cawangan yang mengambil bahagian. Tunjukkan kod bar baucar digital semasa membuat pesanan. Tidak boleh ditukar dengan wang tunai atau digabungkan dengan promosi lain." : language === "中文" ? "每位会员在参与合作门市仅限使用一次。点单或核销时请出示数字条形码。不可兑换现金，亦不可与其他优惠叠加使用。" : "Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions."}</p></div><Button className="full redeem-voucher" onClick={() => { notify(language === "Bahasa Melayu" ? "Baucar diaktifkan! Tunjukkan kod bar di kaunter" : language === "中文" ? "优惠券已激活！请在柜台出示条形码" : "Voucher activated! Show barcode at counter"); navigate("voucher"); }}>{t.voucher_redeem_btn}</Button><p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Tunjukkan pas ini terus kepada juruwang rakan niaga untuk menebus." : language === "中文" ? "结账时直接向合作门市收银员出示此通行证即可兑换。" : "Show this pass directly to the partner cashier to redeem."}</p></section></>;
+  const [claiming, setClaiming] = useState(false);
+  const merchant = merchants.find((item) => item.name === merchantName) || merchants[0];
+  if (!merchant) {
+    return (
+      <>
+        <PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} />
+        <section className="page-pad">
+          <div className="empty">
+            <Icon name="market" />
+            <p>
+              {language === "Bahasa Melayu"
+                ? "Butiran rakan niaga tidak ditemui."
+                : language === "中文"
+                  ? "未找到该合作商户详情。"
+                  : "Partner offer details could not be loaded."}
+            </p>
+          </div>
+        </section>
+      </>
+    );
+  }
+  const handleActivate = async () => {
+    if (claiming) return;
+    setClaiming(true);
+    try {
+      if (onClaimVoucher && !claimedVoucher) {
+        await onClaimVoucher(merchant);
+      }
+      notify(language === "Bahasa Melayu" ? "Baucar diaktifkan! Tunjukkan kod bar di kaunter" : language === "中文" ? "优惠券已激活！请在柜台出示条形码" : "Voucher activated! Show barcode at counter");
+      navigate("voucher");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not activate voucher.");
+    } finally {
+      setClaiming(false);
+    }
+  };
+  return <><PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>{language === "Bahasa Melayu" ? "Tawaran Rakan" : language === "中文" ? "合作伙伴特惠" : "Partner Offer"}</span></div><div className="physical-voucher-main"><small>{merchant.category} · {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">{claimedVoucher?.voucherCode || "ONY · PASS"}</div></div><div className="voucher-terms"><h3>{t.voucher_terms_title}</h3><p>{language === "Bahasa Melayu" ? "Sah untuk kegunaan sekali bagi setiap ahli di cawangan yang mengambil bahagian. Tunjukkan kod bar baucar digital semasa membuat pesanan. Tidak boleh ditukar dengan wang tunai atau digabungkan dengan promosi lain." : language === "中文" ? "每位会员在参与合作门市仅限使用一次。点单或核销时请出示数字条形码。不可兑换现金，亦不可与其他优惠叠加使用。" : "Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions."}</p></div><Button className="full redeem-voucher" disabled={claiming} onClick={() => void handleActivate()}>{claiming ? t.common_loading : claimedVoucher ? (language === "Bahasa Melayu" ? "Lihat Pas Baucar" : language === "中文" ? "查看礼券凭证" : "View Active Voucher") : t.voucher_redeem_btn}</Button><p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Tunjukkan pas ini terus kepada juruwang rakan niaga untuk menebus." : language === "中文" ? "结账时直接向合作门市收银员出示此通行证即可兑换。" : "Show this pass directly to the partner cashier to redeem."}</p></section></>;
 }
 
-function Voucher({ back, merchantName, merchants = fallbackMerchants }: { back: () => void; merchantName: string; merchants?: Merchant[] }) {
+function Voucher({
+  back,
+  merchantName,
+  merchants = [],
+  claimedVoucher,
+}: {
+  back: () => void;
+  merchantName: string;
+  merchants?: Merchant[];
+  claimedVoucher?: FirestoreVoucherClaim;
+}) {
   const { t, language } = useLanguage();
-  const list = merchants && merchants.length > 0 ? merchants : fallbackMerchants;
-  const merchant = list.find((item) => item.name === merchantName) || list[0];
-  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{merchant.value}</h1><p>{merchant.offer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {merchant.name}</p><div className="voucher-code">ONY-PASS-{merchant.name.slice(0, 3).toUpperCase()}-2026</div><div className="barcode">|||| || ||| | |||| |||</div><small>{language === "Bahasa Melayu" ? "Pas Ahli Digital Aktif" : language === "中文" ? "有效数字会员凭证" : "Active Digital Member Pass"}</small></div><div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}><Icon name="check" />{language === "Bahasa Melayu" ? "Tunjukkan kod bar ini kepada kakitangan semasa membuat pesanan atau tempahan." : language === "中文" ? "在点单或预约核销时向店员出示此条形码即可。" : "Present this barcode to the staff upon placing your order or booking."}</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
+  const merchant = merchants.find((item) => item.name === merchantName) || merchants[0];
+  const displayName = claimedVoucher?.merchantName || merchant?.name || merchantName;
+  const displayOffer = claimedVoucher?.offer || merchant?.offer || "";
+  const displayValue = claimedVoucher?.value || merchant?.value || "Partner Pass";
+  const displayCode =
+    claimedVoucher?.voucherCode ||
+    `ONY-PASS-${displayName.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "O") || "ONY"}`;
+
+  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{displayValue}</h1><p>{displayOffer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {displayName}</p><div className="voucher-code">{displayCode}</div><div className="barcode">|||| || ||| | |||| |||</div><small>{language === "Bahasa Melayu" ? "Pas Ahli Digital Aktif" : language === "中文" ? "有效数字会员凭证" : "Active Digital Member Pass"}</small></div><div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}><Icon name="check" />{language === "Bahasa Melayu" ? "Tunjukkan kod bar ini kepada kakitangan semasa membuat pesanan atau tempahan." : language === "中文" ? "在点单或预约核销时向店员出示此条形码即可。" : "Present this barcode to the staff upon placing your order or booking."}</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
 }
 
 function Profile({
@@ -7322,7 +8300,6 @@ function Profile({
   contactStatus,
   pendingIncomingCount = 0,
   unreadNotificationsCount = 0,
-  subscriptionStatus,
   onLogout,
   onSelectLanguage,
   effectiveEmail,
@@ -7338,7 +8315,6 @@ function Profile({
   contactStatus: ContactStatus;
   pendingIncomingCount?: number;
   unreadNotificationsCount?: number;
-  subscriptionStatus: SubscriptionStatus;
   onLogout: () => void;
   onSelectLanguage: (lang: AppLanguage) => void;
   effectiveEmail?: string;
@@ -7347,7 +8323,7 @@ function Profile({
   const { t } = useLanguage();
   const currentLang = (language as AppLanguage) || "English";
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const storedProfile = loadStoredProfile();
+  const storedProfile = loadStoredProfile(currentUser?.uid);
 
   const contactLabel =
     pendingIncomingCount > 0
@@ -7360,15 +8336,12 @@ function Profile({
             ? `${trustedName} · ${currentLang === "Bahasa Melayu" ? "Permohonan ditolak" : currentLang === "中文" ? "已谢绝" : "Request declined"}`
             : currentLang === "Bahasa Melayu" ? "Tiada kenalan dipercayai disambungkan" : currentLang === "中文" ? "未绑定信任联系人" : "No trusted contact connected";
 
-  const subscriptionLabel = subscriptionStatus === "trial"
-    ? (currentLang === "Bahasa Melayu" ? "Percubaan Premium ONY · Baki 2 hari" : currentLang === "中文" ? "ONY 进阶试用 · 剩余 2 天" : "ONY Premium Trial · 2 days remaining")
-    : subscriptionStatus === "payg"
-      ? (currentLang === "Bahasa Melayu" ? "ONY Premium · RM5 / 3 hari" : currentLang === "中文" ? "ONY 进阶通行证 · RM5 / 3 天" : "ONY Premium · RM5 / 3 days")
-      : subscriptionStatus === "monthly"
-        ? (currentLang === "Bahasa Melayu" ? "ONY Premium · RM19.90 / bulan" : currentLang === "中文" ? "ONY 进阶月度通行证 · RM19.90 / 月" : "ONY Premium · RM19.90/month")
-        : subscriptionStatus === "trialEnded"
-          ? (currentLang === "Bahasa Melayu" ? "Percuma · Percubaan tamat" : currentLang === "中文" ? "免费版 · 试用已结束" : "Free · Trial ended")
-          : (currentLang === "Bahasa Melayu" ? "Percuma · Akses percuma" : currentLang === "中文" ? "免费版 · 开放使用" : "Free · Free access");
+  const subscriptionLabel =
+    currentLang === "Bahasa Melayu"
+      ? "Percuma · Akses penuh ruang tenang ONY"
+      : currentLang === "中文"
+        ? "免费版 · 完整心灵庇护所功能开放"
+        : "Free · Full Sanctuary Access";
 
   const languageDisplayLabel =
     language === "Bahasa Melayu"
@@ -7386,7 +8359,7 @@ function Profile({
         {/* 1. PROFILE HEADER (top of page) */}
         <SettingsHeader
           displayName={displayName || storedProfile.displayName || "ONY Member"}
-          email={effectiveEmail || currentUser?.email || "Edit profile & personal preferences"}
+          email={effectiveEmail || currentUser?.email || "Sign in to sync profile"}
           avatarUrl={storedProfile.avatarType === "photo" ? storedProfile.avatarUrl : undefined}
           presetAvatar={storedProfile.avatarType === "preset" ? storedProfile.presetAvatar : undefined}
           onEditProfile={() => navigate("editProfile")}
@@ -8264,443 +9237,80 @@ function Notifications({
   );
 }
 
-function NotificationSettings({
-  back,
-  notify,
-}: {
+function Subscription({ back, openHelp }: {
   back: () => void;
-  notify: (s: string) => void;
+  openHelp: () => void;
 }) {
   const { t, language } = useLanguage();
-  const [settings, setSettings] = useState<Record<string, boolean>>(() => {
-    try {
-      const stored = localStorage.getItem("ony_notification_prefs_v1");
-      if (stored) return JSON.parse(stored);
-    } catch {}
-    return {
-      "Daily check-in": true,
-      "Emergency contacts": true,
-      "Community activity": true,
-      "Supportive messages": true,
-      "Gentle follow-up": true,
-    };
-  });
-
-  const [quietHours, setQuietHours] = useState<{
-    enabled: boolean;
-    start: string;
-    end: string;
-  }>(() => {
-    try {
-      const stored = localStorage.getItem("ony_quiet_hours_v1");
-      if (stored) return JSON.parse(stored);
-    } catch {}
-    return {
-      enabled: true,
-      start: "22:00",
-      end: "08:00",
-    };
-  });
-
-  const handleSave = () => {
-    try {
-      localStorage.setItem("ony_notification_prefs_v1", JSON.stringify(settings));
-      localStorage.setItem("ony_quiet_hours_v1", JSON.stringify(quietHours));
-    } catch {}
-    writeSystemLog({
-      level: "info",
-      category: "privacy",
-      action: "NOTIFICATION_PREFERENCES_SAVED",
-      message: `Quiet hours: ${quietHours.enabled ? "Active (" + quietHours.start + "-" + quietHours.end + ")" : "Disabled"}. Updated category alert preferences.`,
-    }).catch(() => {});
-    notify(t.notif_saved_toast);
-    back();
-  };
-
-  return (
-    <>
-      <PageHeader
-        title={t.notif_settings_title}
-        subtitle={t.notif_settings_subtitle}
-        back={back}
-        hideNotifications={true}
-        action={
-          <Button
-            variant="primary"
-            className="header-save-btn"
-            onClick={handleSave}
-            title={t.notif_save_btn}
-          >
-            <Icon name="check" /> {t.common_save}
-          </Button>
-        }
-      />
-      <section className="page-pad">
-        <div className="card" style={{ padding: "16px", marginBottom: "16px" }}>
-          <div className="setting-section-header">
-            <span className="eyebrow">{language === "Bahasa Melayu" ? "Rehat & Ketenangan" : language === "中文" ? "静心安歇" : "Rest & Peace"}</span>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-              <div>
-                <h3 style={{ margin: 0 }}>🌙 {t.notif_quiet_hours}</h3>
-                <p style={{ margin: "2px 0 0", color: "var(--muted)", fontSize: "12px" }}>
-                  {t.notif_quiet_hours_desc}
-                </p>
-              </div>
-              <Toggle
-                on={quietHours.enabled}
-                setOn={(v) => setQuietHours((prev) => ({ ...prev, enabled: v }))}
-              />
-            </div>
-          </div>
-
-          {quietHours.enabled && (
-            <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px dashed var(--line)" }}>
-              <div className="quiet-hours-time-row">
-                <div className="quiet-hours-time-input">
-                  <label>{t.notif_bedtime}</label>
-                  <TextInput
-                    type="time"
-                    value={quietHours.start}
-                    onChange={(e) =>
-                      setQuietHours((prev) => ({ ...prev, start: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="quiet-hours-time-input">
-                  <label>{t.notif_wakeup}</label>
-                  <TextInput
-                    type="time"
-                    value={quietHours.end}
-                    onChange={(e) =>
-                      setQuietHours((prev) => ({ ...prev, end: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="quiet-hours-emergency-callout" style={{ marginTop: "12px" }}>
-                <Icon name="shield" />
-                <span>
-                  <strong>{language === "Bahasa Melayu" ? "Pengecualian Kecemasan:" : language === "中文" ? "紧急特殊覆盖：" : "Emergency Override:"}</strong> {t.notif_emergency_override}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="card" style={{ padding: "16px", marginBottom: "20px" }}>
-          <span className="eyebrow">{t.notif_categories_heading}</span>
-          <h3 style={{ margin: "4px 0 6px" }}>🔔 {language === "Bahasa Melayu" ? "Pilih Kemas Kini Yang Anda Terima" : language === "中文" ? "选择您希望接收的更新" : "Choose What Updates You Receive"}</h3>
-          <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: "14px" }}>
-            {language === "Bahasa Melayu" ? "Togol aktiviti yang anda ingin terima makluman dalam suapan pemberitahuan." : language === "中文" ? "自定义勾选您希望在通知列表中接收提醒的活动。" : "Toggle the activities you want to receive alerts for in your notification feed."}
-          </p>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            {Object.entries(settings).map(([name, on], idx, arr) => (
-              <div
-                className="setting-toggle"
-                key={name}
-                style={{
-                  padding: "10px 0",
-                  borderBottom: idx === arr.length - 1 ? "none" : "1px solid var(--line)",
-                }}
-              >
-                <div style={{ paddingRight: "10px" }}>
-                  <strong style={{ fontSize: "13.5px" }}>
-                    {name === "Daily check-in"
-                      ? (language === "Bahasa Melayu" ? "Daftar masuk harian" : language === "中文" ? "每日心情打卡" : name)
-                      : name === "Emergency contacts"
-                      ? (language === "Bahasa Melayu" ? "Kenalan kecemasan" : language === "中文" ? "紧急联系人" : name)
-                      : name === "Community activity"
-                      ? (language === "Bahasa Melayu" ? "Aktiviti komuniti" : language === "中文" ? "社区互动提醒" : name)
-                      : name === "Supportive messages"
-                      ? (language === "Bahasa Melayu" ? "Mesej sokongan" : language === "中文" ? "暖心留言接收" : name)
-                      : (language === "Bahasa Melayu" ? "Kemas kini ONY" : language === "中文" ? "ONY 温馨回访" : name)}
-                  </strong>
-                  <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "var(--muted)" }}>
-                    {name === "Daily check-in"
-                      ? (language === "Bahasa Melayu" ? "Peringatan lembut untuk daftar masuk emosi harian anda." : language === "中文" ? "每日心情状态登记的温和提醒。" : "Gentle reminder for your daily mood check-in.")
-                      : name === "Emergency contacts"
-                      ? (language === "Bahasa Melayu" ? "Permintaan dan pengesahan daripada kenalan kecemasan dipercayai anda." : language === "中文" ? "来自您信任的紧急联系人的申请与确认通知。" : "Requests and confirmations from your trusted emergency contacts.")
-                      : name === "Community activity"
-                      ? (language === "Bahasa Melayu" ? "Apabila ahli lain menyukai atau mengulas siaran komuniti anda." : language === "中文" ? "当其他同伴点赞或评论您的社区发帖时。" : "When other members like or comment on your community posts.")
-                      : name === "Supportive messages"
-                      ? (language === "Bahasa Melayu" ? "Apabila ahli tanpa nama menghantar kata semangat ke nod glob anda." : language === "中文" ? "当匿名成员向您的星球节点发送暖心鼓励时。" : "When anonymous members send encouragement to your globe node.")
-                      : (language === "Bahasa Melayu" ? "Refleksi susulan yang bermanfaat dan pemeriksaan lembut daripada ONY." : language === "中文" ? "来自 ONY 的跟进反思与日常问候。" : "Helpful follow-up reflections and gentle check-ins from ONY.")}
-                  </p>
-                </div>
-                <Toggle
-                  on={on}
-                  setOn={(v) => setSettings((prev) => ({ ...prev, [name]: v }))}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="notification-settings-save-bar">
-          <Button className="full" variant="primary" onClick={handleSave}>
-            <Icon name="check" /> {t.notif_save_btn}
-          </Button>
-          <Button variant="ghost" className="full" onClick={back}>
-            {language === "Bahasa Melayu" ? "Kembali ke Pemberitahuan" : language === "中文" ? "返回通知中心" : "Back to Notifications"}
-          </Button>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function Subscription({ back, openHelp, status, setStatus, freeUsage, freeLimit, resetFreeUsage, notify }: {
-  back: () => void; openHelp: () => void; status: SubscriptionStatus; setStatus: (status: SubscriptionStatus) => void;
-  freeUsage: number; freeLimit: number; resetFreeUsage: () => void; notify: (s: string) => void;
-}) {
-  const { t, language } = useLanguage();
-  const activate = (next: SubscriptionStatus, message: string) => {
-    setStatus(next);
-    if (next !== "free") resetFreeUsage();
-    notify(message);
-  };
-  const freeCard = (
-    <div className={`subscription-plan free-plan ${status === "free" || status === "trialEnded" ? "current" : ""}`}>
-      <div className="plan-heading">
-        <span>{t.sub_free_tier}</span>
-        {(status === "free" || status === "trialEnded") && <b>{t.sub_current_plan}</b>}
-      </div>
-      <h2>{t.sub_free_price}</h2>
-      <strong>{t.sub_rm0}</strong>
-      <ul>
-        <li>{t.sub_free_feat1}</li>
-        <li>{t.sub_free_feat2}</li>
-        <li>{t.sub_free_feat3}</li>
-        <li>{t.sub_free_feat4}</li>
-        <li>{t.sub_free_feat5}</li>
-      </ul>
-      {freeUsage >= freeLimit && (
-        <p className="allowance-note">{t.sub_allowance_reached}</p>
-      )}
-      <Button
-        variant="secondary"
-        className="full"
-        onClick={() => {
-          setStatus(status === "trialEnded" ? "trialEnded" : "free");
-          resetFreeUsage();
-          notify(t.sub_continue_free);
-          back();
-        }}
-      >
-        {t.sub_continue_free}
-      </Button>
-    </div>
-  );
-
-  const paygCard = (
-    <div className={`subscription-plan payg-plan ${status === "payg" ? "current" : ""}`}>
-      <div className="plan-heading">
-        <span>{t.sub_payg_heading}</span>
-        {status === "payg" && <b>{t.sub_payg_active}</b>}
-      </div>
-      <h2>{t.sub_payg_title}</h2>
-      <strong>{t.sub_payg_price}</strong>
-      <p>{t.sub_payg_desc}</p>
-      <ul>
-        <li>{t.sub_payg_feat1}</li>
-        <li>{t.sub_payg_feat2}</li>
-        <li>{t.sub_payg_feat3}</li>
-        <li>{t.sub_payg_feat4}</li>
-      </ul>
-      {status === "payg" ? (
-        <>
-          <div className="days-remaining">2 {language === "Bahasa Melayu" ? "hari tinggal" : language === "中文" ? "天剩余" : "days remaining"}</div>
-          <Button className="full" variant="secondary" onClick={() => { activate("free", language === "Bahasa Melayu" ? "Kembali ke Pelan Percuma" : language === "中文" ? "已返回免费版" : "Returned to Free Plan"); }}>
-            {language === "Bahasa Melayu" ? "Tukar ke Peringkat Percuma" : language === "中文" ? "切换至免费版" : "Switch to Free Tier"}
-          </Button>
-        </>
-      ) : (
-        <>
-          <small className="best-for">{language === "Bahasa Melayu" ? "Terbaik untuk minggu peperiksaan atau waktu mencabar" : language === "中文" ? "适合考试周或需要深度支持的时刻" : "Best for exam weeks or intense moments"}</small>
-          <Button className="full" onClick={() => activate("payg", language === "Bahasa Melayu" ? "Pas Premium 3-Hari diaktifkan · Selamat datang ke Premium!" : language === "中文" ? "3天高级通行证已激活 · 欢迎体验 Premium！" : "3-Day Premium Pass activated · Welcome to Premium!")}>
-            {language === "Bahasa Melayu" ? "Dapatkan Pas 3-Hari (RM5)" : language === "中文" ? "获取3天通行证 (RM5)" : "Get 3-Day Pass (RM5)"}
-          </Button>
-        </>
-      )}
-    </div>
-  );
-
-  const monthlyCard = (
-    <div className={`subscription-plan monthly-plan ${status === "monthly" ? "current" : ""}`}>
-      <div className="plan-heading">
-        <span>{t.sub_monthly_heading}</span>
-        {status === "monthly" && <b>{t.sub_monthly_active}</b>}
-      </div>
-      <h2>{t.sub_monthly_title}</h2>
-      <strong>{t.sub_monthly_price}</strong>
-      <p>{t.sub_monthly_desc}</p>
-      <ul>
-        <li>{language === "Bahasa Melayu" ? "Akses Premium berterusan" : language === "中文" ? "全天候无间断高级版体验" : "Continuous Premium access"}</li>
-        <li>{language === "Bahasa Melayu" ? "Pengekalan kubah memori mendalam" : language === "中文" ? "永久深度记忆库沉淀" : "Deep memory vault retention"}</li>
-        <li>{language === "Bahasa Melayu" ? "Trend emosi penuh & analitik bulanan" : language === "中文" ? "完整情绪趋势与月度深度洞察" : "Full emotional trends & monthly analytics"}</li>
-        <li>{language === "Bahasa Melayu" ? "Kelajuan respons AI keutamaan & kesinambungan" : language === "中文" ? "优先 AI 响应速度与连贯对话" : "Priority AI response speed & continuity"}</li>
-        <li>{language === "Bahasa Melayu" ? "Nada teman & landskap bunyi eksklusif" : language === "中文" ? "专属陪伴语调与治愈白噪音" : "Exclusive companion tones & soundscapes"}</li>
-      </ul>
-      {status === "monthly" ? (
-        <div className="days-remaining">{language === "Bahasa Melayu" ? "Langganan Bulanan Aktif" : language === "中文" ? "月度订阅已生效" : "Active Monthly Subscription"}</div>
-      ) : (
-        <>
-          <small className="best-for">{language === "Bahasa Melayu" ? "Nilai terbaik untuk kesejahteraan berterusan" : language === "中文" ? "持续心理健康的最佳长伴选择" : "Best value for continuous well-being"}</small>
-          <Button className="full" onClick={() => activate("monthly", language === "Bahasa Melayu" ? "ONY Premium Bulanan aktif · Terima kasih menyokong ONY!" : language === "中文" ? "ONY 月度高级版已开通 · 感谢支持 ONY！" : "ONY Monthly Premium active · Thank you for supporting ONY!")}>
-            {language === "Bahasa Melayu" ? "Langgan untuk RM19.90/bulan" : language === "中文" ? "按月订阅 RM19.90/月" : "Subscribe for RM19.90/month"}
-          </Button>
-        </>
-      )}
-    </div>
-  );
-
-  if (status === "trial") {
-    return (
-      <>
-        <PageHeader title={t.sub_trial_title} subtitle={language === "Bahasa Melayu" ? "Percubaan Percuma 3-Hari" : language === "中文" ? "3天免费试用" : "3-Day Free Trial"} back={back} />
-        <section className="page-pad">
-          <div className="pricing-status trial">
-            <div className="success-mark"><Icon name="check" /></div>
-            <span className="eyebrow">{language === "Bahasa Melayu" ? "Percubaan Aktif" : language === "中文" ? "试用中" : "Trial Active"}</span>
-            <h1>{t.sub_trial_title}</h1>
-            <strong>{language === "Bahasa Melayu" ? "RM0 untuk 3 hari" : language === "中文" ? "3天免费 RM0" : "RM0 for 3 days"}</strong>
-            <p>{language === "Bahasa Melayu" ? "Semua keupayaan Premium aktif sepanjang tempoh percubaan anda." : language === "中文" ? "在试用期内，您可以尽情享受全部高级版功能。" : "All Premium capabilities are active during your trial period."}</p>
-            <div className="days-remaining">2 {language === "Bahasa Melayu" ? "hari tinggal" : language === "中文" ? "天剩余" : "days remaining"}</div>
-          </div>
-          <div className="benefits">
-            <h3>{language === "Bahasa Melayu" ? "Faedah percubaan percuma" : language === "中文" ? "免费试用专属权益" : "Free trial benefits"}</h3>
-            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Pemperibadian dipertingkat" : language === "中文" ? "更细致的专属个性化" : "Enhanced personalization"}</span>
-            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Pengekalan memori lebih mendalam & kesinambungan" : language === "中文" ? "更长久的记忆沉淀与话题连贯" : "Deeper memory retention and continuity"}</span>
-            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Analitik emosi lanjutan" : language === "中文" ? "进阶情绪多维洞察" : "Advanced mood analytics"}</span>
-            <span><Icon name="check" />{language === "Bahasa Melayu" ? "Pengalaman Premium diperluas" : language === "中文" ? "扩展的高级陪伴功能" : "Expanded Premium experience"}</span>
-          </div>
-          <Button className="full" onClick={() => activate("free", language === "Bahasa Melayu" ? "Kembali ke Pelan Percuma" : language === "中文" ? "已返回免费版" : "Returned to Free Plan")}>
-            {language === "Bahasa Melayu" ? "Tamatkan Percubaan & Tukar ke Percuma" : language === "中文" ? "结束试用并切换至免费版" : "End Trial & Switch to Free"}
-          </Button>
-          <Button className="full" variant="secondary" onClick={back}>
-            {language === "Bahasa Melayu" ? "Teruskan dengan Percubaan" : language === "中文" ? "继续试用体验" : "Continue with Trial"}
-          </Button>
-          <p className="disclaimer">
-            <Icon name="info" />
-            {language === "Bahasa Melayu" ? "Harga telus. Talian krisis dan sumber keselamatan penting sentiasa percuma." : language === "中文" ? "透明定价。核心危机热线与安全资源永远 100% 免费。" : "Transparent pricing. Essential safety and crisis hotlines are always accessible free of charge."}
-          </p>
-        </section>
-      </>
-    );
-  }
-
-  if (status === "trialEnded") {
-    return (
-      <>
-        <PageHeader title={language === "Bahasa Melayu" ? "Pilih Pelan Anda" : language === "中文" ? "选择适合您的方案" : "Choose Your Plan"} subtitle={language === "Bahasa Melayu" ? "Percubaan percuma anda telah tamat" : language === "中文" ? "您的免费试用期已结束" : "Your free trial has ended"} back={back} />
-        <section className="page-pad">
-          <div className="trial-ended">
-            <SmallLogo />
-            <span className="eyebrow">{language === "Bahasa Melayu" ? "Percubaan Selesai" : language === "中文" ? "试用结束" : "Trial Complete"}</span>
-            <h1>{language === "Bahasa Melayu" ? "Selamat datang ke babak seterusnya." : language === "中文" ? "开启下一步陪伴之旅。" : "Welcome to the next chapter."}</h1>
-            <p>{language === "Bahasa Melayu" ? "Anda boleh terus menggunakan ONY secara percuma selamanya, atau pilih pelan Premium yang sesuai dengan anda." : language === "中文" ? "您可以随时永久免费使用基础版 ONY，或选择更适合您节奏的高级版方案。" : "You can continue using ONY for free forever, or choose a Premium plan that fits your journey."}</p>
-          </div>
-          {freeCard}
-          <div className="paid-options-heading">
-            <span>{language === "Bahasa Melayu" ? "Pelan Premium" : language === "中文" ? "高级版选项" : "Premium Plans"}</span>
-            <p>{language === "Bahasa Melayu" ? "Pilih fleksibiliti berkala atau sokongan penuh berterusan." : language === "中文" ? "选择灵活的短期体验，或开启无间断的长久陪伴。" : "Choose occasional flexibility or continuous full support."}</p>
-          </div>
-          {paygCard}
-          {monthlyCard}
-          <Button className="full" variant="ghost" onClick={openHelp}>
-            <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan krisis penting" : language === "中文" ? "获取核心紧急支持" : "Access essential crisis support"}
-          </Button>
-          <p className="disclaimer">
-            <Icon name="info" />
-            {language === "Bahasa Melayu" ? "Pengebilan disulitkan. Batalkan atau tukar langganan anda pada bila-bila masa." : language === "中文" ? "安全加密账单。随时可以调整或取消您的方案。" : "Encrypted billing. Cancel or change your subscription at any time."}
-          </p>
-        </section>
-      </>
-    );
-  }
-
-  if (status === "payg") {
-    return (
-      <>
-        <PageHeader title={t.sub_payg_heading} subtitle={t.sub_payg_title} back={back} />
-        <section className="page-pad">
-          {paygCard}
-          <div className="community-note">
-            <Icon name="info" />
-            {language === "Bahasa Melayu" ? "Selepas pas 3 hari ini, akses akan kembali ke Percuma secara lancar melainkan anda memperbaharuinya." : language === "中文" ? "此 3 天通行证到期后，若未主动续订，将自动平滑转回免费版。" : "After this 3-day pass, access seamlessly returns to Free unless you renew."}
-          </div>
-          {monthlyCard}
-          <Button className="full" variant="ghost" onClick={openHelp}>
-            <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan penting" : language === "中文" ? "获取核心支持" : "Access essential support"}
-          </Button>
-        </section>
-      </>
-    );
-  }
-
-  if (status === "monthly") {
-    return (
-      <>
-        <PageHeader title={t.sub_monthly_heading} subtitle={t.sub_monthly_title} back={back} />
-        <section className="page-pad">
-          {monthlyCard}
-          <div className="community-note">
-            <Icon name="info" />
-            {language === "Bahasa Melayu" ? "Langganan bulanan anda diperbaharui secara automatik. Anda boleh mengurus atau membatalkannya pada bila-bila masa." : language === "中文" ? "您的月度订阅将自动按月续订。您可以随时在设置中管理或取消。" : "Your monthly subscription renews automatically. You can manage or cancel anytime."}
-          </div>
-          <Button className="full" variant="ghost" onClick={openHelp}>
-            <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan penting" : language === "中文" ? "获取核心支持" : "Access essential support"}
-          </Button>
-        </section>
-      </>
-    );
-  }
-
   return (
     <>
       <PageHeader title={t.sub_title} subtitle={t.sub_subtitle} back={back} />
       <section className="page-pad">
         <div className="pricing-intro">
-          <span className="eyebrow">{language === "Bahasa Melayu" ? "Ruang Tenang ONY Anda" : language === "中文" ? "您的 ONY 心灵庇护所" : "Your ONY Sanctuary"}</span>
-          <h1>{language === "Bahasa Melayu" ? "Pilih yang paling sesuai untuk anda." : language === "中文" ? "选择最契合您当下需求的节奏。" : "Choose what fits you best."}</h1>
-          <p>{language === "Bahasa Melayu" ? "Peringkat Percuma sentiasa tersedia. Naik taraf pada bila-bila masa anda inginkan kesinambungan dan wawasan yang lebih mendalam." : language === "中文" ? "免费版永久向所有人开放。当您需要更深度的连贯记忆与洞察时，可随时升级。" : "The Free tier is always available. Upgrade whenever you want deeper continuity and insights."}</p>
+          <span className="eyebrow">
+            {language === "Bahasa Melayu"
+              ? "Ruang Tenang ONY Anda"
+              : language === "中文"
+                ? "您的 ONY 心灵庇护所"
+                : "Your ONY Sanctuary"}
+          </span>
+          <h1>
+            {language === "Bahasa Melayu"
+              ? "Semua keupayaan teras tersedia secara percuma."
+              : language === "中文"
+                ? "所有核心支持与功能均向您免费开放。"
+                : "Core emotional support is free for every member."}
+          </h1>
+          <p>
+            {language === "Bahasa Melayu"
+              ? "Nikmati perbualan AI, Kubah Memori, daftar masuk mood, jurnal digital, sokongan komuniti tanpa nama, dan talian bantuan krisis tanpa had mesej atau caj langganan."
+              : language === "中文"
+                ? "畅享 AI 倾听对话、记忆宝库、心情打卡、数字日记、匿名社区陪伴以及 24/7 危机热线支持，无消息数量限制或付费门槛。"
+                : "Access AI companionship, Memory Vault, mood tracking, digital journals, anonymous peer community, and crisis hotlines without message caps or hidden subscriptions."}
+          </p>
         </div>
-        {freeCard}
-        <div className="subscription-plan trial-plan">
+
+        <div className="subscription-plan free-plan current">
           <div className="plan-heading">
-            <span>{t.sub_start_trial}</span>
-            <b>{language === "Bahasa Melayu" ? "Layak" : language === "中文" ? "符合资格" : "Eligible"}</b>
+            <span>{t.sub_free_tier}</span>
+            <b>{t.sub_current_plan}</b>
           </div>
-          <h2>{t.sub_trial_hero_title}</h2>
-          <strong>{language === "Bahasa Melayu" ? "RM0 untuk 3 hari" : language === "中文" ? "3天免费 RM0" : "RM0 for 3 days"}</strong>
-          <p>{t.sub_trial_hero_desc}</p>
+          <h2>
+            {language === "Bahasa Melayu"
+              ? "Akses Komuniti & Kesejahteraan Penuh"
+              : language === "中文"
+                ? "完整心灵庇护所访问权限"
+                : "Full Sanctuary Access"}
+          </h2>
+          <strong>{t.sub_rm0}</strong>
           <ul>
-            <li>{language === "Bahasa Melayu" ? "Pemperibadian dipertingkat" : language === "中文" ? "进阶专属个性化" : "Enhanced personalization"}</li>
-            <li>{language === "Bahasa Melayu" ? "Kesinambungan memori lebih mendalam" : language === "中文" ? "更深度长久的记忆连贯" : "Deeper memory continuity"}</li>
-            <li>{language === "Bahasa Melayu" ? "Wawasan emosi lanjutan" : language === "中文" ? "多维度情绪深度洞察" : "Advanced mood insights"}</li>
-            <li>{language === "Bahasa Melayu" ? "Ciri-ciri Premium diperluas" : language === "中文" ? "拓展的高级版完整功能" : "Expanded Premium features"}</li>
+            <li>{t.sub_free_feat1}</li>
+            <li>{t.sub_free_feat2}</li>
+            <li>{t.sub_free_feat3}</li>
+            <li>{t.sub_free_feat4}</li>
+            <li>{t.sub_free_feat5}</li>
           </ul>
-          <Button className="full" onClick={() => activate("trial", language === "Bahasa Melayu" ? "Percubaan Percuma 3-Hari dimulakan · Selamat datang!" : language === "中文" ? "3天免费试用已开启 · 欢迎体验！" : "3-Day Free Trial started · Welcome!")}>
-            {t.sub_start_trial}
-          </Button>
-          <Button className="full" variant="ghost" onClick={back}>
-            {language === "Bahasa Melayu" ? "Kekal di Percuma" : language === "中文" ? "继续保持免费版" : "Stay on Free"}
+          <Button variant="primary" className="full" onClick={back}>
+            {t.common_done}
           </Button>
         </div>
-        <div className="paid-options-heading">
-          <span>{language === "Bahasa Melayu" ? "Atau Pilih Premium Terus" : language === "中文" ? "或直接开通 Premium" : "Or Choose Premium Directly"}</span>
-          <p>{language === "Bahasa Melayu" ? "Pas jangka pendek fleksibel atau sokongan bulanan berterusan." : language === "中文" ? "灵活的短期体验卡，或无忧的月度连续守护。" : "Flexible short-term passes or continuous monthly support."}</p>
-        </div>
-        {paygCard}
-        {monthlyCard}
+
         <Button className="full" variant="ghost" onClick={openHelp}>
-          <Icon name="shield" /> {language === "Bahasa Melayu" ? "Akses sokongan penting" : language === "中文" ? "获取核心支持" : "Access essential support"}
+          <Icon name="shield" />{" "}
+          {language === "Bahasa Melayu"
+            ? "Akses sokongan krisis penting"
+            : language === "中文"
+              ? "获取核心紧急支持"
+              : "Access essential crisis support"}
         </Button>
+
         <p className="disclaimer">
           <Icon name="info" />
-          {language === "Bahasa Melayu" ? "Dasar telus. Sumber keselamatan dan talian krisis kekal percuma selamanya untuk semua ahli." : language === "中文" ? "透明承诺。核心安全指引与危机热线永远对所有用户免费开放。" : "Transparent policies. Core safety and crisis resources remain free forever for all members."}
+          {language === "Bahasa Melayu"
+            ? "Sumber keselamatan dan talian krisis penting sentiasa boleh diakses secara percuma untuk semua pengguna."
+            : language === "中文"
+              ? "安全指引与核心危机热线永远对所有用户免费开放。"
+              : "Essential safety tools and crisis hotlines remain free and accessible at all times."}
         </p>
       </section>
     </>
@@ -10134,7 +10744,7 @@ function TrustedContact({
                 type="tel"
                 value={myPhoneDraft}
                 onChange={(e) => setMyPhoneDraft(e.target.value)}
-                placeholder="e.g. 012-345 6789"
+                placeholder="e.g. +60 1X-XXX XXXX"
               />
               <Button type="submit" disabled={!myPhoneDraft.trim()}>
                 {t.common_save}
@@ -10179,7 +10789,7 @@ function TrustedContact({
                   setInviteFriendPhone(e.target.value);
                   setInviteLinkError(null);
                 }}
-                placeholder="e.g. 012-345 6789"
+                placeholder="e.g. +60 1X-XXX XXXX"
               />
               <label className="field-label">
                 {language === "Bahasa Melayu" ? `Mesej kepada ${pendingInvite.inviterName}` : language === "中文" ? `附言给 ${pendingInvite.inviterName}` : `Message to ${pendingInvite.inviterName}`} <small>{t.common_optional}</small>
@@ -10467,7 +11077,7 @@ function TrustedContact({
                 setNumber(e.target.value);
                 setFormError(null);
               }}
-              placeholder="e.g. 012-345 6789"
+              placeholder="e.g. +60 1X-XXX XXXX"
             />
 
             <label className="field-label">
@@ -10610,13 +11220,25 @@ function TrustedContact({
   );
 }
 
-function CommunityMember({ back, user, notify }: { back: () => void; user: GlobeUser; notify: (s: string) => void }) {
+function CommunityMember({
+  back,
+  user,
+  currentUid = "",
+  onBlockUid,
+  notify,
+}: {
+  back: () => void;
+  user: GlobeUser;
+  currentUid?: string;
+  onBlockUid?: (uid: string) => Promise<void> | void;
+  notify: (s: string) => void;
+}) {
   const { t, language } = useLanguage();
   const memberMoodKey = resolveNodeMoodKey(user);
   const memberMoodLabel = getLocalizedMoodLabel(memberMoodKey, language);
   const [composerMode, setComposerMode] = useState<"text" | "voice">("text");
   const [voice, setVoice] = useState<"idle" | "recording" | "ready">("idle");
-  const [recordedVoice, setRecordedVoice] = useState<{ dataUrl: string; duration: number } | null>(null);
+  const [recordedVoice, setRecordedVoice] = useState<{ blob: Blob; dataUrl: string; duration: number } | null>(null);
   const [voiceSeconds, setVoiceSeconds] = useState(0);
   const [voiceVolume, setVoiceVolume] = useState(0.15);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
@@ -10631,6 +11253,9 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
   const [sent, setSent] = useState("");
   const [blocked, setBlocked] = useState(false);
   const [sending, setSending] = useState(false);
+
+  const activeUid = (currentUid || auth.currentUser?.uid || "").trim();
+  const targetUid = (user.ownerUid || "").trim();
 
   type MemberMessage = {
     id: string;
@@ -10655,91 +11280,47 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     }, 50);
   };
 
-  // Load message history from Firestore database
+  // Load real message history from Firestore database (sent by current user to this node, or inbox if viewing own node)
   useEffect(() => {
     let isMounted = true;
-    const buildFallbackForNode = (): MemberMessage[] => {
-      const defaults = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === String(user.id));
-      if (defaults.length > 0) {
-        return defaults
-          .slice()
-          .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
-          .map((m, i) => ({
-            id: `seed_${user.id}_${i}`,
-            from: "member",
-            senderAnonymous: m.senderAnonymous,
-            recipientAnonymous: m.recipientAnonymous,
-            kind: m.kind,
-            text: m.text,
-            audioUrl: m.audioUrl,
-            audioDuration: m.audioDuration,
-            transcription: m.transcription,
-            createdAt: m.createdAt,
-            toUserMood: m.toUserMood || memberMoodLabel,
-          }));
-      }
-      return [
-        {
-          id: `seed_${user.id}_0`,
-          from: "member",
-          senderAnonymous: `Anonymous Member #${100 + user.id * 37}`,
-          recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
-          kind: "text",
-          text: `Saw your ${memberMoodLabel.toLowerCase()} glow on the globe and wanted to send a warm note of encouragement 🌱 You are not alone.`,
-          createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-          toUserMood: memberMoodLabel,
-        },
-        {
-          id: `seed_${user.id}_1`,
-          from: "member",
-          senderAnonymous: `Anonymous Friend #${240 + user.id * 19}`,
-          recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
-          kind: "voice",
-          text: "Encouraging voice note · 0:08",
-          audioDuration: 8,
-          createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-          toUserMood: memberMoodLabel,
-        },
-      ];
-    };
 
     const loadFromDb = async () => {
       try {
-        const dbMsgs = await listCommunityMessages(String(user.id));
-        if (!isMounted) return;
-        const currentUid = auth.currentUser?.uid;
-        if (dbMsgs && dbMsgs.length > 0) {
-          const mapped: MemberMessage[] = dbMsgs
-            .slice()
-            .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
-            .map((m) => {
-              const isFromMe =
-                Boolean(currentUid && m.fromUserId === currentUid) ||
-                (m.senderAnonymous || "").includes("(You)");
-              return {
-                id: m.id,
-                from: isFromMe ? "me" : "member",
-                senderAnonymous: isFromMe
-                  ? "You (Anonymous)"
-                  : m.senderAnonymous || "Anonymous Member",
-                recipientAnonymous: m.recipientAnonymous || `Anonymous Member (Globe #${user.id})`,
-                kind: m.kind,
-                text: m.text,
-                audioUrl: m.audioUrl,
-                audioDuration: m.audioDuration,
-                transcription: m.transcription,
-                createdAt: m.createdAt,
-                toUserMood: m.toUserMood || memberMoodLabel,
-              };
-            });
-          setMessages(mapped);
-        } else {
-          setMessages(buildFallbackForNode());
+        if (!activeUid || !targetUid) {
+          if (isMounted) setMessages([]);
+          return;
         }
+        const dbMsgs =
+          targetUid === activeUid
+            ? await listCommunityMessages(targetUid)
+            : await listSentCommunityMessagesToNode(activeUid, targetUid);
+        if (!isMounted) return;
+        const mapped: MemberMessage[] = (dbMsgs || [])
+          .slice()
+          .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
+          .map((m) => {
+            const isFromMe = m.fromUserId === activeUid;
+            return {
+              id: m.id,
+              from: isFromMe ? "me" : "member",
+              senderAnonymous: isFromMe
+                ? "You (Anonymous)"
+                : m.senderAnonymous || "Anonymous Member",
+              recipientAnonymous: m.recipientAnonymous || `Anonymous Member (Globe #${user.id})`,
+              kind: m.kind,
+              text: m.text,
+              audioUrl: m.audioUrl,
+              audioDuration: m.audioDuration,
+              transcription: m.transcription || m.transcript,
+              createdAt: m.createdAt,
+              toUserMood: m.toUserMood || memberMoodLabel,
+            };
+          });
+        setMessages(mapped);
       } catch (err) {
         console.warn("Could not load community messages from Firestore:", err);
         if (isMounted) {
-          setMessages(buildFallbackForNode());
+          setMessages([]);
         }
       } finally {
         if (isMounted) {
@@ -10755,8 +11336,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       if (recorderRef.current) recorderRef.current.cancel();
       if (previewAudioRef.current) previewAudioRef.current.pause();
     };
-  }, [user.id, memberMoodLabel]);
-
+  }, [user.id, targetUid, activeUid, memberMoodLabel]);
 
   const handleStartVoice = async () => {
     setComposerMode("voice");
@@ -10789,7 +11369,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     try {
       setVoice("ready");
       const res = await recorderRef.current.stop();
-      setRecordedVoice({ dataUrl: res.dataUrl, duration: res.duration });
+      setRecordedVoice({ blob: res.blob, dataUrl: res.dataUrl, duration: res.duration });
       notify("Audio recorded · preview or tap Send Audio");
     } catch {
       setVoice("idle");
@@ -10858,6 +11438,14 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       );
       return;
     }
+    if (!activeUid) {
+      notify("Please sign in to send a supportive message.");
+      return;
+    }
+    if (!targetUid) {
+      notify("This anonymous node is not reachable for direct messages.");
+      return;
+    }
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     if (!consent) {
@@ -10866,14 +11454,13 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     }
     setSending(true);
 
-    const currentUid = auth.currentUser?.uid || `anon_${Math.random().toString(36).slice(2, 7)}`;
     const now = new Date().toISOString();
-    const shortSenderId = currentUid.slice(-4) || "882";
+    const shortSenderId = activeUid.slice(-4) || "ONY";
 
     const msgPayload: Omit<FirestoreCommunityMessage, "id"> = {
-      toUserId: String(user.id),
+      toUserId: targetUid,
       toUserMood: user.moodLabel,
-      fromUserId: currentUid,
+      fromUserId: activeUid,
       senderAnonymous: `Anonymous Member #${shortSenderId}`,
       recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
       kind: "text",
@@ -10889,7 +11476,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     try {
       const docId = await createCommunityMessage(msgPayload);
       const newMsg: MemberMessage = {
-        id: docId || `msg_${Date.now()}`,
+        id: docId,
         from: "me",
         senderAnonymous: "You (Anonymous)",
         recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
@@ -10903,26 +11490,12 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       scrollToThreadBottom("smooth");
       notify("Support message sent 🌱");
     } catch (err) {
+      setText(trimmed);
       if (err instanceof Error && err.message.startsWith("RECIPIENT_MESSAGES_DISABLED:")) {
-        setText(trimmed);
         notify("This person isn't accepting messages right now");
-        return;
+      } else {
+        notify("Could not send support message. Please check your connection and try again.");
       }
-      console.warn("Could not save to database, using optimistic delivery:", err);
-      const newMsg: MemberMessage = {
-        id: `local_${Date.now()}`,
-        from: "me",
-        senderAnonymous: "You (Anonymous)",
-        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
-        kind: "text",
-        text: trimmed,
-        createdAt: now,
-        toUserMood: user.moodLabel,
-      };
-      setMessages((prev) => [...prev, newMsg]);
-      setSent("Support message delivered");
-      scrollToThreadBottom("smooth");
-      notify("Support message sent 🌱");
     } finally {
       setSending(false);
     }
@@ -10931,6 +11504,14 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
   const confirmVoice = async () => {
     if (!user.acceptsMessages) {
       notify("This person isn't accepting messages right now");
+      return;
+    }
+    if (!activeUid) {
+      notify("Please sign in to send an audio encouragement.");
+      return;
+    }
+    if (!targetUid) {
+      notify("This anonymous node is not reachable for direct messages.");
       return;
     }
     if (!recordedVoice || sending) return;
@@ -10944,34 +11525,34 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       previewAudioRef.current = null;
     }
 
-    const currentUid = auth.currentUser?.uid || `anon_${Math.random().toString(36).slice(2, 7)}`;
     const now = new Date().toISOString();
-    const shortSenderId = currentUid.slice(-4) || "882";
+    const shortSenderId = activeUid.slice(-4) || "ONY";
     const voiceNoteText = `Encouraging voice note · ${formatAudioDuration(recordedVoice.duration)}`;
 
-    const msgPayload: Omit<FirestoreCommunityMessage, "id"> = {
-      toUserId: String(user.id),
-      toUserMood: user.moodLabel,
-      fromUserId: currentUid,
-      senderAnonymous: `Anonymous Member #${shortSenderId}`,
-      recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
-      kind: "voice",
-      text: voiceNoteText,
-      audioUrl: recordedVoice.dataUrl,
-      audioDuration: recordedVoice.duration,
-      createdAt: now,
-    };
-
     try {
+      const uploadedAudio = await uploadCommunityMedia(activeUid, "voice", recordedVoice.blob);
+      const msgPayload: Omit<FirestoreCommunityMessage, "id"> = {
+        toUserId: targetUid,
+        toUserMood: user.moodLabel,
+        fromUserId: activeUid,
+        senderAnonymous: `Anonymous Member #${shortSenderId}`,
+        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
+        kind: "voice",
+        text: voiceNoteText,
+        audioUrl: uploadedAudio.url,
+        audioDuration: recordedVoice.duration,
+        createdAt: now,
+      };
+
       const docId = await createCommunityMessage(msgPayload);
       const newMsg: MemberMessage = {
-        id: docId || `msg_${Date.now()}`,
+        id: docId,
         from: "me",
         senderAnonymous: "You (Anonymous)",
         recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
         kind: "voice",
         text: voiceNoteText,
-        audioUrl: recordedVoice.dataUrl,
+        audioUrl: uploadedAudio.url,
         audioDuration: recordedVoice.duration,
         createdAt: now,
         toUserMood: user.moodLabel,
@@ -10985,27 +11566,9 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
     } catch (err) {
       if (err instanceof Error && err.message.startsWith("RECIPIENT_MESSAGES_DISABLED:")) {
         notify("This person isn't accepting messages right now");
-        return;
+      } else {
+        notify("Could not send audio message. Please check your connection and try again.");
       }
-      console.warn("Could not save voice to database, using optimistic delivery:", err);
-      const newMsg: MemberMessage = {
-        id: `local_${Date.now()}`,
-        from: "me",
-        senderAnonymous: "You (Anonymous)",
-        recipientAnonymous: `Anonymous Member (Globe #${user.id})`,
-        kind: "voice",
-        text: voiceNoteText,
-        audioUrl: recordedVoice.dataUrl,
-        audioDuration: recordedVoice.duration,
-        createdAt: now,
-        toUserMood: user.moodLabel,
-      };
-      setMessages((prev) => [...prev, newMsg]);
-      setVoice("idle");
-      setRecordedVoice(null);
-      setSent("Audio support message delivered");
-      scrollToThreadBottom("smooth");
-      notify("Audio encouragement sent 🎙️");
     } finally {
       setSending(false);
     }
@@ -11037,7 +11600,7 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
       <div className="centered-state">
         <div className="success-mark"><Icon name="shield" /></div>
         <h1>{language === "Bahasa Melayu" ? "Pengguna tanpa nama disekat" : language === "中文" ? "已屏蔽此匿名用户" : "Anonymous user blocked"}</h1>
-        <p>{language === "Bahasa Melayu" ? "Pengguna ini akan disembunyikan untuk baki sesi ini. Tiada data profil peribadi disimpan." : language === "中文" ? "该用户在此会话的其余时间内将被隐藏。未存储任何个人档案数据。" : "This user will be hidden for the rest of this session. No personal profile data was stored."}</p>
+        <p>{language === "Bahasa Melayu" ? "Pengguna ini tidak akan lagi dipaparkan kepada akaun anda." : language === "中文" ? "该用户已从您的社区视图与收件箱中隐藏。" : "This user has been hidden from your community views and inbox."}</p>
         <Button onClick={back}>{t.community_back_globe}</Button>
       </div>
     );
@@ -11051,8 +11614,34 @@ function CommunityMember({ back, user, notify }: { back: () => void; user: Globe
         back={back}
         action={
           <div style={{ display: "flex", gap: "4px" }}>
-            <Button variant="ghost" onClick={() => notify(language === "Bahasa Melayu" ? "Terima kasih. Nod ditandakan untuk semakan penyederhanaan." : language === "中文" ? "感谢反馈。该节点已标记并提交审核团队。" : "Thank you. Node flagged for moderation review.")}>{t.common_report}</Button>
-            <Button variant="ghost" onClick={() => setBlocked(true)}>{t.common_block}</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (activeUid) {
+                  void submitModerationReport({
+                    reporterUid: activeUid,
+                    targetType: "node",
+                    targetId: targetUid || String(user.id),
+                    targetAuthorId: targetUid || undefined,
+                    reason: "Reported from Anonymous Node screen",
+                  }).catch((e) => console.warn("[ONY] Node report warning:", e));
+                }
+                notify(language === "Bahasa Melayu" ? "Terima kasih. Nod ditandakan untuk semakan penyederhanaan." : language === "中文" ? "感谢反馈。该节点已标记并提交审核团队。" : "Thank you. Node flagged for moderation review.");
+              }}
+            >
+              {t.common_report}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (targetUid && onBlockUid) {
+                  void onBlockUid(targetUid);
+                }
+                setBlocked(true);
+              }}
+            >
+              {t.common_block}
+            </Button>
           </div>
         }
       />
@@ -11659,14 +12248,14 @@ function SystemLogsView({
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const items = await listSystemLogs(100);
+      const items = await listSystemLogs(100, currentUser?.uid);
       setLogs(items);
     } catch {
       notify("Failed to fetch logs");
     } finally {
       setLoading(false);
     }
-  }, [notify]);
+  }, [notify, currentUser?.uid]);
 
   useEffect(() => {
     fetchLogs();

@@ -312,7 +312,7 @@ export function ListViewPanel({
       {viewDepth === "nodes" && activeCountryGroup && activeStateGroup && (
         <div className="globe-list-flat">
           {activeStateGroup.nodes.map((node) => {
-            const isMe = Boolean(node.isMe || node.id === 0);
+            const isMe = Boolean(node.isMe);
             const moodText = getLocalizedMoodLabel(resolveNodeMoodKey(node), language);
             return (
               <button

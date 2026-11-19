@@ -12,6 +12,7 @@ import {
   type FirestoreCommunityPost,
   type PostCommentRecord,
 } from "../../firebase/firestore";
+import { uploadCommunityMedia } from "../../firebase/storage";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
   formatFriendlyTime,
@@ -107,7 +108,7 @@ export function CommentSheet({
     };
   }, [post, onClose]);
 
-  const cleanUid = currentUid.trim() || "anonymous_user";
+  const cleanUid = currentUid.trim();
   const cleanName = currentUserName.trim() || "ONY Member";
 
   const reactionSummary = useMemo(
@@ -157,6 +158,11 @@ export function CommentSheet({
   };
 
   const submitTextFlow = async (rawText: string): Promise<boolean> => {
+    if (!cleanUid) {
+      setComposerError("Please sign in to post a comment.");
+      setLastFailedAction(null);
+      return false;
+    }
     const check = validateCommunityCommentText(rawText);
     if (!check.valid) {
       setComposerError(
@@ -246,9 +252,15 @@ export function CommentSheet({
   };
 
   const submitVoiceFlow = async (audio: {
+    blob: Blob;
     dataUrl: string;
     duration: number;
   }): Promise<boolean> => {
+    if (!cleanUid) {
+      setComposerError("Please sign in to send a voice comment.");
+      setLastFailedAction(null);
+      return false;
+    }
     setComposerError(null);
     setSubmitting(true);
     const caption =
@@ -259,13 +271,19 @@ export function CommentSheet({
           : `Voice note (${formatAudioDuration(audio.duration)})`;
 
     try {
+      const { url: uploadedAudioUrl } = await uploadCommunityMedia(
+        cleanUid,
+        "comments",
+        audio.blob,
+      );
+
       if (replyTarget) {
         const updated = await addCommunityCommentReply(post, replyTarget.commentId, {
           userId: cleanUid,
           userName: cleanName,
           text: caption,
           kind: "voice",
-          audioUrl: audio.dataUrl,
+          audioUrl: uploadedAudioUrl,
           audioDuration: audio.duration,
         });
         onPostUpdated(updated);
@@ -286,7 +304,7 @@ export function CommentSheet({
         userName: cleanName,
         text: caption,
         kind: "voice",
-        audioUrl: audio.dataUrl,
+        audioUrl: uploadedAudioUrl,
         audioDuration: audio.duration,
       });
       onPostUpdated(updated);
@@ -330,6 +348,10 @@ export function CommentSheet({
   };
 
   const handleToggleCommentLike = async (commentId: string) => {
+    if (!cleanUid) {
+      notify("Please sign in to like comments");
+      return;
+    }
     try {
       const updated = await toggleCommunityCommentLike(post, commentId, {
         uid: cleanUid,

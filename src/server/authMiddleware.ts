@@ -6,27 +6,43 @@ import type { App } from "firebase-admin/app";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const configPath = path.resolve(__dirname, "../../firebase-applet-config.json");
-const appConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+const configPaths = [
+  path.resolve(__dirname, "../../firebase-applet-config.json"),
+  path.resolve(process.cwd(), "firebase-applet-config.json"),
+];
 
-// Initialize Firebase Admin once
+let appConfig: { projectId?: string } = {};
+for (const p of configPaths) {
+  if (fs.existsSync(p)) {
+    try {
+      appConfig = JSON.parse(fs.readFileSync(p, "utf8"));
+      break;
+    } catch {
+      // ignore invalid config JSON
+    }
+  }
+}
+
 let adminApp: App | null = null;
 
 async function ensureAdminInitialized(): Promise<App | null> {
   if (adminApp) return adminApp;
+  const projectId = appConfig.projectId || process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
+  if (!projectId) {
+    console.warn("[ONY Server] Missing Firebase projectId for ID token verification.");
+    return null;
+  }
   try {
-    const [{ initializeApp, getApps }] = await Promise.all([import("firebase-admin/app")]);
+    const { initializeApp, getApps } = await import("firebase-admin/app");
     const existing = getApps();
     if (existing.length > 0) {
       adminApp = existing[0];
       return adminApp;
     }
-    adminApp = initializeApp({
-      projectId: appConfig.projectId,
-    });
+    adminApp = initializeApp({ projectId });
     return adminApp;
   } catch (err) {
-    console.warn("[ONY Server] Firebase Admin initialization note:", err);
+    console.warn("[ONY Server] Firebase Admin initialization error:", err);
     return null;
   }
 }
@@ -36,6 +52,7 @@ export interface AuthenticatedRequest extends Request {
     uid: string;
     email?: string;
   };
+  idToken?: string;
 }
 
 export async function verifyAuthToken(
@@ -43,23 +60,28 @@ export async function verifyAuthToken(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  req.user = undefined;
+  req.idToken = undefined;
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    // If no token is provided, proceed without authenticated user (or return 401 if strict)
-    req.user = undefined;
     return next();
   }
 
   const token = authHeader.slice(7).trim();
   if (!token) {
-    req.user = undefined;
     return next();
   }
 
   const app = await ensureAdminInitialized();
   if (!app) {
-    req.user = undefined;
-    return next();
+    res.status(503).json({
+      error: {
+        code: "UPSTREAM_ERROR",
+        message: "Authentication verification service is not ready on the server.",
+      },
+    });
+    return;
   }
 
   try {
@@ -70,6 +92,7 @@ export async function verifyAuthToken(
       uid: decodedToken.uid,
       email: decodedToken.email,
     };
+    req.idToken = token;
     return next();
   } catch (error) {
     console.warn("[ONY Server] Token verification failed:", error);
@@ -83,7 +106,7 @@ export async function verifyAuthToken(
   }
 }
 
-// Strict requirement middleware
+// Strict fail-closed authentication middleware
 export function requireAuth(
   req: AuthenticatedRequest,
   res: Response,
@@ -93,7 +116,7 @@ export function requireAuth(
     res.status(401).json({
       error: {
         code: "UNAUTHORIZED",
-        message: "You must be logged in to perform this action.",
+        message: "Authentication is required to access this endpoint.",
       },
     });
     return;

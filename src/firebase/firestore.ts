@@ -11,10 +11,11 @@ import {
   onSnapshot,
   orderBy,
   limit,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "./config.ts";
-import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../data/merchants.ts";
-export { DEFAULT_MERCHANTS, type FirestoreMerchant };
+import type { FirestoreMerchant } from "../data/merchants.ts";
+export type { FirestoreMerchant };
 
 export const OperationType = {
   CREATE: "create",
@@ -53,22 +54,42 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map((provider) => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || [],
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
     },
     operationType,
     path,
   };
   console.error("Firestore Error: ", JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  throw new Error(errInfo.error || "Database operation failed.");
+}
+
+export function getDeterministicNodeNumber(uid: string): number {
+  const clean = (uid || "").trim();
+  if (!clean) return 100001;
+  let hash = 2166136261;
+  for (let i = 0; i < clean.length; i++) {
+    hash ^= clean.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return 100000 + ((hash >>> 0) % 900000);
 }
 
 export interface UserProfileData {
   displayName: string;
+  preferredName?: string;
   email: string;
   phoneNumber?: string;
+  bio?: string;
+  pronouns?: string;
+  ageRange?: string;
+  avatarType?: "preset" | "photo";
+  presetAvatar?: string;
+  avatarUrl?: string;
+  subscriptionStatus?: "free" | "payg" | "monthly";
   theme?: string;
   companion?: string;
   persona?: string;
@@ -110,6 +131,7 @@ export interface FirestoreMemory {
   category: string;
   active: boolean;
   kind?: "text" | "image";
+  imageUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,6 +180,7 @@ export interface FirestoreConversation {
 
 export interface FirestoreGlobeUser {
   id: number;
+  ownerUid: string;
   moodGlow: "bright" | "soft" | "dim" | "neutral";
   moodKey?: string;
   moodLabel: string;
@@ -166,12 +189,15 @@ export interface FirestoreGlobeUser {
   minLevel: number;
   lon: number;
   lat: number;
+  regionName?: string;
   isMe?: boolean;
+  updatedAt?: string;
 }
 
 export interface PostLikeRecord {
   userId: string;
   userName: string;
+  reaction?: string;
   createdAt: string;
 }
 
@@ -207,7 +233,7 @@ export interface PostCommentRecord {
 export interface FirestoreCommunityPost {
   id: string;
   author: string;
-  authorId?: string;
+  authorId: string;
   title: string;
   body: string;
   category: string;
@@ -215,11 +241,12 @@ export interface FirestoreCommunityPost {
   likeRecords: PostLikeRecord[];
   comments: PostCommentRecord[];
   media?: "image" | "voice";
+  imageUrl?: string;
   audioUrl?: string;
   audioDuration?: number;
   createdAt: string;
+  updatedAt?: string;
 }
-
 
 export interface FirestoreCommunityMessage {
   id: string;
@@ -233,6 +260,9 @@ export interface FirestoreCommunityMessage {
   audioUrl?: string;
   audioDuration?: number;
   transcription?: string;
+  transcript?: string;
+  isRead?: boolean;
+  readAt?: string;
   createdAt: string;
 }
 
@@ -250,9 +280,11 @@ export interface FirestoreTrustedContactRequest {
   fromUid: string;
   fromName: string;
   fromEmail: string;
+  fromEmailLower?: string;
   toUid: string;
   toName: string;
   toEmail: string;
+  toEmailLower?: string;
   contactPhone: string;
   relationshipNote?: string;
   requestKind?: "direct_invite" | "invite_link";
@@ -262,7 +294,54 @@ export interface FirestoreTrustedContactRequest {
   respondedAt?: string;
 }
 
-// User Profile Operations
+export interface FirestoreVoucherClaim {
+  id: string;
+  merchantId: string;
+  merchantName: string;
+  offer: string;
+  value: string;
+  voucherCode: string;
+  claimedAt: string;
+  status: "claimed" | "redeemed";
+}
+
+export interface FirestoreToolkitCompletion {
+  id: string;
+  toolId: string;
+  title: string;
+  completedAt: string;
+}
+
+function stripUndefinedFields<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) {
+      result[k] = v;
+    }
+  }
+  return result;
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === "object") {
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) {
+        cleaned[k] = stripUndefinedDeep(v);
+      }
+    }
+    return cleaned as T;
+  }
+  return value;
+}
+
+// ==========================================
+// User Directory & Profile Operations
+// ==========================================
+
 export async function syncRegisteredAccount(account: {
   uid: string;
   displayName: string;
@@ -274,18 +353,19 @@ export async function syncRegisteredAccount(account: {
   const cleanEmail = account.email.trim();
   const cleanName = account.displayName.trim() || cleanEmail.split("@")[0] || "ONY Member";
   const cleanPhone = account.phoneNumber ? account.phoneNumber.trim() : undefined;
+
   try {
     await setDoc(
-      doc(db, "globeUsers", `account_${account.uid}`),
-      {
-        recordType: "user_account",
+      doc(db, "userDirectory", account.uid),
+      stripUndefinedFields({
         uid: account.uid,
         displayName: cleanName,
+        displayNameLower: cleanName.toLowerCase(),
         email: cleanEmail,
         emailLower: cleanEmail.toLowerCase(),
         ...(cleanPhone ? { phoneNumber: cleanPhone } : {}),
         updatedAt: now,
-      },
+      }),
       { merge: true },
     );
   } catch (err) {
@@ -308,6 +388,9 @@ export async function createUserProfileDoc(
         displayName: initial.displayName,
         email: initial.email,
         phoneNumber: cleanPhone,
+        avatarType: "preset",
+        presetAvatar: "bunny",
+        subscriptionStatus: "free",
         theme: "peach",
         companion: "Cat",
         persona: "gentle",
@@ -322,12 +405,22 @@ export async function createUserProfileDoc(
       },
       { merge: true },
     );
+
     await syncRegisteredAccount({
       uid,
       displayName: initial.displayName,
       email: initial.email,
       phoneNumber: cleanPhone,
     });
+
+    // Ensure the new user's own anonymous globe node exists with default private opt-in state
+    await ensureOwnGlobeNode(uid, {
+      moodGlow: "neutral",
+      moodKey: "calm",
+      moodLabel: "calm",
+      discoverable: false,
+      acceptsMessages: true,
+    }).catch(() => {});
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -353,16 +446,38 @@ export async function updateUserProfile(
   try {
     const userRef = doc(db, "users", uid);
     const now = new Date().toISOString();
-    await updateDoc(userRef, {
-      ...updates,
-      updatedAt: now,
-    });
+    await setDoc(
+      userRef,
+      stripUndefinedFields({
+        ...updates,
+        updatedAt: now,
+      }),
+      { merge: true },
+    );
+
+    if (updates.displayName || updates.email || updates.phoneNumber !== undefined) {
+      const currentSnap = await getDoc(userRef).catch(() => null);
+      const data = currentSnap?.exists() ? (currentSnap.data() as Partial<UserProfileData>) : {};
+      const email = updates.email || data.email || auth.currentUser?.email || "";
+      const displayName = updates.displayName || data.displayName || auth.currentUser?.displayName || "ONY Member";
+      if (email) {
+        await syncRegisteredAccount({
+          uid,
+          displayName,
+          email,
+          phoneNumber: updates.phoneNumber ?? data.phoneNumber,
+        });
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
-// User Settings Operations (Saved in user_settings/{uid})
+// ==========================================
+// User Settings Operations (user_settings/{uid})
+// ==========================================
+
 export async function getUserSettingsDoc(uid: string): Promise<Record<string, unknown> | null> {
   const path = `user_settings/${uid}`;
   try {
@@ -382,14 +497,16 @@ export async function saveUserSettingsDoc(
   const path = `user_settings/${uid}`;
   try {
     const settingsRef = doc(db, "user_settings", uid);
-    await setDoc(settingsRef, settings, { merge: true });
+    await setDoc(settingsRef, stripUndefinedDeep(settings), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
+// ==========================================
+// Mood Check-in Operations
+// ==========================================
 
-// Mood Check-in Operations (Saved per day in users/{uid}/moodCheckins/{YYYY-MM-DD})
 export async function listMoodEntries(uid: string): Promise<FirestoreMoodEntry[]> {
   const path = `users/${uid}/moodCheckins`;
   try {
@@ -478,19 +595,15 @@ export async function saveMoodEntry(
       },
       { merge: true },
     );
-    // Also keep user's anonymous globe node mood in sync
+
     const moodGlow: "bright" | "soft" | "dim" =
       entry.level >= 4 ? "bright" : entry.level === 3 ? "soft" : "dim";
-    await setDoc(
-      doc(db, "globeUsers", "0"),
-      {
-        id: 0,
-        isMe: true,
-        moodLabel: entry.label,
-        moodGlow,
-      },
-      { merge: true },
-    ).catch(() => {});
+    await ensureOwnGlobeNode(uid, {
+      moodLabel: entry.label,
+      moodKey: entry.label.toLowerCase(),
+      moodGlow,
+    }).catch(() => {});
+
     return dateKey;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -505,7 +618,7 @@ export async function updateMoodEntry(
   const path = `users/${uid}/moodCheckins/${entryId}`;
   try {
     const docRef = doc(db, "users", uid, "moodCheckins", entryId);
-    await setDoc(docRef, updates, { merge: true });
+    await setDoc(docRef, stripUndefinedFields(updates as Record<string, unknown>), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -521,7 +634,10 @@ export async function deleteMoodEntry(uid: string, entryId: string): Promise<voi
   }
 }
 
+// ==========================================
 // Memory Vault Operations
+// ==========================================
+
 export async function listMemories(uid: string): Promise<FirestoreMemory[]> {
   const path = `users/${uid}/memories`;
   try {
@@ -546,11 +662,14 @@ export async function saveMemory(
     const colRef = collection(db, "users", uid, "memories");
     const newDocRef = doc(colRef);
     const now = new Date().toISOString();
-    await setDoc(newDocRef, {
-      ...memory,
-      createdAt: now,
-      updatedAt: now,
-    });
+    await setDoc(
+      newDocRef,
+      stripUndefinedFields({
+        ...memory,
+        createdAt: now,
+        updatedAt: now,
+      } as unknown as Record<string, unknown>),
+    );
     return newDocRef.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
@@ -566,7 +685,7 @@ export async function updateMemory(
   try {
     const docRef = doc(db, "users", uid, "memories", memoryId);
     await updateDoc(docRef, {
-      ...updates,
+      ...stripUndefinedFields(updates as Record<string, unknown>),
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -601,12 +720,40 @@ export async function clearAllMemories(uid: string): Promise<void> {
 // Digital Journal & Diary Operations
 // ==========================================
 
-const LOCAL_STORAGE_JOURNAL_KEY = "ony_cached_journal_entries";
+const LOCAL_STORAGE_JOURNAL_PREFIX = "ony_cached_journal_entries_";
+const LEGACY_LOCAL_STORAGE_JOURNAL_KEY = "ony_cached_journal_entries";
 
-export function loadCachedJournalEntries(): FirestoreJournalEntry[] {
-  if (typeof window === "undefined") return [];
+function getJournalCacheKey(uid?: string | null): string | null {
+  const target = uid || auth.currentUser?.uid;
+  return target ? `${LOCAL_STORAGE_JOURNAL_PREFIX}${target}` : null;
+}
+
+export function clearLocalJournalCache(uid?: string | null): void {
+  if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_JOURNAL_KEY);
+    if (uid) {
+      window.localStorage.removeItem(`${LOCAL_STORAGE_JOURNAL_PREFIX}${uid}`);
+    } else {
+      const toRemove: string[] = [LEGACY_LOCAL_STORAGE_JOURNAL_KEY];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith(LOCAL_STORAGE_JOURNAL_PREFIX)) {
+          toRemove.push(k);
+        }
+      }
+      toRemove.forEach((k) => window.localStorage.removeItem(k));
+    }
+  } catch {
+    // Ignore storage cleanup error
+  }
+}
+
+export function loadCachedJournalEntries(uid?: string | null): FirestoreJournalEntry[] {
+  if (typeof window === "undefined") return [];
+  const key = getJournalCacheKey(uid);
+  if (!key) return [];
+  try {
+    const raw = window.localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -615,64 +762,20 @@ export function loadCachedJournalEntries(): FirestoreJournalEntry[] {
   }
 }
 
-export function saveCachedJournalEntries(entries: FirestoreJournalEntry[]): void {
+export function saveCachedJournalEntries(entries: FirestoreJournalEntry[], uid?: string | null): void {
   if (typeof window === "undefined") return;
+  const key = getJournalCacheKey(uid);
+  if (!key) return;
   try {
-    localStorage.setItem(LOCAL_STORAGE_JOURNAL_KEY, JSON.stringify(entries));
-  } catch {}
+    window.localStorage.setItem(key, JSON.stringify(entries));
+  } catch {
+    // Ignore quota errors
+  }
 }
 
-export const DEFAULT_JOURNAL_ENTRIES: Omit<FirestoreJournalEntry, "id" | "createdAt" | "updatedAt">[] = [
-  {
-    title: "Evening walk around Tasik Titiwangsa 🌿",
-    content:
-      "The evening breeze after the rain felt so grounding today. I took 30 minutes away from my laptop to just walk without earphones. Reminded myself that progress doesn't always have to be loud. One step at a time.",
-    dateKey: getLocalDateKey(),
-    entryDate: new Date().toISOString(),
-    moodEmoji: "🌿",
-    moodLabel: "Reflective",
-    tags: ["Mindfulness", "Nature", "Evening"],
-  },
-  {
-    title: "Small win: Finished my project pitch slides ☕",
-    content:
-      "Finally wrapped up the slides for Friday's presentation. Felt the familiar imposter syndrome creeping in during lunch, but taking five slow breaths and chatting with ONY helped me reset. Rewarded myself with a warm hazelnut latte.",
-    dateKey: getLocalDateKey(new Date(Date.now() - 86400000)),
-    entryDate: new Date(Date.now() - 86400000).toISOString(),
-    moodEmoji: "☀️",
-    moodLabel: "Grateful",
-    tags: ["Study & Work", "Gratitude", "Self-Care"],
-  },
-  {
-    title: "Letting go of things outside my control 🌧️",
-    content:
-      "Felt a wave of heaviness this afternoon when unexpected news shifted the timeline. Writing it down helps untangle the knot in my chest. It is okay to feel disappointed, and it is okay to rest tonight without forcing positivity.",
-    dateKey: getLocalDateKey(new Date(Date.now() - 3 * 86400000)),
-    entryDate: new Date(Date.now() - 3 * 86400000).toISOString(),
-    moodEmoji: "🌧️",
-    moodLabel: "Tender",
-    tags: ["Venting", "Acceptance", "Rest"],
-  },
-];
-
 export async function listJournalEntries(uid: string): Promise<FirestoreJournalEntry[]> {
+  if (!uid) return [];
   const path = `users/${uid}/journalEntries`;
-  try {
-    // 1. Try reading journalEntries directly from user profile document first
-    const userDocRef = doc(db, "users", uid);
-    const userSnap = await getDoc(userDocRef);
-    if (userSnap.exists()) {
-      const uData = userSnap.data();
-      if (Array.isArray(uData.journalEntries) && uData.journalEntries.length > 0) {
-        saveCachedJournalEntries(uData.journalEntries);
-        return uData.journalEntries;
-      }
-    }
-  } catch (err) {
-    console.warn("[ONY Journal] User document read notice:", err);
-  }
-
-  // 2. Try reading from subcollection if permitted
   try {
     const colRef = collection(db, "users", uid, "journalEntries");
     const q = query(colRef, orderBy("entryDate", "desc"));
@@ -681,15 +784,11 @@ export async function listJournalEntries(uid: string): Promise<FirestoreJournalE
       id: d.id,
       ...(d.data() as Omit<FirestoreJournalEntry, "id">),
     }));
-    if (loaded.length > 0) {
-      saveCachedJournalEntries(loaded);
-      return loaded;
-    }
+    saveCachedJournalEntries(loaded, uid);
+    return loaded;
   } catch (error) {
-    console.warn("[ONY Journal] Subcollection read notice, falling back to cache:", error);
+    handleFirestoreError(error, OperationType.LIST, path);
   }
-
-  return loadCachedJournalEntries();
 }
 
 export async function saveJournalEntry(
@@ -714,28 +813,15 @@ export async function saveJournalEntry(
     ...(typeof entry.pageNumber === "number" ? { pageNumber: entry.pageNumber } : {}),
   };
 
-  // 1. Immediately update local cache for instant zero-lag response
-  const cached = loadCachedJournalEntries();
-  const nextCached = [fullEntry, ...cached.filter((e) => e.id !== entryId)];
-  saveCachedJournalEntries(nextCached);
-
-  // 2. Persist to users/{uid} document (which is guaranteed accessible by security rules)
+  const docRef = doc(db, "users", uid, "journalEntries", entryId);
   try {
-    const userRef = doc(db, "users", uid);
-    await setDoc(userRef, { journalEntries: nextCached, updatedAt: now }, { merge: true });
-  } catch (err) {
-    console.warn("[ONY Journal] Syncing entry to user profile notice:", err);
+    await setDoc(docRef, stripUndefinedFields(fullEntry as unknown as Record<string, unknown>));
+    const cached = loadCachedJournalEntries(uid);
+    saveCachedJournalEntries([fullEntry, ...cached.filter((e) => e.id !== entryId)], uid);
+    return entryId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `users/${uid}/journalEntries/${entryId}`);
   }
-
-  // 3. Best-effort write to subcollection without crashing if subcollection rules are restricted
-  try {
-    const docRef = doc(db, "users", uid, "journalEntries", entryId);
-    await setDoc(docRef, fullEntry);
-  } catch (err) {
-    console.warn("[ONY Journal] Subcollection write fallback notice:", err);
-  }
-
-  return entryId;
 }
 
 export async function updateJournalEntry(
@@ -744,86 +830,57 @@ export async function updateJournalEntry(
   updates: Partial<FirestoreJournalEntry>,
 ): Promise<void> {
   const now = new Date().toISOString();
-
-  // 1. Update in local cache
-  const cached = loadCachedJournalEntries();
-  const nextCached = cached.map((e) =>
-    e.id === entryId
-      ? {
-          ...e,
-          ...updates,
-          updatedAt: now,
-        }
-      : e,
-  );
-  saveCachedJournalEntries(nextCached);
-
-  // 2. Persist to users/{uid} document
+  const docRef = doc(db, "users", uid, "journalEntries", entryId);
   try {
-    const userRef = doc(db, "users", uid);
-    await setDoc(userRef, { journalEntries: nextCached, updatedAt: now }, { merge: true });
-  } catch (err) {
-    console.warn("[ONY Journal] Syncing updated entry to user profile notice:", err);
-  }
-
-  // 3. Best-effort update to subcollection
-  try {
-    const docRef = doc(db, "users", uid, "journalEntries", entryId);
-    await setDoc(docRef, { ...updates, updatedAt: now }, { merge: true });
-  } catch (err) {
-    console.warn("[ONY Journal] Subcollection update fallback notice:", err);
+    await setDoc(
+      docRef,
+      stripUndefinedFields({ ...(updates as Record<string, unknown>), updatedAt: now }),
+      { merge: true },
+    );
+    const cached = loadCachedJournalEntries(uid);
+    saveCachedJournalEntries(
+      cached.map((e) => (e.id === entryId ? { ...e, ...updates, updatedAt: now } : e)),
+      uid,
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${uid}/journalEntries/${entryId}`);
   }
 }
 
 export async function deleteJournalEntry(uid: string, entryId: string): Promise<void> {
-  const now = new Date().toISOString();
-
-  // 1. Update in local cache
-  const cached = loadCachedJournalEntries();
-  const nextCached = cached.filter((e) => e.id !== entryId);
-  saveCachedJournalEntries(nextCached);
-
-  // 2. Persist to users/{uid} document
+  const docRef = doc(db, "users", uid, "journalEntries", entryId);
   try {
-    const userRef = doc(db, "users", uid);
-    await setDoc(userRef, { journalEntries: nextCached, updatedAt: now }, { merge: true });
-  } catch (err) {
-    console.warn("[ONY Journal] Syncing deleted entry to user profile notice:", err);
-  }
-
-  // 3. Best-effort delete from subcollection
-  try {
-    const docRef = doc(db, "users", uid, "journalEntries", entryId);
     await deleteDoc(docRef);
-  } catch (err) {
-    console.warn("[ONY Journal] Subcollection delete fallback notice:", err);
+    const cached = loadCachedJournalEntries(uid);
+    saveCachedJournalEntries(
+      cached.filter((e) => e.id !== entryId),
+      uid,
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${uid}/journalEntries/${entryId}`);
   }
 }
 
 export async function syncUserBookshelfData(
   uid: string,
-  shelves: any[],
-  books: any[],
+  shelves: unknown[],
+  books: unknown[],
 ): Promise<void> {
-  try {
-    const userRef = doc(db, "users", uid);
-    await setDoc(
-      userRef,
-      {
-        journalShelves: shelves,
-        journalBooks: books,
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true },
-    );
-  } catch (err) {
-    console.warn("[ONY Journal] Bookshelf sync notice:", err);
-  }
+  const userRef = doc(db, "users", uid);
+  await setDoc(
+    userRef,
+    {
+      journalShelves: shelves,
+      journalBooks: books,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true },
+  );
 }
 
 export async function loadUserBookshelfData(
   uid: string,
-): Promise<{ shelves?: any[]; books?: any[] } | null> {
+): Promise<{ shelves?: unknown[]; books?: unknown[] } | null> {
   try {
     const userRef = doc(db, "users", uid);
     const snap = await getDoc(userRef);
@@ -841,17 +898,10 @@ export async function loadUserBookshelfData(
   }
 }
 
-function stripUndefinedFields<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (v !== undefined) {
-      result[k] = v;
-    }
-  }
-  return result;
-}
+// ==========================================
+// Chat Folders & Conversations
+// ==========================================
 
-// Chat Folders Operations (stored on users/{uid} so custom folders & colors/icons persist safely)
 export async function saveUserChatFolders(
   uid: string,
   folders: FirestoreChatFolder[],
@@ -860,7 +910,11 @@ export async function saveUserChatFolders(
   try {
     const cleanFolders = folders.map((f) => stripUndefinedFields(f as unknown as Record<string, unknown>));
     const userRef = doc(db, "users", uid);
-    await setDoc(userRef, { chatFolders: cleanFolders, updatedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(
+      userRef,
+      { chatFolders: cleanFolders, updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -883,7 +937,6 @@ export async function loadUserChatFolders(uid: string): Promise<FirestoreChatFol
   }
 }
 
-// Conversation Operations
 export async function listConversations(uid: string): Promise<FirestoreConversation[]> {
   const path = `users/${uid}/conversations`;
   try {
@@ -931,108 +984,126 @@ export async function deleteConversation(uid: string, conversationId: string): P
   }
 }
 
-// Account Data Cleanup
-export async function deleteUserData(uid: string): Promise<void> {
-  const subcollections = ["moodCheckins", "memories", "conversations"];
-  for (const sub of subcollections) {
-    const path = `users/${uid}/${sub}`;
-    try {
-      const colRef = collection(db, "users", uid, sub);
-      const snap = await getDocs(colRef);
-      for (const d of snap.docs) {
-        await deleteDoc(d.ref);
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  }
-  const userPath = `users/${uid}`;
-  try {
-    const userDocRef = doc(db, "users", uid);
-    await deleteDoc(userDocRef);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, userPath);
-  }
-}
-
 // ==========================================
-// Community Globe Operations
+// Community Globe Operations (UID-keyed)
 // ==========================================
 
-function mapGlobeDocToUser(docId: string, data: Partial<FirestoreGlobeUser>, myNodeDocId = "0"): FirestoreGlobeUser {
-  const id = typeof data.id === "number" ? data.id : Number(docId);
+function mapGlobeDocToUser(
+  docId: string,
+  data: Partial<FirestoreGlobeUser>,
+  currentUid: string,
+): FirestoreGlobeUser {
+  const ownerUid = typeof data.ownerUid === "string" && data.ownerUid.trim() ? data.ownerUid.trim() : docId;
+  const numericId =
+    typeof data.id === "number" && Number.isFinite(data.id) && data.id > 0
+      ? data.id
+      : getDeterministicNodeNumber(ownerUid);
+  const isMe = Boolean(currentUid && (docId === currentUid || ownerUid === currentUid));
+
   return {
-    id,
+    id: numericId,
+    ownerUid,
     moodGlow: (data.moodGlow as FirestoreGlobeUser["moodGlow"]) || "neutral",
     moodKey: typeof data.moodKey === "string" ? data.moodKey : undefined,
     moodLabel: data.moodLabel || "none",
     discoverable: Boolean(data.discoverable),
     acceptsMessages: data.acceptsMessages !== false,
     minLevel: typeof data.minLevel === "number" ? data.minLevel : 0,
-    lon: typeof data.lon === "number" ? data.lon : 101.52,
-    lat: typeof data.lat === "number" ? data.lat : 3.07,
-    isMe: Boolean(data.isMe || docId === myNodeDocId || id === 0),
+    lon: typeof data.lon === "number" ? data.lon : 101.6869,
+    lat: typeof data.lat === "number" ? data.lat : 3.139,
+    regionName: typeof data.regionName === "string" ? data.regionName : undefined,
+    isMe,
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
   };
 }
 
-/**
- * Fetches ONLY discoverable globe nodes at the Firestore query layer
- * (`where("discoverable", "==", true)`), plus the caller's own node document
- * so the owner can see and toggle their own hidden state without exposing
- * any hidden peers over the network.
- */
-export async function listGlobeUsers(myNodeDocId = "0"): Promise<FirestoreGlobeUser[]> {
+export async function ensureOwnGlobeNode(
+  uid: string,
+  patch: Partial<FirestoreGlobeUser> = {},
+): Promise<FirestoreGlobeUser> {
+  const cleanUid = (uid || "").trim();
+  if (!cleanUid) {
+    throw new Error("Authentication required to initialize community node.");
+  }
+
+  const ref = doc(db, "globeUsers", cleanUid);
+  const snap = await getDoc(ref).catch(() => null);
+  const existing = snap && snap.exists() ? (snap.data() as Partial<FirestoreGlobeUser>) : {};
+  const nodeNum = getDeterministicNodeNumber(cleanUid);
+  const now = new Date().toISOString();
+
+  const merged: FirestoreGlobeUser = {
+    id: typeof existing.id === "number" && existing.id > 0 ? existing.id : nodeNum,
+    ownerUid: cleanUid,
+    moodGlow: patch.moodGlow || existing.moodGlow || "neutral",
+    moodKey: patch.moodKey || existing.moodKey || "calm",
+    moodLabel: patch.moodLabel || existing.moodLabel || "calm",
+    discoverable:
+      typeof patch.discoverable === "boolean"
+        ? patch.discoverable
+        : typeof existing.discoverable === "boolean"
+          ? existing.discoverable
+          : false,
+    acceptsMessages:
+      typeof patch.acceptsMessages === "boolean"
+        ? patch.acceptsMessages
+        : existing.acceptsMessages !== false,
+    minLevel: typeof patch.minLevel === "number" ? patch.minLevel : existing.minLevel ?? 0,
+    lon: typeof patch.lon === "number" ? patch.lon : existing.lon ?? 101.6869,
+    lat: typeof patch.lat === "number" ? patch.lat : existing.lat ?? 3.139,
+    regionName: patch.regionName ?? existing.regionName,
+    updatedAt: now,
+  };
+
+  await setDoc(ref, stripUndefinedFields(merged as unknown as Record<string, unknown>), { merge: true });
+  return { ...merged, isMe: true };
+}
+
+export async function listGlobeUsers(myUid?: string): Promise<FirestoreGlobeUser[]> {
+  const currentUid = (myUid || auth.currentUser?.uid || "").trim();
   const path = "globeUsers";
   try {
     const colRef = collection(db, "globeUsers");
     const visibleQuery = query(colRef, where("discoverable", "==", true));
     const [visibleSnap, mySnap] = await Promise.all([
       getDocs(visibleQuery),
-      getDoc(doc(db, "globeUsers", myNodeDocId)).catch(() => null),
+      currentUid ? getDoc(doc(db, "globeUsers", currentUid)).catch(() => null) : Promise.resolve(null),
     ]);
 
-    const peerDocs = visibleSnap.docs.filter((d) => {
+    const byOwner = new Map<string, FirestoreGlobeUser>();
+    for (const d of visibleSnap.docs) {
       const raw = d.data() as Record<string, unknown>;
-      return /^\d+$/.test(d.id) && !raw.recordType && typeof raw.moodGlow === "string" && raw.discoverable === true;
-    });
-
-    if (peerDocs.length === 0 && (!mySnap || !mySnap.exists())) {
-      // Never return hidden nodes (e.g. discoverable === false) in fallback peer list
-      return DEFAULT_GLOBE_USERS.filter((u) => u.discoverable || u.id === 0 || u.isMe);
-    }
-
-    const byId = new Map<number, FirestoreGlobeUser>();
-    for (const d of peerDocs) {
-      const mapped = mapGlobeDocToUser(d.id, d.data() as Partial<FirestoreGlobeUser>, myNodeDocId);
-      if (mapped.discoverable) {
-        byId.set(mapped.id, mapped);
+      if (!raw.recordType && typeof raw.moodGlow === "string" && raw.discoverable === true) {
+        const mapped = mapGlobeDocToUser(d.id, raw as Partial<FirestoreGlobeUser>, currentUid);
+        byOwner.set(mapped.ownerUid, mapped);
       }
     }
 
     if (mySnap && mySnap.exists()) {
       const raw = mySnap.data() as Record<string, unknown>;
       if (!raw.recordType && typeof raw.moodGlow === "string") {
-        const myNode = mapGlobeDocToUser(mySnap.id, raw as Partial<FirestoreGlobeUser>, myNodeDocId);
-        byId.set(myNode.id, { ...myNode, isMe: true });
+        const myNode = mapGlobeDocToUser(mySnap.id, raw as Partial<FirestoreGlobeUser>, currentUid);
+        byOwner.set(myNode.ownerUid, { ...myNode, isMe: true });
       }
-    } else if (!byId.has(0)) {
-      byId.set(0, { ...DEFAULT_GLOBE_USERS[0], isMe: true });
     }
 
-    return Array.from(byId.values()).sort((a, b) => a.id - b.id);
+    return Array.from(byOwner.values()).sort((a, b) => (a.isMe === b.isMe ? a.id - b.id : a.isMe ? -1 : 1));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
-/**
- * Real-time subscription to discoverable globe peers (`where("discoverable", "==", true)`)
- * and the current user's own node so hide/show & mood updates sync live without restart.
- */
 export function subscribeVisibleGlobeUsers(
   onUpdate: (users: FirestoreGlobeUser[]) => void,
-  myNodeDocId = "0",
+  myUid?: string,
+  onError?: (err: Error) => void,
 ): () => void {
+  const currentUid = (myUid || auth.currentUser?.uid || "").trim();
+  if (!currentUid) {
+    onUpdate([]);
+    return () => {};
+  }
+
   const colRef = collection(db, "globeUsers");
   const visibleQuery = query(colRef, where("discoverable", "==", true));
 
@@ -1042,18 +1113,16 @@ export function subscribeVisibleGlobeUsers(
 
   const emit = () => {
     if (!peersReady && !latestMe) return;
-    const byId = new Map<number, FirestoreGlobeUser>();
+    const byOwner = new Map<string, FirestoreGlobeUser>();
     for (const peer of latestPeers) {
       if (peer.discoverable) {
-        byId.set(peer.id, peer);
+        byOwner.set(peer.ownerUid, peer);
       }
     }
     if (latestMe) {
-      byId.set(latestMe.id, { ...latestMe, isMe: true });
-    } else if (!byId.has(0)) {
-      byId.set(0, { ...DEFAULT_GLOBE_USERS[0], isMe: true });
+      byOwner.set(latestMe.ownerUid, { ...latestMe, isMe: true });
     }
-    onUpdate(Array.from(byId.values()).sort((a, b) => a.id - b.id));
+    onUpdate(Array.from(byOwner.values()).sort((a, b) => (a.isMe === b.isMe ? a.id - b.id : a.isMe ? -1 : 1)));
   };
 
   const unsubPeers = onSnapshot(
@@ -1063,29 +1132,31 @@ export function subscribeVisibleGlobeUsers(
       latestPeers = snap.docs
         .filter((d) => {
           const raw = d.data() as Record<string, unknown>;
-          return /^\d+$/.test(d.id) && !raw.recordType && typeof raw.moodGlow === "string" && raw.discoverable === true;
+          return !raw.recordType && typeof raw.moodGlow === "string" && raw.discoverable === true;
         })
-        .map((d) => mapGlobeDocToUser(d.id, d.data() as Partial<FirestoreGlobeUser>, myNodeDocId));
+        .map((d) => mapGlobeDocToUser(d.id, d.data() as Partial<FirestoreGlobeUser>, currentUid));
       emit();
     },
     (err) => {
-      console.warn("[ONY Globe] Live peer listener notice:", err);
+      console.warn("[ONY Globe] Live peer listener error:", err);
+      onError?.(err);
     },
   );
 
   const unsubMe = onSnapshot(
-    doc(db, "globeUsers", myNodeDocId),
+    doc(db, "globeUsers", currentUid),
     (snap) => {
       if (snap.exists()) {
         const raw = snap.data() as Record<string, unknown>;
         if (!raw.recordType && typeof raw.moodGlow === "string") {
-          latestMe = mapGlobeDocToUser(snap.id, raw as Partial<FirestoreGlobeUser>, myNodeDocId);
+          latestMe = mapGlobeDocToUser(snap.id, raw as Partial<FirestoreGlobeUser>, currentUid);
         }
       }
       emit();
     },
     (err) => {
-      console.warn("[ONY Globe] Own node listener notice:", err);
+      console.warn("[ONY Globe] Own node listener error:", err);
+      onError?.(err);
     },
   );
 
@@ -1095,25 +1166,17 @@ export function subscribeVisibleGlobeUsers(
   };
 }
 
-/**
- * Persists updates to the user's existing globe node document in `globeUsers`.
- */
 export async function updateGlobeUserNode(
-  nodeDocId: string | number,
+  ownerUid: string,
   patch: Partial<FirestoreGlobeUser>,
 ): Promise<void> {
-  const idStr = String(nodeDocId);
-  const path = `globeUsers/${idStr}`;
+  const cleanUid = (ownerUid || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) {
+    throw new Error("Authentication required to update your community node.");
+  }
+  const path = `globeUsers/${cleanUid}`;
   try {
-    const ref = doc(db, "globeUsers", idStr);
-    await setDoc(
-      ref,
-      {
-        id: Number.isFinite(Number(idStr)) ? Number(idStr) : 0,
-        ...patch,
-      },
-      { merge: true },
-    );
+    await ensureOwnGlobeNode(cleanUid, patch);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -1205,7 +1268,7 @@ export function validateCommunityCommentText(text: string): {
       return {
         valid: false,
         matchedTerm: phrase,
-        reason: `Community Guideline Violation: Your comment contains unkind or prohibited language ("${phrase}"). Please keep all comments supportive, kind, and free of profanity.`,
+        reason: `Community Guideline Violation: Your message contains unkind language ("${phrase}"). Please keep ONY supportive.`,
       };
     }
   }
@@ -1220,28 +1283,12 @@ export function validateCommunityCommentText(text: string): {
       return {
         valid: false,
         matchedTerm: word,
-        reason: `Community Guideline Violation: Profanity or disrespectful language ("${word}") is not allowed in ONY Community. Please edit your comment to be supportive.`,
+        reason: `Community Guideline Violation: Disrespectful language ("${word}") is not allowed in ONY Community.`,
       };
     }
   }
 
   return { valid: true };
-}
-
-function stripUndefinedDeep<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
-  }
-  if (value !== null && typeof value === "object") {
-    const cleaned: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (v !== undefined) {
-        cleaned[k] = stripUndefinedDeep(v);
-      }
-    }
-    return cleaned as T;
-  }
-  return value;
 }
 
 function normalizeLikeRecords(raw: unknown): PostLikeRecord[] {
@@ -1252,17 +1299,14 @@ function normalizeLikeRecords(raw: unknown): PostLikeRecord[] {
     if (item && typeof item === "object") {
       const rec = item as Partial<PostLikeRecord>;
       const userId = String(rec.userId || "").trim();
-      const userName = String(rec.userName || "Community Member").trim();
-      const createdAt = String(rec.createdAt || new Date().toISOString());
-      const key = userId || userName.toLowerCase();
-      if (key && !seenUsers.has(key)) {
-        seenUsers.add(key);
-        list.push({
-          userId: userId || `user_${userName.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
-          userName,
-          createdAt,
-        });
-      }
+      if (!userId || seenUsers.has(userId)) continue;
+      seenUsers.add(userId);
+      list.push({
+        userId,
+        userName: String(rec.userName || "Community Member").trim(),
+        ...(typeof rec.reaction === "string" && rec.reaction.trim() ? { reaction: rec.reaction.trim() } : {}),
+        createdAt: String(rec.createdAt || new Date().toISOString()),
+      });
     }
   }
   return list;
@@ -1276,7 +1320,7 @@ function normalizeCommentReplies(raw: unknown): PostCommentReplyRecord[] {
       const r = item as Partial<PostCommentReplyRecord>;
       return {
         id: String(r.id || `reply_${idx + 1}`),
-        userId: String(r.userId || "community_member"),
+        userId: String(r.userId || ""),
         userName: String(r.userName || "Community Member"),
         ...(r.kind === "voice" || r.kind === "text" ? { kind: r.kind } : {}),
         text: String(r.text || ""),
@@ -1299,7 +1343,7 @@ function normalizePostComments(raw: unknown): PostCommentRecord[] {
       const replies = normalizeCommentReplies(c.replies);
       return {
         id: String(c.id || `comment_${idx + 1}`),
-        userId: String(c.userId || "community_member"),
+        userId: String(c.userId || ""),
         userName: String(c.userName || "Community Member"),
         ...(c.kind === "voice" || c.kind === "text" ? { kind: c.kind } : {}),
         text: String(c.text || ""),
@@ -1319,55 +1363,43 @@ function normalizePostComments(raw: unknown): PostCommentRecord[] {
 // Community Posts Operations
 // ==========================================
 
-function normalizeCommunityPostSignature(post: Pick<FirestoreCommunityPost, "author" | "title" | "body">): string {
-  const norm = (v: string) => v.trim().toLowerCase().replace(/\s+/g, " ");
-  return `${norm(post.author)}|${norm(post.title)}|${norm(post.body)}`;
-}
-
-function scoreCommunityPostCompleteness(post: FirestoreCommunityPost): number {
-  const isCanonicalSeed = /^post_\d+$/.test(post.id) ? 10 : 0;
-  return (
-    isCanonicalSeed +
-    (post.comments?.length || 0) * 3 +
-    (post.likeRecords?.length || 0) * 2
-  );
-}
-
 export function deduplicateCommunityPostList(
   posts: FirestoreCommunityPost[],
 ): FirestoreCommunityPost[] {
   const byId = new Map<string, FirestoreCommunityPost>();
-  const bySig = new Map<string, FirestoreCommunityPost>();
   const orderedIds: string[] = [];
 
   for (const post of posts) {
-    const existingById = byId.get(post.id);
-    if (existingById) {
-      if (scoreCommunityPostCompleteness(post) > scoreCommunityPostCompleteness(existingById)) {
-        byId.set(post.id, post);
-      }
-      continue;
+    if (!post.id) continue;
+    if (!byId.has(post.id)) {
+      orderedIds.push(post.id);
     }
-
-    const sig = normalizeCommunityPostSignature(post);
-    const existingBySig = bySig.get(sig);
-    if (existingBySig) {
-      if (scoreCommunityPostCompleteness(post) > scoreCommunityPostCompleteness(existingBySig)) {
-        byId.delete(existingBySig.id);
-        byId.set(post.id, post);
-        bySig.set(sig, post);
-        const idx = orderedIds.indexOf(existingBySig.id);
-        if (idx >= 0) orderedIds[idx] = post.id;
-      }
-      continue;
-    }
-
     byId.set(post.id, post);
-    bySig.set(sig, post);
-    orderedIds.push(post.id);
   }
 
   return orderedIds.map((id) => byId.get(id)!).filter(Boolean);
+}
+
+function mapDocToCommunityPost(docId: string, raw: Record<string, unknown>): FirestoreCommunityPost {
+  const likeRecords = normalizeLikeRecords(raw.likeRecords);
+  const comments = normalizePostComments(raw.comments);
+  return {
+    id: docId,
+    author: String(raw.author || "Anonymous"),
+    authorId: String(raw.authorId || ""),
+    title: String(raw.title || ""),
+    body: String(raw.body || ""),
+    category: String(raw.category || "General"),
+    likes: likeRecords.length,
+    likeRecords,
+    comments,
+    ...(raw.media === "image" || raw.media === "voice" ? { media: raw.media } : {}),
+    ...(raw.imageUrl ? { imageUrl: String(raw.imageUrl) } : {}),
+    ...(raw.audioUrl ? { audioUrl: String(raw.audioUrl) } : {}),
+    ...(typeof raw.audioDuration === "number" ? { audioDuration: raw.audioDuration } : {}),
+    createdAt: String(raw.createdAt || new Date().toISOString()),
+    ...(raw.updatedAt ? { updatedAt: String(raw.updatedAt) } : {}),
+  };
 }
 
 export async function listCommunityPosts(maxCount = 50): Promise<FirestoreCommunityPost[]> {
@@ -1376,74 +1408,46 @@ export async function listCommunityPosts(maxCount = 50): Promise<FirestoreCommun
     const colRef = collection(db, "communityPosts");
     const q = query(colRef, orderBy("createdAt", "desc"), limit(maxCount));
     const snap = await getDocs(q);
-
-    const results: FirestoreCommunityPost[] = [];
-    for (const d of snap.docs) {
-      const raw = d.data() as Record<string, unknown>;
-      const title = String(raw.title || "");
-      const matchingDefault = DEFAULT_COMMUNITY_POSTS.find(
-        (def) => def.title.toLowerCase() === title.toLowerCase(),
-      );
-
-      const hasLikeRecordsField = Array.isArray(raw.likeRecords);
-      const hasCommentsField = Array.isArray(raw.comments);
-
-      const likeRecords = hasLikeRecordsField
-        ? normalizeLikeRecords(raw.likeRecords)
-        : matchingDefault
-          ? matchingDefault.likeRecords
-          : [];
-
-      const comments = hasCommentsField
-        ? normalizePostComments(raw.comments)
-        : matchingDefault
-          ? matchingDefault.comments
-          : [];
-
-      const likesCount = likeRecords.length;
-
-      const postObj: FirestoreCommunityPost = {
-        id: d.id,
-        author: String(raw.author || "Anonymous"),
-        ...(raw.authorId ? { authorId: String(raw.authorId) } : {}),
-        title,
-        body: String(raw.body || ""),
-        category: String(raw.category || "General"),
-        likes: likesCount,
-        likeRecords,
-        comments,
-        ...(raw.media === "image" || raw.media === "voice" ? { media: raw.media } : {}),
-        ...(raw.audioUrl ? { audioUrl: String(raw.audioUrl) } : {}),
-        ...(typeof raw.audioDuration === "number" ? { audioDuration: raw.audioDuration } : {}),
-        createdAt: String(raw.createdAt || new Date().toISOString()),
-      };
-
-      // Backfill older Firestore post documents so the database holds the full enhanced schema
-      if (!hasLikeRecordsField || !hasCommentsField || raw.likes !== likesCount) {
-        setDoc(
-          doc(db, "communityPosts", d.id),
-          stripUndefinedDeep({
-            likes: likesCount,
-            likeRecords,
-            comments,
-          }),
-          { merge: true },
-        ).catch(() => {});
-      }
-
-      results.push(postObj);
-    }
-
+    const results = snap.docs.map((d) => mapDocToCommunityPost(d.id, d.data() as Record<string, unknown>));
     return deduplicateCommunityPostList(results);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
+export function subscribeCommunityPosts(
+  onUpdate: (posts: FirestoreCommunityPost[]) => void,
+  onError?: (err: Error) => void,
+  maxCount = 50,
+): () => void {
+  const q = query(collection(db, "communityPosts"), orderBy("createdAt", "desc"), limit(maxCount));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const results = snap.docs.map((d) => mapDocToCommunityPost(d.id, d.data() as Record<string, unknown>));
+      onUpdate(deduplicateCommunityPostList(results));
+    },
+    (err) => {
+      console.warn("[ONY Posts] Live feed listener error:", err);
+      onError?.(err);
+    },
+  );
+}
+
 export async function createCommunityPost(
   post: Omit<FirestoreCommunityPost, "id">,
   customId?: string,
 ): Promise<string> {
+  const uid = (post.authorId || auth.currentUser?.uid || "").trim();
+  if (!uid) {
+    throw new Error("You must be signed in to publish a community post.");
+  }
+
+  const titleCheck = validateCommunityCommentText(post.title);
+  if (!titleCheck.valid) throw new Error(titleCheck.reason || "Invalid post title.");
+  const bodyCheck = validateCommunityCommentText(post.body);
+  if (!bodyCheck.valid) throw new Error(bodyCheck.reason || "Invalid post body.");
+
   const path = "communityPosts";
   try {
     const colRef = collection(db, "communityPosts");
@@ -1452,14 +1456,25 @@ export async function createCommunityPost(
     const comments = normalizePostComments(post.comments);
     const payload = stripUndefinedDeep({
       ...post,
+      authorId: uid,
       likes: likeRecords.length,
       likeRecords,
       comments,
+      updatedAt: post.createdAt || new Date().toISOString(),
     });
-    await setDoc(newDocRef, payload, { merge: true });
+    await setDoc(newDocRef, payload);
     return newDocRef.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function deleteCommunityPost(postId: string): Promise<void> {
+  const path = `communityPosts/${postId}`;
+  try {
+    await deleteDoc(doc(db, "communityPosts", postId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -1469,31 +1484,24 @@ export async function saveCommunityPostInteractionState(
   const path = `communityPosts/${post.id}`;
   const likeRecords = normalizeLikeRecords(post.likeRecords);
   const comments = normalizePostComments(post.comments);
+  const now = new Date().toISOString();
   const updatedPost: FirestoreCommunityPost = {
     ...post,
     likes: likeRecords.length,
     likeRecords,
     comments,
+    updatedAt: now,
   };
   try {
     const docRef = doc(db, "communityPosts", String(post.id));
-    await setDoc(
+    await updateDoc(
       docRef,
       stripUndefinedDeep({
-        author: updatedPost.author,
-        authorId: updatedPost.authorId,
-        title: updatedPost.title,
-        body: updatedPost.body,
-        category: updatedPost.category,
         likes: updatedPost.likes,
         likeRecords: updatedPost.likeRecords,
         comments: updatedPost.comments,
-        media: updatedPost.media,
-        audioUrl: updatedPost.audioUrl,
-        audioDuration: updatedPost.audioDuration,
-        createdAt: updatedPost.createdAt,
+        updatedAt: now,
       }),
-      { merge: true },
     );
     return updatedPost;
   } catch (error) {
@@ -1504,30 +1512,36 @@ export async function saveCommunityPostInteractionState(
 export async function toggleCommunityPostLike(
   post: FirestoreCommunityPost,
   user: { uid: string; name: string },
+  reaction?: string,
 ): Promise<FirestoreCommunityPost> {
-  const cleanUid = user.uid.trim() || "anonymous_user";
+  const cleanUid = (user.uid || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) {
+    throw new Error("Please sign in to react to community posts.");
+  }
   const cleanName = user.name.trim() || "ONY Member";
   const currentLikes = normalizeLikeRecords(post.likeRecords);
-  const alreadyLiked = currentLikes.some(
-    (item) =>
-      item.userId === cleanUid ||
-      item.userName.trim().toLowerCase() === cleanName.toLowerCase(),
-  );
+  const existing = currentLikes.find((item) => item.userId === cleanUid);
 
-  const nextLikeRecords = alreadyLiked
-    ? currentLikes.filter(
-        (item) =>
-          item.userId !== cleanUid &&
-          item.userName.trim().toLowerCase() !== cleanName.toLowerCase(),
-      )
-    : [
-        ...currentLikes,
-        {
-          userId: cleanUid,
-          userName: cleanName,
-          createdAt: new Date().toISOString(),
-        },
-      ];
+  let nextLikeRecords: PostLikeRecord[];
+  if (existing && (!reaction || existing.reaction === reaction)) {
+    nextLikeRecords = currentLikes.filter((item) => item.userId !== cleanUid);
+  } else if (existing && reaction) {
+    nextLikeRecords = currentLikes.map((item) =>
+      item.userId === cleanUid
+        ? { ...item, reaction, createdAt: new Date().toISOString() }
+        : item,
+    );
+  } else {
+    nextLikeRecords = [
+      ...currentLikes,
+      {
+        userId: cleanUid,
+        userName: cleanName,
+        ...(reaction ? { reaction } : {}),
+        createdAt: new Date().toISOString(),
+      },
+    ];
+  }
 
   return saveCommunityPostInteractionState({
     ...post,
@@ -1548,6 +1562,11 @@ export async function addCommunityPostComment(
     transcription?: string;
   },
 ): Promise<FirestoreCommunityPost> {
+  const cleanUid = (params.userId || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) {
+    throw new Error("Please sign in to comment on posts.");
+  }
+
   const isVoice = params.kind === "voice";
   if (isVoice) {
     if (!params.audioUrl) {
@@ -1567,12 +1586,11 @@ export async function addCommunityPostComment(
   }
 
   const now = new Date().toISOString();
-  // TODO: Upload voice audio blob via dedicated media storage endpoint instead of storing inline dataUrl in Firestore once backend storage API exists.
   const newComment: PostCommentRecord = {
     id: `comment_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    userId: params.userId.trim() || "anonymous_user",
+    userId: cleanUid,
     userName: params.userName.trim() || "ONY Member",
-    ...(isVoice ? { kind: "voice" as const } : { kind: "text" as const }),
+    kind: isVoice ? "voice" : "text",
     text: params.text.trim() || (isVoice ? "Voice comment" : ""),
     ...(isVoice && params.audioUrl ? { audioUrl: params.audioUrl } : {}),
     ...(isVoice && typeof params.audioDuration === "number"
@@ -1605,11 +1623,7 @@ export async function editCommunityPostComment(
   const now = new Date().toISOString();
   const nextComments = normalizePostComments(post.comments).map((c) =>
     c.id === commentId
-      ? {
-          ...c,
-          text: newText.trim(),
-          updatedAt: now,
-        }
+      ? { ...c, text: newText.trim(), updatedAt: now }
       : c,
   );
 
@@ -1635,23 +1649,18 @@ export async function toggleCommunityCommentLike(
   commentId: string,
   user: { uid: string; name: string },
 ): Promise<FirestoreCommunityPost> {
-  const cleanUid = user.uid.trim() || "anonymous_user";
+  const cleanUid = (user.uid || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) {
+    throw new Error("Please sign in to like comments.");
+  }
   const cleanName = user.name.trim() || "ONY Member";
 
   const nextComments = normalizePostComments(post.comments).map((c) => {
     if (c.id !== commentId) return c;
     const currentLikes = normalizeLikeRecords(c.likeRecords);
-    const alreadyLiked = currentLikes.some(
-      (item) =>
-        item.userId === cleanUid ||
-        item.userName.trim().toLowerCase() === cleanName.toLowerCase(),
-    );
+    const alreadyLiked = currentLikes.some((item) => item.userId === cleanUid);
     const updatedLikes = alreadyLiked
-      ? currentLikes.filter(
-          (item) =>
-            item.userId !== cleanUid &&
-            item.userName.trim().toLowerCase() !== cleanName.toLowerCase(),
-        )
+      ? currentLikes.filter((item) => item.userId !== cleanUid)
       : [
           ...currentLikes,
           {
@@ -1686,6 +1695,11 @@ export async function addCommunityCommentReply(
     transcription?: string;
   },
 ): Promise<FirestoreCommunityPost> {
+  const cleanUid = (params.userId || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) {
+    throw new Error("Please sign in to reply.");
+  }
+
   const isVoice = params.kind === "voice";
   if (isVoice) {
     if (!params.audioUrl) {
@@ -1699,12 +1713,11 @@ export async function addCommunityCommentReply(
   }
 
   const now = new Date().toISOString();
-  // TODO: Upload voice reply audio via dedicated media storage endpoint when backend API exists.
   const newReply: PostCommentReplyRecord = {
     id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    userId: params.userId.trim() || "anonymous_user",
+    userId: cleanUid,
     userName: params.userName.trim() || "ONY Member",
-    ...(isVoice ? { kind: "voice" as const } : { kind: "text" as const }),
+    kind: isVoice ? "voice" : "text",
     text: params.text.trim() || (isVoice ? "Voice reply" : ""),
     ...(isVoice && params.audioUrl ? { audioUrl: params.audioUrl } : {}),
     ...(isVoice && typeof params.audioDuration === "number"
@@ -1747,11 +1760,7 @@ export async function editCommunityCommentReply(
           ...c,
           replies: normalizeCommentReplies(c.replies).map((r) =>
             r.id === replyId
-              ? {
-                  ...r,
-                  text: newText.trim(),
-                  updatedAt: now,
-                }
+              ? { ...r, text: newText.trim(), updatedAt: now }
               : r,
           ),
         }
@@ -1798,7 +1807,113 @@ export async function updateCommunityPostLikes(
 }
 
 // ==========================================
-// Marketplace Merchants Operations
+// Owner-Private Community Feed State & Blocks
+// ==========================================
+
+export async function listSavedPostIds(uid: string): Promise<string[]> {
+  if (!uid) return [];
+  const snap = await getDocs(collection(db, "users", uid, "savedPosts"));
+  return snap.docs.map((d) => d.id);
+}
+
+export async function setPostSavedState(uid: string, postId: string, saved: boolean): Promise<void> {
+  const ref = doc(db, "users", uid, "savedPosts", postId);
+  if (saved) {
+    await setDoc(ref, { postId, savedAt: new Date().toISOString() });
+  } else {
+    await deleteDoc(ref);
+  }
+}
+
+export async function listHiddenPostIds(uid: string): Promise<string[]> {
+  if (!uid) return [];
+  const snap = await getDocs(collection(db, "users", uid, "hiddenPosts"));
+  return snap.docs.map((d) => d.id);
+}
+
+export async function setPostHiddenState(uid: string, postId: string, hidden: boolean): Promise<void> {
+  const ref = doc(db, "users", uid, "hiddenPosts", postId);
+  if (hidden) {
+    await setDoc(ref, { postId, hiddenAt: new Date().toISOString() });
+  } else {
+    await deleteDoc(ref);
+  }
+}
+
+export async function listBlockedUserIds(uid: string): Promise<string[]> {
+  if (!uid) return [];
+  const snap = await getDocs(collection(db, "users", uid, "blockedUsers"));
+  return snap.docs.map((d) => d.id);
+}
+
+export async function blockCommunityUser(
+  uid: string,
+  blockedUid: string,
+  reason?: string,
+): Promise<void> {
+  if (!uid || !blockedUid || uid === blockedUid) return;
+  const ref = doc(db, "users", uid, "blockedUsers", blockedUid);
+  await setDoc(
+    ref,
+    stripUndefinedFields({
+      blockedUid,
+      blockedAt: new Date().toISOString(),
+      ...(reason ? { reason: reason.slice(0, 300) } : {}),
+    }),
+  );
+}
+
+export async function unblockCommunityUser(uid: string, blockedUid: string): Promise<void> {
+  if (!uid || !blockedUid) return;
+  await deleteDoc(doc(db, "users", uid, "blockedUsers", blockedUid));
+}
+
+export async function submitModerationReport(params: {
+  reporterUid: string;
+  targetType: "post" | "comment" | "message" | "node";
+  targetId: string;
+  targetAuthorId?: string;
+  reason: string;
+}): Promise<string> {
+  const colRef = collection(db, "moderationReports");
+  const newRef = doc(colRef);
+  await setDoc(
+    newRef,
+    stripUndefinedFields({
+      reporterUid: params.reporterUid,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      targetAuthorId: params.targetAuthorId,
+      reason: params.reason.slice(0, 500),
+      createdAt: new Date().toISOString(),
+    }),
+  );
+  return newRef.id;
+}
+
+export async function submitFeedbackReport(params: {
+  userId: string;
+  category: string;
+  description: string;
+  screenshotUrl?: string;
+}): Promise<string> {
+  const colRef = collection(db, "feedbackReports");
+  const newRef = doc(colRef);
+  await setDoc(
+    newRef,
+    stripUndefinedFields({
+      userId: params.userId,
+      category: params.category.slice(0, 50),
+      description: params.description.slice(0, 2000),
+      screenshotUrl: params.screenshotUrl,
+      createdAt: new Date().toISOString(),
+    }),
+  );
+  return newRef.id;
+}
+
+// ==========================================
+// Marketplace Merchants & Voucher Claims
 // ==========================================
 
 export async function listMerchants(): Promise<FirestoreMerchant[]> {
@@ -1815,54 +1930,183 @@ export async function listMerchants(): Promise<FirestoreMerchant[]> {
   }
 }
 
+export async function listVoucherClaims(uid: string): Promise<FirestoreVoucherClaim[]> {
+  if (!uid) return [];
+  const snap = await getDocs(collection(db, "users", uid, "voucherClaims"));
+  return snap.docs
+    .map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<FirestoreVoucherClaim, "id">),
+    }))
+    .sort((a, b) => (b.claimedAt || "").localeCompare(a.claimedAt || ""));
+}
+
+export async function claimMarketplaceVoucher(
+  uid: string,
+  merchant: { id?: string; name: string; offer: string; value: string },
+): Promise<FirestoreVoucherClaim> {
+  const merchantId = (merchant.id || merchant.name).toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  const claimId = `claim_${merchantId}`;
+  const existingRef = doc(db, "users", uid, "voucherClaims", claimId);
+  const existingSnap = await getDoc(existingRef).catch(() => null);
+  if (existingSnap && existingSnap.exists()) {
+    return { id: existingSnap.id, ...(existingSnap.data() as Omit<FirestoreVoucherClaim, "id">) };
+  }
+
+  const codeSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  const shortSlug = merchantId.replace(/_/g, "").slice(0, 4).toUpperCase();
+  const claim: FirestoreVoucherClaim = {
+    id: claimId,
+    merchantId,
+    merchantName: merchant.name,
+    offer: merchant.offer,
+    value: merchant.value,
+    voucherCode: `ONY-${shortSlug}-${codeSuffix}`,
+    claimedAt: new Date().toISOString(),
+    status: "claimed",
+  };
+  await setDoc(existingRef, claim);
+  return claim;
+}
+
+// ==========================================
+// Toolkit Completions
+// ==========================================
+
+export async function listToolkitCompletions(uid: string): Promise<FirestoreToolkitCompletion[]> {
+  if (!uid) return [];
+  const snap = await getDocs(collection(db, "users", uid, "toolkitCompletions"));
+  return snap.docs
+    .map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<FirestoreToolkitCompletion, "id">),
+    }))
+    .sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || ""));
+}
+
+export async function recordToolkitCompletion(
+  uid: string,
+  toolId: string,
+  title: string,
+): Promise<string> {
+  const colRef = collection(db, "users", uid, "toolkitCompletions");
+  const newRef = doc(colRef);
+  await setDoc(newRef, {
+    toolId,
+    title,
+    completedAt: new Date().toISOString(),
+  });
+  return newRef.id;
+}
+
 // ==========================================
 // Community Support Messages Operations
 // ==========================================
 
+function deduplicateCommunityMessages(messages: FirestoreCommunityMessage[]): FirestoreCommunityMessage[] {
+  const sorted = [...messages].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const seenIds = new Set<string>();
+  const deduped: FirestoreCommunityMessage[] = [];
+  for (const msg of sorted) {
+    if (!msg.id || seenIds.has(msg.id)) continue;
+    seenIds.add(msg.id);
+    deduped.push(msg);
+  }
+  return deduped;
+}
+
 export async function listCommunityMessages(
-  toUserId?: string,
+  recipientUid?: string,
 ): Promise<FirestoreCommunityMessage[]> {
+  const targetUid = (recipientUid || auth.currentUser?.uid || "").trim();
+  if (!targetUid) return [];
+
   const path = "communityMessages";
   try {
-    const colRef = collection(db, "communityMessages");
-    const snap = await getDocs(colRef);
-    let messages = snap.docs.map((d) => ({
+    const q = query(collection(db, "communityMessages"), where("toUserId", "==", targetUid));
+    const snap = await getDocs(q);
+    const messages = snap.docs.map((d) => ({
       id: d.id,
       ...(d.data() as Omit<FirestoreCommunityMessage, "id">),
     }));
-    // Sort in memory by newest first (resilient against composite index requirements)
-    messages.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    if (toUserId) {
-      const currentUid = auth.currentUser?.uid;
-      messages = messages.filter(
-        (m) =>
-          m.toUserId === toUserId ||
-          (toUserId === "0" &&
-            (m.toUserId === "0" ||
-              m.toUserId === "me" ||
-              Boolean(currentUid && m.toUserId === currentUid))),
-      );
-    }
-    // Deduplicate in memory (guards against concurrent seed or rapid double-submissions)
-    const seenIds = new Set<string>();
-    const seenContent = new Map<string, number>();
-    const deduped: FirestoreCommunityMessage[] = [];
-    for (const msg of messages) {
-      if (!msg.id || seenIds.has(msg.id)) continue;
-      const textKey = `${msg.kind || "text"}:${(msg.text || "").trim().toLowerCase()}`;
-      const msgTime = Date.parse(msg.createdAt || "") || 0;
-      const prevTime = seenContent.get(textKey);
-      if (prevTime !== undefined && Math.abs(msgTime - prevTime) < 30_000) {
-        continue;
-      }
-      seenIds.add(msg.id);
-      seenContent.set(textKey, msgTime);
-      deduped.push(msg);
-    }
-    return deduped;
+    return deduplicateCommunityMessages(messages);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
+}
+
+export function subscribeIncomingCommunityMessages(
+  recipientUid: string,
+  onUpdate: (messages: FirestoreCommunityMessage[]) => void,
+  onError?: (err: Error) => void,
+): () => void {
+  const cleanUid = recipientUid.trim();
+  if (!cleanUid) {
+    onUpdate([]);
+    return () => {};
+  }
+  const q = query(collection(db, "communityMessages"), where("toUserId", "==", cleanUid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const msgs = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<FirestoreCommunityMessage, "id">),
+      }));
+      onUpdate(deduplicateCommunityMessages(msgs));
+    },
+    (err) => {
+      console.warn("[ONY Messages] Inbox listener error:", err);
+      onError?.(err);
+    },
+  );
+}
+
+export async function listSentCommunityMessagesToNode(
+  fromUid: string,
+  toUid: string,
+): Promise<FirestoreCommunityMessage[]> {
+  if (!fromUid || !toUid) return [];
+  const path = "communityMessages";
+  try {
+    const q = query(collection(db, "communityMessages"), where("fromUserId", "==", fromUid));
+    const snap = await getDocs(q);
+    const filtered = snap.docs
+      .map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<FirestoreCommunityMessage, "id">),
+      }))
+      .filter((m) => m.toUserId === toUid);
+    return deduplicateCommunityMessages(filtered);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function markCommunityMessagesRead(
+  messageIds: string[],
+  isRead = true,
+): Promise<void> {
+  if (!messageIds.length) return;
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+  for (const id of messageIds) {
+    batch.update(doc(db, "communityMessages", id), {
+      isRead,
+      readAt: isRead ? now : null,
+    });
+  }
+  await batch.commit();
+}
+
+export async function updateCommunityMessageTranscript(
+  messageId: string,
+  transcript: string,
+): Promise<void> {
+  if (!messageId || !transcript.trim()) return;
+  await updateDoc(doc(db, "communityMessages", messageId), {
+    transcript: transcript.trim().slice(0, 2000),
+  });
 }
 
 export async function deleteCommunityMessage(messageId: string): Promise<void> {
@@ -1877,28 +2121,36 @@ export async function deleteCommunityMessage(messageId: string): Promise<void> {
 export async function createCommunityMessage(
   message: Omit<FirestoreCommunityMessage, "id">,
 ): Promise<string> {
+  const fromUid = (message.fromUserId || auth.currentUser?.uid || "").trim();
+  if (!fromUid) {
+    throw new Error("You must be signed in to send supportive messages.");
+  }
+
   const path = "communityMessages";
   try {
-    // Data-layer enforcement: verify recipient node exists and accepts messages
     if (message.toUserId) {
       const recipientRef = doc(db, "globeUsers", String(message.toUserId));
       const recipientSnap = await getDoc(recipientRef).catch(() => null);
       if (recipientSnap && recipientSnap.exists()) {
         const recipientData = recipientSnap.data() as Partial<FirestoreGlobeUser>;
         if (recipientData.acceptsMessages === false) {
-          throw new Error("RECIPIENT_MESSAGES_DISABLED: This person is not accepting supportive messages right now.");
-        }
-      } else {
-        const fallbackNode = DEFAULT_GLOBE_USERS.find((u) => String(u.id) === String(message.toUserId));
-        if (fallbackNode && fallbackNode.acceptsMessages === false) {
-          throw new Error("RECIPIENT_MESSAGES_DISABLED: This person is not accepting supportive messages right now.");
+          throw new Error(
+            "RECIPIENT_MESSAGES_DISABLED: This person is not accepting supportive messages right now.",
+          );
         }
       }
     }
 
     const colRef = collection(db, "communityMessages");
     const newDocRef = doc(colRef);
-    await setDoc(newDocRef, message);
+    await setDoc(
+      newDocRef,
+      stripUndefinedFields({
+        ...message,
+        fromUserId: fromUid,
+        isRead: false,
+      } as unknown as Record<string, unknown>),
+    );
     return newDocRef.id;
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("RECIPIENT_MESSAGES_DISABLED:")) {
@@ -1909,370 +2161,36 @@ export async function createCommunityMessage(
 }
 
 // ==========================================
-// Initial Database Seeding
-// ==========================================
-
-export const DEFAULT_GLOBE_USERS: FirestoreGlobeUser[] = [
-  { id: 0, moodGlow: "bright", moodKey: "calm", moodLabel: "calm", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 101.52, lat: 3.07, isMe: true },
-  { id: 1, moodGlow: "bright", moodKey: "good", moodLabel: "good", discoverable: true, acceptsMessages: true, minLevel: 0, lon: -122.42, lat: 37.77 },
-  { id: 2, moodGlow: "soft", moodKey: "okay", moodLabel: "okay", discoverable: true, acceptsMessages: false, minLevel: 0, lon: -74.01, lat: 40.71 },
-  { id: 3, moodGlow: "dim", moodKey: "low", moodLabel: "low", discoverable: true, acceptsMessages: true, minLevel: 0, lon: 72.88, lat: 19.08 },
-  { id: 4, moodGlow: "neutral", moodKey: "none", moodLabel: "none", discoverable: true, acceptsMessages: false, minLevel: 0, lon: 139.69, lat: 35.69 },
-  { id: 5, moodGlow: "bright", moodKey: "great", moodLabel: "great", discoverable: true, acceptsMessages: false, minLevel: 1, lon: 100.5, lat: 13.76 },
-  { id: 6, moodGlow: "dim", moodKey: "difficult", moodLabel: "difficult", discoverable: true, acceptsMessages: true, minLevel: 1, lon: 106.85, lat: -6.21 },
-  { id: 7, moodGlow: "soft", moodKey: "okay", moodLabel: "okay", discoverable: true, acceptsMessages: true, minLevel: 2, lon: 126.98, lat: 37.57 },
-  { id: 8, moodGlow: "neutral", moodKey: "none", moodLabel: "none", discoverable: true, acceptsMessages: true, minLevel: 2, lon: 151.21, lat: -33.87 },
-  { id: 9, moodGlow: "bright", moodKey: "good", moodLabel: "good", discoverable: true, acceptsMessages: true, minLevel: 3, lon: 113.26, lat: 23.13 },
-  { id: 10, moodGlow: "dim", moodKey: "low", moodLabel: "low", discoverable: true, acceptsMessages: false, minLevel: 3, lon: 103.82, lat: 1.35 },
-  { id: 11, moodGlow: "soft", moodKey: "okay", moodLabel: "okay", discoverable: false, acceptsMessages: true, minLevel: 3, lon: 120.98, lat: 14.6 },
-];
-
-export const DEFAULT_COMMUNITY_POSTS: FirestoreCommunityPost[] = [
-  {
-    id: "post_1",
-    author: "Nadia · 21",
-    authorId: "ony_user_nadia",
-    title: "One tiny win during finals week",
-    body: "I put my phone away for 25 minutes and finished one page. Sharing because small still counts.",
-    category: "Study",
-    likes: 3,
-    likeRecords: [
-      {
-        userId: "ony_user_alex",
-        userName: "Alex Tan",
-        createdAt: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
-      },
-      {
-        userId: "ony_user_jia",
-        userName: "Jia · 24",
-        createdAt: new Date(Date.now() - 62 * 60 * 1000).toISOString(),
-      },
-      {
-        userId: "ony_user_amir",
-        userName: "Amirul",
-        createdAt: new Date(Date.now() - 28 * 60 * 1000).toISOString(),
-      },
-    ],
-    comments: [
-      {
-        id: "comment_seed_101",
-        userId: "ony_user_alex",
-        userName: "Alex Tan",
-        text: "Small absolutely counts. Putting the phone away is honestly the hardest part!",
-        createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-        likes: 2,
-        likeRecords: [
-          {
-            userId: "ony_user_nadia",
-            userName: "Nadia · 21",
-            createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
-          },
-          {
-            userId: "ony_user_mei",
-            userName: "Mei · ONY",
-            createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-          },
-        ],
-        replies: [
-          {
-            id: "reply_seed_201",
-            userId: "ony_user_nadia",
-            userName: "Nadia · 21",
-            text: "Thank you Alex! Trying one more 25-minute block after dinner 🌱",
-            createdAt: new Date(Date.now() - 36 * 60 * 1000).toISOString(),
-          },
-        ],
-      },
-      {
-        id: "comment_seed_102",
-        userId: "ony_user_mei",
-        userName: "Mei · ONY",
-        text: "Proud of you for starting with one page. Wishing you calm focus for the rest of finals.",
-        createdAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-        likes: 1,
-        likeRecords: [
-          {
-            userId: "ony_user_amir",
-            userName: "Amirul",
-            createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-          },
-        ],
-        replies: [],
-      },
-    ],
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "post_2",
-    author: "Anonymous",
-    authorId: "ony_user_anon_work",
-    title: "Starting over at a new job",
-    body: "Week two and I still feel out of place. Today a colleague invited me for lunch, and it helped.",
-    category: "Work",
-    likes: 2,
-    likeRecords: [
-      {
-        userId: "ony_user_nadia",
-        userName: "Nadia · 21",
-        createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        userId: "ony_user_alex",
-        userName: "Alex Tan",
-        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-      },
-    ],
-    comments: [
-      {
-        id: "comment_seed_103",
-        userId: "ony_user_amir",
-        userName: "Amirul",
-        text: "Those small lunch invitations make such a big difference in the first month. Take it one day at a time!",
-        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        likes: 1,
-        likeRecords: [
-          {
-            userId: "ony_user_jia",
-            userName: "Jia · 24",
-            createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
-          },
-        ],
-        replies: [
-          {
-            id: "reply_seed_202",
-            userId: "ony_user_jia",
-            userName: "Jia · 24",
-            text: "Agreed! By week three or four the routine starts feeling much gentler.",
-            createdAt: new Date(Date.now() - 80 * 60 * 1000).toISOString(),
-          },
-        ],
-      },
-    ],
-    media: "voice",
-    audioDuration: 12,
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "post_3",
-    author: "Jia · 24",
-    authorId: "ony_user_jia",
-    title: "A low-energy self-care list",
-    body: "Water, shower, clean shirt, one message to a friend. That is enough for some days.",
-    category: "Self-care",
-    likes: 3,
-    likeRecords: [
-      {
-        userId: "ony_user_mei",
-        userName: "Mei · ONY",
-        createdAt: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        userId: "ony_user_alex",
-        userName: "Alex Tan",
-        createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        userId: "ony_user_nadia",
-        userName: "Nadia · 21",
-        createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-      },
-    ],
-    comments: [
-      {
-        id: "comment_seed_104",
-        userId: "ony_user_nadia",
-        userName: "Nadia · 21",
-        text: "Water + clean shirt resets my whole mood on low-energy days.",
-        createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-        likes: 1,
-        likeRecords: [
-          {
-            userId: "ony_user_jia",
-            userName: "Jia · 24",
-            createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-          },
-        ],
-        replies: [],
-      },
-    ],
-    media: "image",
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
-
-
-export const DEFAULT_USER_MEMORIES = [
-  { text: "I have exams coming up.", reason: "You mentioned this during a study-pressure chat.", active: true, category: "Study" },
-  { text: "I prefer shorter replies.", reason: "You chose this in your conversation preferences.", active: true, category: "Preference" },
-  { text: "I enjoy listening to music when stressed.", reason: "You said music helps you feel grounded.", active: true, category: "Wellbeing" },
-];
-
-export const DEFAULT_USER_CONVERSATIONS: Omit<FirestoreConversation, "id">[] = [
-  { title: "Feeling overwhelmed", category: "Emotional Wellbeing", day: "Today", folderId: 4, reportAllowed: true, updatedAt: new Date().toISOString(), messages: [{ from: "user", text: "Everything feels like a lot today." }, { from: "ony", text: "I hear you. We can slow this down together—what feels most urgent right now?" }] },
-  { title: "Internship search", category: "Career", day: "Today", folderId: 1, reportAllowed: true, updatedAt: new Date().toISOString(), messages: [{ from: "user", text: "I want to find an internship." }, { from: "ony", text: "Let’s begin with the kind of work and environment you want." }] },
-  { title: "Study pressure", category: "Study", day: "Today", folderId: 1, reportAllowed: true, updatedAt: new Date().toISOString(), messages: [{ from: "user", text: "My exams are getting close." }, { from: "ony", text: "That pressure makes sense. Let’s choose one small task for today." }] },
-  { title: "Relationship thoughts", category: "Relationships", day: "Yesterday", folderId: 2, reportAllowed: true, updatedAt: new Date(Date.now() - 86400000).toISOString(), messages: [{ from: "user", text: "I keep replaying a difficult conversation." }, { from: "ony", text: "It sounds like it stayed with you. Which part keeps coming back?" }] },
-  { title: "Feeling anxious", category: "Emotional Wellbeing", day: "Yesterday", folderId: 3, reportAllowed: true, updatedAt: new Date(Date.now() - 86400000).toISOString(), messages: [{ from: "user", text: "I’m feeling anxious." }, { from: "ony", text: "I’m here. Would something calming help, or would you like to talk it through?" }] },
-];
-
-export const DEFAULT_COMMUNITY_MESSAGES: Omit<FirestoreCommunityMessage, "id">[] = [
-  {
-    toUserId: "0",
-    toUserMood: "Calm",
-    fromUserId: "system_anon_92",
-    senderAnonymous: "Anonymous Member #928",
-    recipientAnonymous: "You (Anonymous Traveler)",
-    kind: "voice",
-    text: "Encouraging voice note · 0:08",
-    audioDuration: 8,
-    transcription: "Hey there! Just wanted to send you a gentle reminder that you are doing so well. Take things one breath at a time today 🌱",
-    createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-  },
-  {
-    toUserId: "0",
-    toUserMood: "Calm",
-    fromUserId: "system_anon_71",
-    senderAnonymous: "Anonymous Member #714",
-    recipientAnonymous: "You (Anonymous Traveler)",
-    kind: "text",
-    text: "Thinking of you today! Remember that you don't have to carry everything all at once. Just this one breath right now is more than enough 🌱",
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-  },
-  {
-    toUserId: "0",
-    toUserMood: "Calm",
-    fromUserId: "system_anon_30",
-    senderAnonymous: "Anonymous Friend #304",
-    recipientAnonymous: "You (Anonymous Traveler)",
-    kind: "text",
-    text: "Sending gentle warmth across the globe ☕ Hope today brings you a moment of genuine ease and comfort.",
-    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-  },
-  {
-    toUserId: "1",
-    toUserMood: "Good",
-    fromUserId: "system_anon_1",
-    senderAnonymous: "Anonymous Member #482",
-    recipientAnonymous: "Anonymous Traveler (Globe #1)",
-    kind: "text",
-    text: "Sending you gentle energy for your day 🌱 Remember that one small breath changes everything.",
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    toUserId: "3",
-    toUserMood: "Low",
-    fromUserId: "system_anon_2",
-    senderAnonymous: "Anonymous Member #195",
-    recipientAnonymous: "Anonymous Traveler (Globe #3)",
-    kind: "text",
-    text: "Hope today gets a little lighter for you. You are never as alone as you might feel 💫",
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  },
-  {
-    toUserId: "6",
-    toUserMood: "Very low",
-    fromUserId: "system_anon_3",
-    senderAnonymous: "Anonymous Member #312",
-    recipientAnonymous: "Anonymous Traveler (Globe #6)",
-    kind: "text",
-    text: "Sending quiet support your way. Take all the time and space you need today 🍵",
-    createdAt: new Date(Date.now() - 3600000 * 7).toISOString(),
-  },
-];
-
-export const DEFAULT_REGISTERED_ACCOUNTS: FirestoreRegisteredAccount[] = [
-  {
-    uid: "ony_user_alex",
-    displayName: "Alex Tan",
-    email: "alex@ony.app",
-    emailLower: "alex@ony.app",
-    phoneNumber: "012-345 6789",
-    updatedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-  },
-  {
-    uid: "ony_user_nadia",
-    displayName: "Nadia",
-    email: "nadia@ony.app",
-    emailLower: "nadia@ony.app",
-    phoneNumber: "017-882 3410",
-    updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    uid: "ony_user_amir",
-    displayName: "Amirul",
-    email: "amir@ony.app",
-    emailLower: "amir@ony.app",
-    phoneNumber: "019-410 9921",
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-];
-
-// ==========================================
 // Registered User Directory & Trusted Contact Requests
 // ==========================================
-
-export async function listRegisteredAccounts(
-  excludeUid?: string,
-  excludeEmail?: string | null,
-): Promise<FirestoreRegisteredAccount[]> {
-  const path = "globeUsers";
-  try {
-    const colRef = collection(db, "globeUsers");
-    const snap = await getDocs(colRef);
-    const byEmail = new Map<string, FirestoreRegisteredAccount>();
-
-    for (const d of snap.docs) {
-      const raw = d.data() as Record<string, unknown>;
-      if (d.id.startsWith("account_") || raw.recordType === "user_account") {
-        const email = String(raw.email || "").trim();
-        const emailLower = String(raw.emailLower || email).trim().toLowerCase();
-        const uid = String(raw.uid || d.id.replace(/^account_/, ""));
-        const displayName = String(raw.displayName || email.split("@")[0] || "ONY Member");
-        const phoneNumber = raw.phoneNumber ? String(raw.phoneNumber).trim() : undefined;
-        if (emailLower) {
-          byEmail.set(emailLower, {
-            uid,
-            displayName,
-            email,
-            emailLower,
-            phoneNumber,
-            updatedAt: String(raw.updatedAt || new Date().toISOString()),
-          });
-        }
-      }
-    }
-
-    // Also include seeded registered ONY accounts if not present yet
-    for (const acc of DEFAULT_REGISTERED_ACCOUNTS) {
-      if (!byEmail.has(acc.emailLower)) {
-        byEmail.set(acc.emailLower, acc);
-      }
-    }
-
-    const exEmailLower = excludeEmail ? excludeEmail.trim().toLowerCase() : "";
-    return Array.from(byEmail.values()).filter((acc) => {
-      if (excludeUid && acc.uid === excludeUid) return false;
-      if (exEmailLower && acc.emailLower === exEmailLower) return false;
-      return true;
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
-  }
-}
 
 export async function findRegisteredAccount(
   emailOrName: string,
 ): Promise<FirestoreRegisteredAccount | null> {
   const clean = emailOrName.trim().toLowerCase();
   if (!clean) return null;
-  const allAccounts = await listRegisteredAccounts();
-  return (
-    allAccounts.find(
-      (acc) =>
-        acc.emailLower === clean ||
-        acc.displayName.trim().toLowerCase() === clean,
-    ) || null
-  );
+  const colRef = collection(db, "userDirectory");
+  const isEmail = clean.includes("@");
+  const q = isEmail
+    ? query(colRef, where("emailLower", "==", clean), limit(1))
+    : query(colRef, where("displayNameLower", "==", clean), limit(1));
+
+  try {
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    const raw = d.data() as Record<string, unknown>;
+    return {
+      uid: String(raw.uid || d.id),
+      displayName: String(raw.displayName || "ONY Member"),
+      email: String(raw.email || ""),
+      emailLower: String(raw.emailLower || ""),
+      phoneNumber: raw.phoneNumber ? String(raw.phoneNumber) : undefined,
+      updatedAt: String(raw.updatedAt || new Date().toISOString()),
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, "userDirectory");
+  }
 }
 
 export async function findRegisteredAccountByUid(
@@ -2280,8 +2198,21 @@ export async function findRegisteredAccountByUid(
 ): Promise<FirestoreRegisteredAccount | null> {
   const cleanUid = uid.trim();
   if (!cleanUid) return null;
-  const allAccounts = await listRegisteredAccounts();
-  return allAccounts.find((acc) => acc.uid === cleanUid) || null;
+  try {
+    const snap = await getDoc(doc(db, "userDirectory", cleanUid));
+    if (!snap.exists()) return null;
+    const raw = snap.data() as Record<string, unknown>;
+    return {
+      uid: String(raw.uid || snap.id),
+      displayName: String(raw.displayName || "ONY Member"),
+      email: String(raw.email || ""),
+      emailLower: String(raw.emailLower || ""),
+      phoneNumber: raw.phoneNumber ? String(raw.phoneNumber) : undefined,
+      updatedAt: String(raw.updatedAt || new Date().toISOString()),
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `userDirectory/${cleanUid}`);
+  }
 }
 
 export async function sendTrustedContactRequest(params: {
@@ -2308,17 +2239,19 @@ export async function sendTrustedContactRequest(params: {
   }
 
   const requestId = `trusted_req_${params.fromUid}_${target.uid}`;
-  const path = `globeUsers/${requestId}`;
+  const path = `trustedContactRequests/${requestId}`;
   const now = new Date().toISOString();
   const resolvedPhone = params.contactPhone.trim() || target.phoneNumber || "";
   const requestData: FirestoreTrustedContactRequest = {
     id: requestId,
     fromUid: params.fromUid,
     fromName: params.fromName.trim() || "ONY Member",
-    fromEmail: senderEmailLower || "member@ony.app",
+    fromEmail: senderEmailLower,
+    fromEmailLower: senderEmailLower,
     toUid: target.uid,
     toName: target.displayName,
     toEmail: target.email,
+    toEmailLower: target.emailLower,
     contactPhone: resolvedPhone,
     relationshipNote: (params.relationshipNote || "").trim(),
     requestKind: "direct_invite",
@@ -2328,19 +2261,13 @@ export async function sendTrustedContactRequest(params: {
   };
 
   try {
-    await setDoc(
-      doc(db, "globeUsers", requestId),
-      {
-        recordType: "trusted_contact_request",
-        ...requestData,
-      },
-      { merge: true },
-    );
+    await setDoc(doc(db, "trustedContactRequests", requestId), requestData, { merge: true });
     return requestData;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
+
 export interface SendInviteLinkRequestParams {
   requesterUid?: string;
   friendUid?: string;
@@ -2356,11 +2283,6 @@ export interface SendInviteLinkRequestParams {
   relationshipNote?: string;
 }
 
-/**
- * Used when a friend clicks a user's shared Trusted Contact Invite Link
- * and requests to become the inviter's emergency contact.
- * The inviter (`toUid`) will see this request in their Incoming Requests and can Accept or Reject.
- */
 export async function sendTrustedContactRequestViaInviteLink(
   params: SendInviteLinkRequestParams,
 ): Promise<FirestoreTrustedContactRequest> {
@@ -2370,6 +2292,10 @@ export async function sendTrustedContactRequestViaInviteLink(
     auth.currentUser?.uid ||
     ""
   ).trim();
+  if (!resolvedRequesterUid) {
+    throw new Error("AUTH_REQUIRED: Please sign in before accepting a Trusted Contact invite link.");
+  }
+
   const resolvedRequesterName = (
     params.requesterName ||
     params.friendName ||
@@ -2398,42 +2324,38 @@ export async function sendTrustedContactRequestViaInviteLink(
     throw new Error("INVALID_INVITE: Invalid invite link (missing inviter ID).");
   }
 
-  // If inviterEmail or inviterName is missing, look up the account in registered accounts
-  if (!resolvedInviterEmail || !resolvedInviterName || resolvedInviterName === "ONY Friend") {
-    try {
-      const inviterAcc = await findRegisteredAccountByUid(resolvedInviterUid);
-      if (inviterAcc) {
-        if (!resolvedInviterEmail) {
-          resolvedInviterEmail = (inviterAcc.emailLower || inviterAcc.email || "").toLowerCase();
-        }
-        if (!resolvedInviterName || resolvedInviterName === "ONY Friend") {
-          resolvedInviterName = inviterAcc.displayName;
-        }
+  if (!resolvedInviterEmail || !resolvedInviterName) {
+    const inviterAcc = await findRegisteredAccountByUid(resolvedInviterUid).catch(() => null);
+    if (inviterAcc) {
+      if (!resolvedInviterEmail) {
+        resolvedInviterEmail = (inviterAcc.emailLower || inviterAcc.email || "").toLowerCase();
       }
-    } catch {
-      // ignore
+      if (!resolvedInviterName) {
+        resolvedInviterName = inviterAcc.displayName;
+      }
     }
   }
 
   if (
-    (resolvedRequesterUid && resolvedInviterUid && resolvedRequesterUid === resolvedInviterUid) ||
+    resolvedRequesterUid === resolvedInviterUid ||
     (resolvedRequesterEmail && resolvedInviterEmail && resolvedRequesterEmail === resolvedInviterEmail)
   ) {
     throw new Error("SELF_REQUEST: You cannot request to be your own emergency contact.");
   }
 
-  const effectiveSenderUid = resolvedRequesterUid || `user_${Date.now()}`;
-  const requestId = `trusted_req_link_${effectiveSenderUid}_${resolvedInviterUid}`;
-  const path = `globeUsers/${requestId}`;
+  const requestId = `trusted_req_link_${resolvedRequesterUid}_${resolvedInviterUid}`;
+  const path = `trustedContactRequests/${requestId}`;
   const now = new Date().toISOString();
   const requestData: FirestoreTrustedContactRequest = {
     id: requestId,
-    fromUid: effectiveSenderUid,
-    fromName: resolvedRequesterName || "ONY Friend",
-    fromEmail: resolvedRequesterEmail || "friend@ony.app",
+    fromUid: resolvedRequesterUid,
+    fromName: resolvedRequesterName,
+    fromEmail: resolvedRequesterEmail,
+    fromEmailLower: resolvedRequesterEmail,
     toUid: resolvedInviterUid,
     toName: resolvedInviterName || "ONY Member",
-    toEmail: resolvedInviterEmail || "member@ony.app",
+    toEmail: resolvedInviterEmail,
+    toEmailLower: resolvedInviterEmail,
     contactPhone: resolvedRequesterPhone,
     relationshipNote:
       (params.relationshipNote || "").trim() ||
@@ -2445,20 +2367,12 @@ export async function sendTrustedContactRequestViaInviteLink(
   };
 
   try {
-    await setDoc(
-      doc(db, "globeUsers", requestId),
-      {
-        recordType: "trusted_contact_request",
-        ...requestData,
-      },
-      { merge: true },
-    );
-    // Also sync the sender's phone to their registered account in the directory
-    if (resolvedRequesterUid && resolvedRequesterPhone) {
+    await setDoc(doc(db, "trustedContactRequests", requestId), requestData, { merge: true });
+    if (resolvedRequesterPhone && resolvedRequesterEmail) {
       await syncRegisteredAccount({
         uid: resolvedRequesterUid,
         displayName: resolvedRequesterName,
-        email: resolvedRequesterEmail || `${resolvedRequesterUid}@ony.app`,
+        email: resolvedRequesterEmail,
         phoneNumber: resolvedRequesterPhone,
       }).catch(() => {});
     }
@@ -2475,24 +2389,39 @@ export async function listTrustedContactRequests(
   outgoing: FirestoreTrustedContactRequest[];
   incoming: FirestoreTrustedContactRequest[];
 }> {
-  const path = "globeUsers";
+  if (!uid) return { outgoing: [], incoming: [] };
+  const path = "trustedContactRequests";
   try {
-    const colRef = collection(db, "globeUsers");
-    const snap = await getDocs(colRef);
-    const emailLower = email ? email.trim().toLowerCase() : "";
+    const colRef = collection(db, "trustedContactRequests");
+    const emailLower = (auth.currentUser?.email || email || "").trim().toLowerCase();
 
-    const allRequests: FirestoreTrustedContactRequest[] = [];
-    for (const d of snap.docs) {
-      const raw = d.data() as Record<string, unknown>;
-      if (d.id.startsWith("trusted_req_") || raw.recordType === "trusted_contact_request") {
-        allRequests.push({
+    const primaryQueries = [
+      getDocs(query(colRef, where("fromUid", "==", uid))),
+      getDocs(query(colRef, where("toUid", "==", uid))),
+    ];
+    const [fromSnap, toSnap, emailSnap] = await Promise.all([
+      primaryQueries[0],
+      primaryQueries[1],
+      emailLower
+        ? getDocs(query(colRef, where("toEmailLower", "==", emailLower))).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    const snaps = [fromSnap, toSnap, ...(emailSnap ? [emailSnap] : [])];
+    const byId = new Map<string, FirestoreTrustedContactRequest>();
+
+    for (const snap of snaps) {
+      for (const d of snap.docs) {
+        const raw = d.data() as Record<string, unknown>;
+        byId.set(d.id, {
           id: d.id,
           fromUid: String(raw.fromUid || ""),
           fromName: String(raw.fromName || "ONY Member"),
           fromEmail: String(raw.fromEmail || ""),
+          fromEmailLower: String(raw.fromEmailLower || ""),
           toUid: String(raw.toUid || ""),
           toName: String(raw.toName || "ONY Member"),
           toEmail: String(raw.toEmail || ""),
+          toEmailLower: String(raw.toEmailLower || ""),
           contactPhone: String(raw.contactPhone || ""),
           relationshipNote: raw.relationshipNote ? String(raw.relationshipNote) : undefined,
           requestKind: raw.requestKind === "invite_link" ? "invite_link" : "direct_invite",
@@ -2507,17 +2436,13 @@ export async function listTrustedContactRequests(
       }
     }
 
-    allRequests.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-
-    const outgoing = allRequests.filter(
-      (r) =>
-        (uid && r.fromUid === uid) ||
-        (emailLower && r.fromEmail.trim().toLowerCase() === emailLower),
+    const allRequests = Array.from(byId.values()).sort((a, b) =>
+      (b.updatedAt || "").localeCompare(a.updatedAt || ""),
     );
+
+    const outgoing = allRequests.filter((r) => r.fromUid === uid);
     const incoming = allRequests.filter(
-      (r) =>
-        (uid && r.toUid === uid) ||
-        (emailLower && r.toEmail.trim().toLowerCase() === emailLower),
+      (r) => r.toUid === uid || (emailLower && (r.toEmailLower || r.toEmail).toLowerCase() === emailLower),
     );
 
     return { outgoing, incoming };
@@ -2530,154 +2455,30 @@ export async function respondToTrustedContactRequest(
   requestId: string,
   decision: "accepted" | "rejected",
 ): Promise<void> {
-  const path = `globeUsers/${requestId}`;
+  const path = `trustedContactRequests/${requestId}`;
   try {
     const now = new Date().toISOString();
-    await setDoc(
-      doc(db, "globeUsers", requestId),
-      {
-        status: decision,
-        respondedAt: now,
-        updatedAt: now,
-      },
-      { merge: true },
-    );
+    await updateDoc(doc(db, "trustedContactRequests", requestId), {
+      status: decision,
+      respondedAt: now,
+      updatedAt: now,
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
 export async function deleteTrustedContactRequest(requestId: string): Promise<void> {
-  const path = `globeUsers/${requestId}`;
+  const path = `trustedContactRequests/${requestId}`;
   try {
-    await deleteDoc(doc(db, "globeUsers", requestId));
+    await deleteDoc(doc(db, "trustedContactRequests", requestId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
-/**
- * Seeds initial shared data into Firestore (globeUsers, communityPosts, merchants, registered accounts)
- * if the database collections are currently empty.
- */
-export async function seedInitialDatabaseData(): Promise<{
-  globeUsersCount: number;
-  communityPostsCount: number;
-  merchantsCount: number;
-  communityMessagesCount: number;
-}> {
-  // 0. Ensure default registered ONY accounts exist in directory for Trusted Contact lookup
-  for (const acc of DEFAULT_REGISTERED_ACCOUNTS) {
-    await setDoc(
-      doc(db, "globeUsers", `account_${acc.uid}`),
-      {
-        recordType: "user_account",
-        ...acc,
-      },
-      { merge: true },
-    ).catch(() => {});
-  }
-
-  // 1. Globe Users (seed only missing docs so user privacy toggles on node 0 are never overwritten)
-  let globeUsers = await listGlobeUsers().catch(() => []);
-  if (globeUsers.length <= 1) {
-    for (const user of DEFAULT_GLOBE_USERS) {
-      const docRef = doc(db, "globeUsers", String(user.id));
-      const existing = await getDoc(docRef).catch(() => null);
-      if (!existing || !existing.exists()) {
-        await setDoc(docRef, user, { merge: true }).catch((e) =>
-          console.warn("[ONY Seed] globeUser seed warning:", e),
-        );
-      }
-    }
-    globeUsers = await listGlobeUsers().catch(() =>
-      DEFAULT_GLOBE_USERS.filter((u) => u.discoverable || u.id === 0 || u.isMe),
-    );
-  } else {
-    const myNodeRef = doc(db, "globeUsers", "0");
-    const myExisting = await getDoc(myNodeRef).catch(() => null);
-    if (!myExisting || !myExisting.exists()) {
-      await setDoc(myNodeRef, DEFAULT_GLOBE_USERS[0], { merge: true }).catch(() => {});
-    }
-  }
-
-  // 2. Community Posts
-  let posts = await listCommunityPosts().catch(() => []);
-  if (posts.length === 0) {
-    for (const post of DEFAULT_COMMUNITY_POSTS) {
-      await createCommunityPost(post, post.id).catch((e) =>
-        console.warn("[ONY Seed] communityPost seed warning:", e),
-      );
-    }
-    posts = await listCommunityPosts().catch(() => []);
-  }
-
-  // 3. Merchants
-  let merchants = await listMerchants().catch(() => []);
-  if (merchants.length === 0) {
-    for (const m of DEFAULT_MERCHANTS) {
-      const docId = m.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
-      const docRef = doc(db, "merchants", docId);
-      await setDoc(docRef, m, { merge: true }).catch((e) =>
-        console.warn("[ONY Seed] merchant seed warning:", e),
-      );
-    }
-    merchants = await listMerchants().catch(() => DEFAULT_MERCHANTS);
-  }
-
-  // 4. Community Support Messages (ensure incoming messages for node "0" exist)
-  let myMessages = await listCommunityMessages("0").catch(() => []);
-  if (myMessages.length === 0) {
-    const myDefaultMsgs = DEFAULT_COMMUNITY_MESSAGES.filter((m) => m.toUserId === "0");
-    for (const msg of myDefaultMsgs) {
-      await createCommunityMessage(msg).catch((e) =>
-        console.warn("[ONY Seed] communityMessage seed warning:", e),
-      );
-    }
-    myMessages = await listCommunityMessages("0").catch(() => []);
-  }
-
-  return {
-    globeUsersCount: globeUsers.length,
-    communityPostsCount: posts.length,
-    merchantsCount: merchants.length,
-    communityMessagesCount: myMessages.length,
-  };
-}
-
-/**
- * Seeds initial user memories and starter conversations if the user's private collections are empty.
- */
-export async function seedInitialUserData(uid: string): Promise<void> {
-  try {
-    const existingMemories = await listMemories(uid);
-    if (existingMemories.length === 0) {
-      for (const mem of DEFAULT_USER_MEMORIES) {
-        await saveMemory(uid, mem);
-      }
-    }
-
-    const existingChats = await listConversations(uid);
-    if (existingChats.length === 0) {
-      for (let i = 0; i < DEFAULT_USER_CONVERSATIONS.length; i++) {
-        const chat = DEFAULT_USER_CONVERSATIONS[i];
-        await saveConversation(uid, `chat_${101 + i}`, chat);
-      }
-    }
-
-    const existingJournal = await listJournalEntries(uid);
-    if (existingJournal.length === 0) {
-      for (const entry of DEFAULT_JOURNAL_ENTRIES) {
-        await saveJournalEntry(uid, entry);
-      }
-    }
-  } catch (err) {
-    console.warn("[ONY Seed] User data seed notice:", err);
-  }
-}
-
 // ============================================================================
-// SYSTEM & AUDIT LOGGING IN FIRESTORE
+// OWNER-PRIVATE AUDIT LOGS (users/{uid}/auditLogs)
 // ============================================================================
 
 export type SystemLogLevel = "info" | "warn" | "error" | "security" | "audit";
@@ -2691,7 +2492,7 @@ export type SystemLogCategory =
 
 export interface SystemLogEntry {
   id: string;
-  timestamp: string; // ISO 8601 string
+  timestamp: string;
   level: SystemLogLevel;
   category: SystemLogCategory;
   action: string;
@@ -2706,8 +2507,6 @@ export interface SystemLogEntry {
   metadata?: Record<string, unknown>;
 }
 
-const LOCAL_STORAGE_LOGS_KEY = "ony_system_logs_fallback_v1";
-
 export async function writeSystemLog(entry: {
   level: SystemLogLevel;
   category: SystemLogCategory;
@@ -2718,15 +2517,13 @@ export async function writeSystemLog(entry: {
   metadata?: Record<string, unknown>;
   timestamp?: string;
 }): Promise<string> {
+  const uid = entry.userId || auth.currentUser?.uid;
   const now = entry.timestamp || new Date().toISOString();
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
-  const logId = `log_${Date.now()}_${randomSuffix}`;
+  const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-  const clientInfo = {
-    platform: typeof navigator !== "undefined" ? navigator.platform || "web" : "server",
-    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "web-client",
-    version: "1.0.0",
-  };
+  if (!uid) {
+    return logId;
+  }
 
   const payload: SystemLogEntry = {
     id: logId,
@@ -2735,109 +2532,61 @@ export async function writeSystemLog(entry: {
     category: entry.category,
     action: entry.action,
     message: entry.message,
-    userId: entry.userId || auth.currentUser?.uid || null,
+    userId: uid,
     userEmail: entry.userEmail || auth.currentUser?.email || null,
-    clientInfo,
+    clientInfo: {
+      platform: typeof navigator !== "undefined" ? navigator.platform || "web" : "server",
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "web-client",
+      version: "1.0.0",
+    },
     metadata: entry.metadata || {},
   };
 
-  // 1. Always keep local fallback cache
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_LOGS_KEY);
-    const existing: SystemLogEntry[] = raw ? JSON.parse(raw) : [];
-    const updated = [payload, ...existing.slice(0, 99)];
-    localStorage.setItem(LOCAL_STORAGE_LOGS_KEY, JSON.stringify(updated));
-  } catch {}
-
-  // 2. Persist to Cloud Firestore `systemLogs` collection if permitted
-  try {
-    const docRef = doc(db, "systemLogs", logId);
-    await setDoc(docRef, payload);
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (!errMsg.includes("permission") && !errMsg.includes("PERMISSION_DENIED")) {
-      console.debug("[ONY Logger] Remote log push deferred:", errMsg);
-    }
-  }
-
-  // 3. If user is authenticated and matches author, also save to private auditLogs
-  if (payload.userId && auth.currentUser?.uid === payload.userId) {
-    try {
-      const userAuditRef = doc(db, "users", payload.userId, "auditLogs", logId);
-      await setDoc(userAuditRef, payload);
-    } catch {}
+    await setDoc(doc(db, "users", uid, "auditLogs", logId), stripUndefinedDeep(payload));
+  } catch (err) {
+    console.debug("[ONY Audit] Could not persist user audit log:", err);
   }
 
   return logId;
 }
 
-export async function listSystemLogs(limitCount = 60): Promise<SystemLogEntry[]> {
+export async function listSystemLogs(limitCount = 60, uid?: string): Promise<SystemLogEntry[]> {
+  const targetUid = uid || auth.currentUser?.uid;
+  if (!targetUid) return [];
   try {
-    const colRef = collection(db, "systemLogs");
-    const q = query(colRef, orderBy("timestamp", "desc"), limit(limitCount));
+    const q = query(
+      collection(db, "users", targetUid, "auditLogs"),
+      orderBy("timestamp", "desc"),
+      limit(limitCount),
+    );
     const snapshot = await getDocs(q);
-
-    if (!snapshot.empty) {
-      const results: SystemLogEntry[] = [];
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data() as Partial<SystemLogEntry>;
-        results.push({
-          id: docSnap.id,
-          timestamp: d.timestamp || new Date().toISOString(),
-          level: (d.level as SystemLogLevel) || "info",
-          category: (d.category as SystemLogCategory) || "system",
-          action: d.action || "EVENT",
-          message: d.message || "",
-          userId: d.userId || null,
-          userEmail: d.userEmail || null,
-          clientInfo: d.clientInfo,
-          metadata: d.metadata || {},
-        });
-      });
-      return results;
-    }
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (!errMsg.includes("permission") && !errMsg.includes("PERMISSION_DENIED")) {
-      console.debug("[ONY Logger] Querying Firestore logs deferred, using local cache:", errMsg);
-    }
+    return snapshot.docs.map((docSnap) => {
+      const d = docSnap.data() as Partial<SystemLogEntry>;
+      return {
+        id: docSnap.id,
+        timestamp: d.timestamp || new Date().toISOString(),
+        level: (d.level as SystemLogLevel) || "info",
+        category: (d.category as SystemLogCategory) || "system",
+        action: d.action || "EVENT",
+        message: d.message || "",
+        userId: d.userId || targetUid,
+        userEmail: d.userEmail || null,
+        clientInfo: d.clientInfo,
+        metadata: d.metadata || {},
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, `users/${targetUid}/auditLogs`);
   }
-
-  // Fallback to local storage
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_LOGS_KEY);
-    if (raw) {
-      const parsed: SystemLogEntry[] = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-
-  // Initial seed logs if none exist yet
-  const initialBootLog: SystemLogEntry = {
-    id: `log_init_${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    level: "info",
-    category: "system",
-    action: "SYSTEM_BOOT",
-    message: "ONY Companion application launched. Cloud Firestore connection initialized.",
-    clientInfo: {
-      platform: "web",
-      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "web-client",
-      version: "1.0.0",
-    },
-  };
-  return [initialBootLog];
 }
 
 export function formatLogsAsTextFile(logs: SystemLogEntry[]): string {
   const header = [
     "# ==============================================================================",
-    "# ONY Mental Wellness Companion - Production Database & System Audit Log",
+    "# ONY Mental Wellness Companion - Personal Account Security & Activity Log",
     `# Exported At: ${new Date().toISOString()}`,
-    "# Database: ai-studio-onypwa-289f0eda-a42f-43da-8c66-8ac63f5d46a8",
-    "# Application: ONY Web Client (v1.0.0 Production Release)",
     `# Total Log Records: ${logs.length}`,
-    "# Security Standard: Zero-Trust ABAC, End-to-End Encrypted Cloud Firestore",
     "# ==============================================================================",
     "",
   ].join("\n");
@@ -2864,4 +2613,174 @@ export function downloadLogFile(content: string, filename: string, mimeType = "t
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// FULL ACCOUNT DATA EXPORT & FULL ACCOUNT DELETION
+// ============================================================================
+
+export async function exportUserData(uid: string): Promise<Record<string, unknown>> {
+  const cleanUid = uid.trim();
+  if (!cleanUid) {
+    throw new Error("Authentication required to export account data.");
+  }
+
+  const [
+    profile,
+    settings,
+    moodCheckins,
+    memories,
+    journalEntries,
+    conversations,
+    savedPosts,
+    hiddenPosts,
+    blockedUsers,
+    voucherClaims,
+    toolkitCompletions,
+    auditLogs,
+    shelvesSnap,
+    booksSnap,
+    inboxMessages,
+    sentMessagesSnap,
+    authoredPostsSnap,
+    globeNodeSnap,
+  ] = await Promise.all([
+    getUserProfile(cleanUid).catch(() => null),
+    getUserSettingsDoc(cleanUid).catch(() => null),
+    listMoodEntries(cleanUid).catch(() => []),
+    listMemories(cleanUid).catch(() => []),
+    listJournalEntries(cleanUid).catch(() => []),
+    listConversations(cleanUid).catch(() => []),
+    listSavedPostIds(cleanUid).catch(() => []),
+    listHiddenPostIds(cleanUid).catch(() => []),
+    listBlockedUserIds(cleanUid).catch(() => []),
+    listVoucherClaims(cleanUid).catch(() => []),
+    listToolkitCompletions(cleanUid).catch(() => []),
+    listSystemLogs(200, cleanUid).catch(() => []),
+    getDocs(collection(db, "users", cleanUid, "vaultShelves")).catch(() => null),
+    getDocs(collection(db, "users", cleanUid, "vaultBooks")).catch(() => null),
+    listCommunityMessages(cleanUid).catch(() => []),
+    getDocs(query(collection(db, "communityMessages"), where("fromUserId", "==", cleanUid))).catch(() => null),
+    getDocs(query(collection(db, "communityPosts"), where("authorId", "==", cleanUid))).catch(() => null),
+    getDoc(doc(db, "globeUsers", cleanUid)).catch(() => null),
+  ]);
+
+  const vaultShelves = shelvesSnap ? shelvesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
+  const vaultBooks = booksSnap ? booksSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
+  const vaultPages: Record<string, unknown>[] = [];
+  if (booksSnap) {
+    for (const bDoc of booksSnap.docs) {
+      const pSnap = await getDocs(collection(db, "users", cleanUid, "vaultBooks", bDoc.id, "pages")).catch(() => null);
+      if (pSnap) {
+        pSnap.docs.forEach((p) => vaultPages.push({ id: p.id, bookId: bDoc.id, ...p.data() }));
+      }
+    }
+  }
+
+  return {
+    exportedAt: new Date().toISOString(),
+    schemaVersion: 2,
+    uid: cleanUid,
+    profile,
+    settings,
+    globeNode: globeNodeSnap?.exists() ? globeNodeSnap.data() : null,
+    moodCheckins,
+    memories,
+    journalEntries,
+    conversations,
+    vault: {
+      shelves: vaultShelves,
+      books: vaultBooks,
+      pages: vaultPages,
+    },
+    community: {
+      authoredPosts: authoredPostsSnap ? authoredPostsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [],
+      savedPostIds: savedPosts,
+      hiddenPostIds: hiddenPosts,
+      blockedUserIds: blockedUsers,
+      receivedSupportMessages: inboxMessages,
+      sentSupportMessages: sentMessagesSnap ? sentMessagesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [],
+    },
+    voucherClaims,
+    toolkitCompletions,
+    auditLogs,
+  };
+}
+
+export async function deleteUserData(uid: string): Promise<void> {
+  const cleanUid = uid.trim();
+  if (!cleanUid) return;
+
+  // 1. Delete nested vaultBooks/{bookId}/pages/{pageId}
+  try {
+    const booksSnap = await getDocs(collection(db, "users", cleanUid, "vaultBooks"));
+    for (const bDoc of booksSnap.docs) {
+      const pagesSnap = await getDocs(collection(db, "users", cleanUid, "vaultBooks", bDoc.id, "pages"));
+      for (const pDoc of pagesSnap.docs) {
+        await deleteDoc(pDoc.ref);
+      }
+      await deleteDoc(bDoc.ref);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${cleanUid}/vaultBooks`);
+  }
+
+  // 2. Delete flat user subcollections
+  const subcollections = [
+    "vaultShelves",
+    "moodCheckins",
+    "memories",
+    "journalEntries",
+    "conversations",
+    "savedPosts",
+    "hiddenPosts",
+    "blockedUsers",
+    "voucherClaims",
+    "toolkitCompletions",
+    "auditLogs",
+  ];
+  for (const sub of subcollections) {
+    const path = `users/${cleanUid}/${sub}`;
+    try {
+      const snap = await getDocs(collection(db, "users", cleanUid, sub));
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  }
+
+  // 3. Delete authored communityPosts, messages, trustedContactRequests, feedbackReports
+  const crossCollectionDeletes: Promise<void>[] = [
+    getDocs(query(collection(db, "communityPosts"), where("authorId", "==", cleanUid)))
+      .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref))).then(() => undefined))
+      .catch(() => undefined),
+    getDocs(query(collection(db, "communityMessages"), where("fromUserId", "==", cleanUid)))
+      .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref))).then(() => undefined))
+      .catch(() => undefined),
+    getDocs(query(collection(db, "communityMessages"), where("toUserId", "==", cleanUid)))
+      .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref))).then(() => undefined))
+      .catch(() => undefined),
+    getDocs(query(collection(db, "trustedContactRequests"), where("fromUid", "==", cleanUid)))
+      .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref))).then(() => undefined))
+      .catch(() => undefined),
+    getDocs(query(collection(db, "trustedContactRequests"), where("toUid", "==", cleanUid)))
+      .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref))).then(() => undefined))
+      .catch(() => undefined),
+    getDocs(query(collection(db, "feedbackReports"), where("userId", "==", cleanUid)))
+      .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref))).then(() => undefined))
+      .catch(() => undefined),
+  ];
+  await Promise.all(crossCollectionDeletes);
+
+  // 4. Delete top-level user docs
+  await Promise.all([
+    deleteDoc(doc(db, "user_settings", cleanUid)).catch(() => {}),
+    deleteDoc(doc(db, "userDirectory", cleanUid)).catch(() => {}),
+    deleteDoc(doc(db, "globeUsers", cleanUid)).catch(() => {}),
+    deleteDoc(doc(db, "users", cleanUid)),
+  ]);
+
+  clearLocalJournalCache(cleanUid);
 }

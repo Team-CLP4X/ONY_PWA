@@ -1,30 +1,18 @@
 import { GoogleGenAI, ThinkingLevel, type Content } from "@google/genai";
 import type { AIServiceErrorPayload } from "../services/contracts.ts";
-import { generateDynamicOnyReply } from "./onyCompanionEngine.js";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
-export const STABLE_GEMINI_MODEL = "gemini-3.5-flash";
-export const BACKUP_GEMINI_MODEL = "gemini-2.5-flash";
-export const FAST_GEMINI_MODEL = "gemini-3.5-flash-lite";
-export const LITE_GEMINI_MODEL = "gemini-2.5-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-4-hydrogen";
+export const STABLE_GEMINI_MODEL = "gemini-4-hydrogen";
+export const BACKUP_GEMINI_MODEL = "gemini-3.5-flash";
+export const FAST_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const LITE_GEMINI_MODEL = "gemini-3.5-flash-lite";
 
-// In-memory blacklist for models that encountered quota exhaustion (429) or deprecation (404) or timeout
-export const exhaustedModels = new Set<string>([
-  "gemini-3.1-flash-lite", // Times out / unavailable in this environment
-  "gemini-3.1-flash-lite-preview", // Times out / unavailable in this environment
-  "gemini-3.8-flash", // Known daily free-tier quota exhausted in this environment
-  "gemini-flash-latest", // Known quota exhausted in this environment
-  "gemini-3.7-flash", // Known quota exhausted in this environment
-  "gemini-2.5-flash", // Deprecated 404 for new users
-  "gemini-2.5-flash-lite", // Deprecated 404 for new users
-]);
+// Runtime blacklist for models encountering daily quota exhaustion (429) or deprecation (404)
+export const exhaustedModels = new Set<string>();
 
-// Maximum time budget for the entire multi-model generation pipeline
 const OVERALL_TIMEOUT_MS = 40_000;
-// Maximum time budget for a single candidate attempt (measured replies with the full ONY prompt take ~4s - 6.5s)
-const ATTEMPT_TIMEOUT_MS = 15_000;
-// Maximum retries per candidate model (fast progression to next candidate if busy)
-const MAX_RETRIES_PER_CANDIDATE = 1;
+const ATTEMPT_TIMEOUT_MS = 18_000;
+const MAX_RETRIES_PER_CANDIDATE = 2;
 
 export interface ProviderTurn {
   role: "user" | "assistant";
@@ -77,9 +65,6 @@ export interface ClassifiedError {
   sanitizedReason: string;
 }
 
-/**
- * Safely classify upstream Gemini errors without leaking API keys, headers, or user text.
- */
 export function classifyGeminiError(err: unknown): ClassifiedError {
   let status = 500;
   let rawMessage = "";
@@ -97,23 +82,31 @@ export function classifyGeminiError(err: unknown): ClassifiedError {
   }
 
   if (typeof err === "object" && err !== null) {
-    const errorObj = err as Record<string, any>;
+    const errorObj = err as Record<string, unknown>;
     if (typeof errorObj.status === "number") {
       status = errorObj.status;
     } else if (typeof errorObj.code === "number") {
       status = errorObj.code;
-    } else if (errorObj.error && typeof errorObj.error.code === "number") {
-      status = errorObj.error.code;
+    } else if (
+      errorObj.error &&
+      typeof errorObj.error === "object" &&
+      typeof (errorObj.error as Record<string, unknown>).code === "number"
+    ) {
+      status = (errorObj.error as Record<string, unknown>).code as number;
     }
     rawMessage = typeof errorObj.message === "string" ? errorObj.message : "";
-    if (!rawMessage && errorObj.error && typeof errorObj.error.message === "string") {
-      rawMessage = errorObj.error.message;
+    if (
+      !rawMessage &&
+      errorObj.error &&
+      typeof errorObj.error === "object" &&
+      typeof (errorObj.error as Record<string, unknown>).message === "string"
+    ) {
+      rawMessage = (errorObj.error as Record<string, unknown>).message as string;
     }
   } else {
     rawMessage = String(err);
   }
 
-  // Check for HTTP status codes embedded in error messages
   if (status === 500) {
     const statusMatch = rawMessage.match(/\b(400|401|403|404|429|500|502|503|504)\b/);
     if (statusMatch && statusMatch[1]) {
@@ -123,7 +116,6 @@ export function classifyGeminiError(err: unknown): ClassifiedError {
 
   const lower = rawMessage.toLowerCase();
 
-  // Check if daily project/model free-tier quota is exhausted
   const isDailyQuotaExhausted =
     status === 429 &&
     (lower.includes("generaterequestsperday") ||
@@ -148,7 +140,6 @@ export function classifyGeminiError(err: unknown): ClassifiedError {
     lower.includes("invalid argument") ||
     lower.includes("bad request");
 
-  // Determine transient status: 500, 502, 503, 504, transient 429, or network timeouts
   const isTransient =
     !isAuthOrPermission &&
     !isInvalidModelOrRequest &&
@@ -166,7 +157,6 @@ export function classifyGeminiError(err: unknown): ClassifiedError {
       lower.includes("econnreset") ||
       lower.includes("etimedout"));
 
-  // Check for Retry-After / retryDelay
   let retryAfterMs: number | undefined;
   const retryDelayMatch = rawMessage.match(/retry(?:[-_ ]after|delay)?["':\s]+([0-9.]+)\s*(s|ms)?/i);
   if (retryDelayMatch && retryDelayMatch[1]) {
@@ -256,9 +246,10 @@ export class GeminiChatProvider implements ServerChatProvider {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       throw new ProviderGenerationError(
-        500,
+        503,
         "MISSING_API_KEY",
-        "ONY’s AI service is not connected yet because GEMINI_API_KEY is not configured on the server.",
+        "ONY's AI service is not connected yet because GEMINI_API_KEY is not configured on the server.",
+        false,
       );
     }
 
@@ -276,7 +267,6 @@ export class GeminiChatProvider implements ServerChatProvider {
       parts: [{ text: turn.content }],
     }));
 
-    // Ensure contents start with user and strictly alternate
     const contents: Content[] = [];
     for (const turn of rawTurns) {
       const turnParts = turn.parts || [];
@@ -308,14 +298,12 @@ export class GeminiChatProvider implements ServerChatProvider {
     const primaryModel = this.getModel();
     const candidatePool = [
       primaryModel,
-      STABLE_GEMINI_MODEL,  // gemini-3.6-flash (verified reliable and responsive ~1.7s)
-      DEFAULT_GEMINI_MODEL, // gemini-3.6-flash
-      BACKUP_GEMINI_MODEL,  // gemini-3.5-flash (~2.7s)
-      FAST_GEMINI_MODEL,    // gemini-3.1-flash-lite
-      LITE_GEMINI_MODEL,    // gemini-3.5-flash-lite
+      STABLE_GEMINI_MODEL,
+      BACKUP_GEMINI_MODEL,
+      FAST_GEMINI_MODEL,
+      LITE_GEMINI_MODEL,
     ];
 
-    // Filter out models known to have exhausted quotas or returned permanent errors
     let candidateModels = Array.from(new Set(candidatePool)).filter(
       (m) => !exhaustedModels.has(m),
     );
@@ -324,11 +312,10 @@ export class GeminiChatProvider implements ServerChatProvider {
     }
 
     const overallStart = Date.now();
+    let lastClassification: ClassifiedError | null = null;
 
     for (const targetModel of candidateModels) {
-      // Check if overall deadline is exhausted
       if (Date.now() - overallStart > OVERALL_TIMEOUT_MS) {
-        console.warn("[ONY /api/chat] Overall request time window exceeded. Aborting candidate search.");
         break;
       }
 
@@ -348,7 +335,7 @@ export class GeminiChatProvider implements ServerChatProvider {
               new ProviderGenerationError(
                 504,
                 "TIMEOUT",
-                "Upstream candidate generation exceeded attempt deadline.",
+                "Upstream AI model exceeded response deadline.",
                 true,
               ),
             );
@@ -362,7 +349,6 @@ export class GeminiChatProvider implements ServerChatProvider {
               contents,
               config: {
                 systemInstruction: input.systemInstruction,
-                temperature: 0.8,
                 thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
               },
             }),
@@ -378,52 +364,44 @@ export class GeminiChatProvider implements ServerChatProvider {
           }
         } catch (err: unknown) {
           const classification = classifyGeminiError(err);
+          lastClassification = classification;
 
-          // Log sanitized diagnostic (never log api key, headers, or user message content)
           console.warn(
             `[ONY /api/chat] Candidate ${targetModel} attempt ${attempt}/${MAX_RETRIES_PER_CANDIDATE} status=${classification.status} (${classification.sanitizedReason})`,
           );
 
-          // If quota exhausted or 404, record in blacklist so subsequent turns do not waste attempts on it
           if (classification.isDailyQuotaExhausted || classification.status === 429 || classification.status === 404) {
             exhaustedModels.add(targetModel);
           }
 
-          // Permanent authentication or permission failures: fail immediately across all models
           if (classification.isAuthOrPermission) {
             throw new ProviderGenerationError(
               classification.status,
               "INVALID_CREDENTIALS",
-              "ONY's AI service encountered an authentication or permission issue. Please check the API configuration.",
+              "ONY's AI service encountered an authentication or permission issue.",
               false,
             );
           }
 
-          // Permanent model or request error (400, 404) or daily quota exhaustion: do not retry this model, advance to next candidate
           if (classification.isInvalidModelOrRequest || classification.isDailyQuotaExhausted) {
             break;
           }
 
-          // On timeout (504): immediately switch to next candidate model without wasting another attempt
           if (classification.status === 504 || classification.sanitizedReason === "TIMEOUT_504") {
             break;
           }
 
-          // If transient error and we still have attempts left: back off with jitter
           if (classification.isTransient && attempt < MAX_RETRIES_PER_CANDIDATE) {
             const baseDelay = classification.retryAfterMs ?? Math.min(2_000, 500 * Math.pow(1.6, attempt - 1));
-            // Add jitter between 50ms and 250ms
             const jitter = Math.floor(Math.random() * 200) + 50;
             const backoffDelay = Math.min(3_000, baseDelay + jitter);
 
-            // Ensure we don't back off past the overall deadline
             if (Date.now() - overallStart + backoffDelay < OVERALL_TIMEOUT_MS) {
               await new Promise((resolve) => setTimeout(resolve, backoffDelay));
               continue;
             }
           }
 
-          // Otherwise break to next candidate model
           break;
         } finally {
           if (timeoutHandle) {
@@ -433,23 +411,32 @@ export class GeminiChatProvider implements ServerChatProvider {
       }
     }
 
-    // If all upstream cloud candidates are momentarily unavailable, seamlessly serve the companion engine reply
-    console.warn(
-      "[ONY /api/chat] Upstream cloud models momentarily busy, seamlessly serving contextual companion reply so conversation continues uninterrupted.",
+    if (lastClassification?.isDailyQuotaExhausted) {
+      throw new ProviderGenerationError(
+        429,
+        "QUOTA_EXCEEDED",
+        "AI quota is temporarily exhausted. Please try again shortly.",
+        true,
+        lastClassification.retryAfterMs ? Math.ceil(lastClassification.retryAfterMs / 1000) : 60,
+      );
+    }
+
+    if (lastClassification?.status === 504) {
+      throw new ProviderGenerationError(
+        504,
+        "TIMEOUT",
+        "ONY took too long to generate a response. Please tap Retry.",
+        true,
+      );
+    }
+
+    throw new ProviderGenerationError(
+      503,
+      "MODEL_UNAVAILABLE",
+      "ONY's AI service is temporarily busy. Please tap Retry in a moment.",
+      true,
+      lastClassification?.retryAfterMs ? Math.ceil(lastClassification.retryAfterMs / 1000) : 5,
     );
-
-    const fallbackReply = generateDynamicOnyReply({
-      userMessage: input.message,
-      history: input.history,
-      language: input.language,
-      persona: input.persona,
-      memories: input.memories,
-    });
-
-    return {
-      reply: fallbackReply,
-      model: "ony-resilient-companion",
-    };
   }
 }
 

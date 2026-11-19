@@ -17,6 +17,7 @@ import {
   writeSystemLog,
   getLocalDateKey,
 } from "../firebase/firestore";
+import { uploadUserMedia } from "../firebase/storage";
 import {
   vaultService,
   type VaultShelf,
@@ -27,9 +28,9 @@ import {
   getLocalDateBoundaries,
   matchesSearchSubstring,
   getSearchSnippet,
-  createCompressedPhotoThumbnail,
 } from "../utils/vaultSearchUtils";
 import { useLanguage } from "../i18n/LanguageContext";
+import { useSettings } from "../theme/ThemeContext";
 import { getCategoryLabel } from "../i18n/translations";
 import {
   type JournalShelf,
@@ -274,7 +275,9 @@ export function DigitalJournal({
 
   // Change Cover Color Bottom Sheet State (Fix 4 from "..." menu)
   const [showChangeCoverSheet, setShowChangeCoverSheet] = useState(false);
-  const [changeCoverColorInput, setChangeCoverColorInput] = useState("#94D2BD");
+  const [changeCoverColorInput, setChangeCoverColorInput] = useState(
+    () => BOOK_COLOR_PALETTE.find((c) => c.id === "mint")?.hex || BOOK_COLOR_PALETTE[0]?.hex || "var(--theme-primary)"
+  );
   const [showCustomPickerCover, setShowCustomPickerCover] = useState(false);
 
   // Custom Color Picker State (Fix 4: 2D area, hue slider, recent colors, hex)
@@ -283,16 +286,19 @@ export function DigitalJournal({
   const [pickerSat, setPickerSat] = useState(0.42);
   const [pickerVal, setPickerVal] = useState(0.82);
   const [pickerHexInput, setPickerHexInput] = useState("94D2BD");
+  const { settings: themeSettings, updateSettings: updateThemeSettings } = useSettings();
   const [recentCustomColors, setRecentCustomColors] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem("ony_recent_colors");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 5);
-      }
-    } catch {}
-    return ["#8EA8C3", "#A8DADC", "#E9C46A", "#F4A261", "#E76F51"];
+    if (Array.isArray(themeSettings.recentColors) && themeSettings.recentColors.length > 0) {
+      return themeSettings.recentColors.slice(0, 5);
+    }
+    return BOOK_COLOR_PALETTE.slice(0, 5).map((c) => c.hex);
   });
+
+  useEffect(() => {
+    if (Array.isArray(themeSettings.recentColors) && themeSettings.recentColors.length > 0) {
+      setRecentCustomColors(themeSettings.recentColors.slice(0, 5));
+    }
+  }, [themeSettings.recentColors]);
 
   // Notify parent of open book state to hide bottom nav when reading/writing a book
   useEffect(() => {
@@ -981,14 +987,20 @@ export function DigitalJournal({
     }, 50);
   };
 
-  // Photo Attachment Handler for Open Page (<35KB compressed base64 thumbnail)
+  // Photo Attachment Handler for Open Page (compressed & uploaded to Firebase Storage)
   const handleAttachPhotoToPage = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!currentUser?.uid) {
+      notify(language === "中文" ? "请先登录再上传照片" : "Please sign in to upload photos");
+      return;
+    }
 
     try {
-      const thumb = await createCompressedPhotoThumbnail(file, 400, 0.65);
-      handleMutateCurrentPage({ photos: [thumb], photoUrl: thumb } as any);
+      const { url } = await uploadUserMedia(currentUser.uid, "journals", file, {
+        maxDimension: 1200,
+      });
+      handleMutateCurrentPage({ photos: [url], photoUrl: url } as any);
       notify(
         language === "Bahasa Melayu"
           ? "Foto dilampirkan ke halaman"
@@ -996,8 +1008,13 @@ export function DigitalJournal({
           ? "照片已贴入页面"
           : "Photo attached to page"
       );
-    } catch {
-      notify(language === "中文" ? "照片处理失败" : "Failed to process photo");
+    } catch (err: any) {
+      notify(
+        err?.message ||
+          (language === "中文" ? "照片上传失败" : "Failed to upload photo")
+      );
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -1572,9 +1589,7 @@ export function DigitalJournal({
     setRecentCustomColors((prev) => {
       const filtered = prev.filter((c) => c.toUpperCase() !== norm.toUpperCase());
       const next = [norm, ...filtered].slice(0, 5);
-      try {
-        localStorage.setItem("ony_recent_colors", JSON.stringify(next));
-      } catch {}
+      void updateThemeSettings({ recentColors: next });
       return next;
     });
   };
@@ -1911,7 +1926,7 @@ export function DigitalJournal({
                 aria-label={swatch.name}
               >
                 {isSelected && (
-                  <JournalIcon name="check" size={14} color="#ffffff" decorative />
+                  <JournalIcon name="check" size={14} color={getAccessibleTextColor(swatch.hex)} decorative />
                 )}
               </button>
             );
@@ -1953,7 +1968,7 @@ export function DigitalJournal({
               style={{
                 backgroundColor: `hsl(${pickerHue}, 100%, 50%)`,
                 backgroundImage:
-                  "linear-gradient(to top, #000000, transparent), linear-gradient(to right, #ffffff, transparent)",
+                  "linear-gradient(to top, var(--theme-picker-dark), transparent), linear-gradient(to right, var(--theme-picker-light), transparent)",
               }}
               onPointerDown={(e) => handleSatValPointerDown(e, setColorFn, pickerHue)}
             >
@@ -2549,7 +2564,7 @@ export function DigitalJournal({
 
                                 <span
                                   className="spine-title-vertical"
-                                  style={{ fontSize: `${getSpineFontSize(book.title)}px` }}
+                                  style={{ fontSize: `calc(${getSpineFontSize(book.title)} * var(--font-scale, 1))` }}
                                 >
                                   {book.title}
                                 </span>
@@ -2738,7 +2753,7 @@ export function DigitalJournal({
                     type="button"
                     className="btn btn-ghost"
                     onClick={handleTogglePauseAll}
-                    style={{ fontSize: "12px", padding: "4px 8px" }}
+                    style={{ fontSize: "var(--font-xs)", padding: "4px 8px" }}
                   >
                     <JournalIcon name={allAiMemoriesPaused ? "play" : "pause"} size={14} decorative />
                     <span>
@@ -2755,7 +2770,7 @@ export function DigitalJournal({
                     type="button"
                     className="btn btn-ghost"
                     onClick={() => setShowClearConfirm(true)}
-                    style={{ fontSize: "12px", padding: "4px 8px", color: "var(--danger)" }}
+                    style={{ fontSize: "var(--font-xs)", padding: "4px 8px", color: "var(--danger)" }}
                   >
                     <JournalIcon name="trash" size={14} decorative />
                     <span>{language === "中文" ? "清空" : "Clear"}</span>
@@ -3136,7 +3151,7 @@ export function DigitalJournal({
                 </div>
                 <h1 className="book-opening-cover-title">{activeBook.title}</h1>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "11px", opacity: 0.8 }}>ONY Reflection Vault</span>
+                  <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", opacity: 0.8 }}>ONY Reflection Vault</span>
                   <JournalIcon name="bookOpen" size={18} decorative />
                 </div>
               </div>
@@ -3218,7 +3233,7 @@ export function DigitalJournal({
                     className="page-mood-stamp"
                     style={{
                       background: "transparent",
-                      border: "1px dashed rgba(0, 0, 0, 0.15)",
+                      border: "1px dashed var(--theme-journal-rule)",
                       cursor: "pointer",
                       borderRadius: "12px",
                       padding: "2px 8px",
@@ -3512,7 +3527,7 @@ export function DigitalJournal({
                 >
                   {pageStyle === "lined" && (
                     <span className="page-texture-check-badge">
-                      <JournalIcon name="check" size={12} color="#ffffff" decorative />
+                      <JournalIcon name="check" size={12} color="var(--theme-on-primary)" decorative />
                     </span>
                   )}
                   <div className="page-texture-mini-paper lined" />
@@ -3538,7 +3553,7 @@ export function DigitalJournal({
                 >
                   {pageStyle === "dotted" && (
                     <span className="page-texture-check-badge">
-                      <JournalIcon name="check" size={12} color="#ffffff" decorative />
+                      <JournalIcon name="check" size={12} color="var(--theme-on-primary)" decorative />
                     </span>
                   )}
                   <div className="page-texture-mini-paper dotted" />
@@ -3564,7 +3579,7 @@ export function DigitalJournal({
                 >
                   {pageStyle === "plain" && (
                     <span className="page-texture-check-badge">
-                      <JournalIcon name="check" size={12} color="#ffffff" decorative />
+                      <JournalIcon name="check" size={12} color="var(--theme-on-primary)" decorative />
                     </span>
                   )}
                   <div className="page-texture-mini-paper plain" />
@@ -4438,7 +4453,7 @@ export function DigitalJournal({
                         : "Short Description (Optional)"}
                     </span>
                   </label>
-                  <small style={{ color: "var(--muted)", fontSize: "11px" }}>
+                  <small style={{ color: "var(--muted)", fontSize: "calc(11px * var(--font-scale, 1))" }}>
                     {bookDescInput.length}/180
                   </small>
                 </div>
@@ -4503,7 +4518,7 @@ export function DigitalJournal({
             <div className="page-index-header">
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <JournalIcon name="pageIndex" size={18} decorative />
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>
+                <h3 style={{ margin: 0, fontSize: "var(--font-base)", fontWeight: 800 }}>
                   {language === "Bahasa Melayu"
                     ? "Indeks Halaman"
                     : language === "中文"
@@ -4556,14 +4571,14 @@ export function DigitalJournal({
                         <span
                           style={{
                             fontWeight: 800,
-                            fontSize: "13px",
+                            fontSize: "var(--font-sm)",
                             color: isCurrent ? "var(--coral-dark)" : "var(--muted)",
                           }}
                         >
                           P.{idx + 1}
                         </span>
                         <div>
-                          <strong style={{ display: "block", fontSize: "14px" }}>
+                          <strong style={{ display: "block", fontSize: "var(--font-sm)" }}>
                             {page.title ||
                               (page.content
                                 ? page.content.slice(0, 32) + "..."
@@ -4571,7 +4586,7 @@ export function DigitalJournal({
                                 ? "无题心声"
                                 : "Untitled reflection")}
                           </strong>
-                          <small style={{ color: "var(--muted)", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          <small style={{ color: "var(--muted)", fontSize: "calc(11px * var(--font-scale, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}>
                             <JournalIcon name="calendar" size={12} decorative />
                             <span>{(page as any).dateKey || page.createdAt?.slice(0, 10) || todayKey}</span>
                           </small>
@@ -4592,9 +4607,9 @@ export function DigitalJournal({
                         {isCurrent && (
                           <span
                             style={{
-                              fontSize: "10px",
+                              fontSize: "calc(10px * var(--font-scale, 1))",
                               background: "var(--coral)",
-                              color: "white",
+                              color: "var(--theme-on-primary)",
                               padding: "2px 6px",
                               borderRadius: "100px",
                               fontWeight: 700,
@@ -4679,15 +4694,15 @@ export function DigitalJournal({
                             height: "46px",
                             backgroundColor: b.coverColor,
                             borderRadius: "4px",
-                            boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+                            boxShadow: "var(--theme-shadow-xs)",
                             display: "grid",
                             placeItems: "center",
                           }}
                         >
-                          <JournalIcon name="bookOpen" size={16} decorative color="white" />
+                          <JournalIcon name="bookOpen" size={16} decorative color={getAccessibleTextColor(b.coverColor)} />
                         </div>
                         <div>
-                          <strong style={{ fontSize: "14px" }}>{b.title}</strong>
+                          <strong style={{ fontSize: "var(--font-sm)" }}>{b.title}</strong>
                           <small style={{ color: "var(--muted)", display: "block" }}>
                             {shelf?.name || "Shelf"} • {bPages.length} pages
                           </small>

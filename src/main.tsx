@@ -1,26 +1,30 @@
 import React from "react"
-
 import ReactDOM from "react-dom/client"
-
 import { registerSW } from "virtual:pwa-register"
 
 import App from "./App"
-
 import "./index.css"
 import { initThemeSystem } from "./theme/ThemeContext"
 
-// Initialize theme tokens & dark mode immediately to prevent flash
-initThemeSystem();
+declare global {
+  interface Window {
+    __onyApplyPwaUpdate?: () => Promise<void>
+  }
+}
 
-registerSW({
+// Initialize theme tokens & dark mode immediately to prevent flash
+initThemeSystem()
+
+const updateSW = registerSW({
   immediate: true,
 
   onNeedRefresh() {
-    // New app shell version downloaded; automatically adopted
+    window.__onyApplyPwaUpdate = () => updateSW(true)
+    window.dispatchEvent(new CustomEvent("ony-pwa-update-ready"))
   },
 
   onOfflineReady() {
-    console.info("ONY app shell is ready for offline loading.")
+    window.dispatchEvent(new CustomEvent("ony-pwa-offline-ready"))
   },
 })
 

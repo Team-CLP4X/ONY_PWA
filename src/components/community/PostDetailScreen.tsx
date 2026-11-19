@@ -11,6 +11,7 @@ import {
   type FirestoreCommunityPost,
   type PostCommentRecord,
 } from "../../firebase/firestore";
+import { uploadCommunityMedia } from "../../firebase/storage";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { formatFriendlyTime, getCategoryLabel } from "../../i18n/translations";
 import {
@@ -47,9 +48,11 @@ export interface PostDetailScreenProps {
   post: FirestoreCommunityPost;
   currentUid?: string;
   currentUserName?: string;
+  isSaved?: boolean;
   onLikePost?: (postId: string) => void;
   onPostUpdated?: (updated: FirestoreCommunityPost) => void;
   onSavePostToVault?: (post: FirestoreCommunityPost) => void;
+  onReportPost?: (post: FirestoreCommunityPost, reason: string) => Promise<void> | void;
   onOpenHelp?: () => void;
   notify: (msg: string) => void;
 }
@@ -163,15 +166,19 @@ function DetailVoicePlayer({
 export function PostDetailScreen({
   back,
   post,
-  currentUid = "guest_local_user",
+  currentUid = "",
   currentUserName = "ONY Member",
+  isSaved: isSavedProp,
   onLikePost,
   onPostUpdated,
   onSavePostToVault,
+  onReportPost,
   onOpenHelp,
   notify,
 }: PostDetailScreenProps) {
   const { t, language } = useLanguage();
+  const cleanUid = currentUid.trim();
+  const cleanName = currentUserName.trim() || "ONY Member";
 
   const [submitting, setSubmitting] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
@@ -189,7 +196,9 @@ export function PostDetailScreen({
   } | null>(() => getCachedPostTranslation(post.id, language));
   const [isTranslating, setIsTranslating] = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
-  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(() => loadSavedPostIds());
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(() =>
+    loadSavedPostIds(cleanUid),
+  );
   const [reactionTick, setReactionTick] = useState(0);
 
   const commentsEndRef = useRef<HTMLDivElement | null>(null);
@@ -211,9 +220,6 @@ export function PostDetailScreen({
       synth.stop();
     };
   }, []);
-
-  const cleanUid = currentUid.trim() || "anonymous_user";
-  const cleanName = currentUserName.trim() || "ONY Member";
 
   const authorInfo = useMemo(() => parseAuthorDisplay(post.author), [post.author]);
   const comments: PostCommentRecord[] = Array.isArray(post.comments)
@@ -298,12 +304,12 @@ export function PostDetailScreen({
     postId: string,
     reaction: SupportiveReactionType,
   ) => {
+    if (!cleanUid) {
+      notify("Please sign in to react to posts");
+      return;
+    }
     const records = Array.isArray(post.likeRecords) ? post.likeRecords : [];
-    const alreadyLiked = records.some(
-      (rec) =>
-        rec.userId === cleanUid ||
-        rec.userName.trim().toLowerCase() === cleanName.toLowerCase(),
-    );
+    const alreadyLiked = records.some((rec) => rec.userId === cleanUid);
     const currentReaction =
       getUserReactionChoice(postId, cleanUid) || (alreadyLiked ? "hug" : null);
 
@@ -321,8 +327,10 @@ export function PostDetailScreen({
     }
   };
 
+  const resolvedIsSaved = isSavedProp ?? savedPostIds.has(post.id);
+
   const handleSavePost = () => {
-    if (savedPostIds.has(post.id)) {
+    if (resolvedIsSaved) {
       notify(
         language === "Bahasa Melayu"
           ? "Sudah disimpan dalam Peti Memori"
@@ -335,7 +343,7 @@ export function PostDetailScreen({
     setSavedPostIds((prev) => {
       const next = new Set(prev);
       next.add(post.id);
-      saveSavedPostIds(next);
+      saveSavedPostIds(next, cleanUid);
       return next;
     });
     if (onSavePostToVault) {
@@ -365,6 +373,11 @@ export function PostDetailScreen({
   };
 
   const submitTextFlow = async (rawText: string): Promise<boolean> => {
+    if (!cleanUid) {
+      setComposerError("Please sign in to post a comment.");
+      setLastFailedAction(null);
+      return false;
+    }
     const check = validateCommunityCommentText(rawText);
     if (!check.valid) {
       setComposerError(
@@ -454,9 +467,15 @@ export function PostDetailScreen({
   };
 
   const submitVoiceFlow = async (audio: {
+    blob: Blob;
     dataUrl: string;
     duration: number;
   }): Promise<boolean> => {
+    if (!cleanUid) {
+      setComposerError("Please sign in to send a voice comment.");
+      setLastFailedAction(null);
+      return false;
+    }
     setComposerError(null);
     setSubmitting(true);
     const caption =
@@ -467,13 +486,19 @@ export function PostDetailScreen({
           : `Voice note (${formatAudioDuration(audio.duration)})`;
 
     try {
+      const { url: uploadedAudioUrl } = await uploadCommunityMedia(
+        cleanUid,
+        "comments",
+        audio.blob,
+      );
+
       if (replyTarget) {
         const updated = await addCommunityCommentReply(post, replyTarget.commentId, {
           userId: cleanUid,
           userName: cleanName,
           text: caption,
           kind: "voice",
-          audioUrl: audio.dataUrl,
+          audioUrl: uploadedAudioUrl,
           audioDuration: audio.duration,
         });
         onPostUpdated?.(updated);
@@ -494,7 +519,7 @@ export function PostDetailScreen({
         userName: cleanName,
         text: caption,
         kind: "voice",
-        audioUrl: audio.dataUrl,
+        audioUrl: uploadedAudioUrl,
         audioDuration: audio.duration,
       });
       onPostUpdated?.(updated);
@@ -520,6 +545,10 @@ export function PostDetailScreen({
   };
 
   const handleToggleCommentLike = async (commentId: string) => {
+    if (!cleanUid) {
+      notify("Please sign in to like comments");
+      return;
+    }
     try {
       const updated = await toggleCommunityCommentLike(post, commentId, {
         uid: cleanUid,
@@ -670,7 +699,17 @@ export function PostDetailScreen({
 
           {post.media === "image" && (
             <div className="post-image-calming detail">
-              <span>{t.community_calm_image}</span>
+              {post.imageUrl ? (
+                <img
+                  src={post.imageUrl}
+                  alt={displayTitle || "Post attachment"}
+                  className="post-detail-image"
+                  loading="lazy"
+                  style={{ width: "100%", maxHeight: "380px", objectFit: "cover", borderRadius: "16px" }}
+                />
+              ) : (
+                <span>{t.community_calm_image}</span>
+              )}
             </div>
           )}
 
@@ -679,7 +718,7 @@ export function PostDetailScreen({
               postId={post.id}
               summary={reactionSummary}
               commentCount={comments.length}
-              isSaved={savedPostIds.has(post.id)}
+              isSaved={resolvedIsSaved}
               onSelectReaction={handleSelectReaction}
               onOpenComments={() =>
                 commentsEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -760,14 +799,19 @@ export function PostDetailScreen({
         post={reportSheetOpen ? post : null}
         language={language}
         onClose={() => setReportSheetOpen(false)}
-        onConfirmReport={() => {
-          notify(
-            language === "Bahasa Melayu"
-              ? "Terima kasih. Siaran ditandakan untuk semakan moderasi."
-              : language === "中文"
-                ? "感谢反馈。帖子已提交社区安全团队审核。"
-                : "Thank you. Post flagged for moderation review.",
-          );
+        onConfirmReport={async (targetPost, reason) => {
+          try {
+            await onReportPost?.(targetPost, reason);
+            notify(
+              language === "Bahasa Melayu"
+                ? "Terima kasih. Siaran ditandakan untuk semakan moderasi."
+                : language === "中文"
+                  ? "感谢反馈。帖子已提交社区安全团队审核。"
+                  : "Thank you. Post flagged for moderation review.",
+            );
+          } catch {
+            notify("Could not submit moderation report right now.");
+          }
         }}
       />
     </div>

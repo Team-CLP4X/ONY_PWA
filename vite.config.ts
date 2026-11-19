@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: "autoUpdate",
+        registerType: "prompt",
         injectRegister: null,
         manifestFilename: "manifest.webmanifest",
         includeAssets: [
@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
           "pwa-maskable-512x512.png",
         ],
         manifest: {
+          id: "/",
           name: "ONY",
           short_name: "ONY",
           description:

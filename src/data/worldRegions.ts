@@ -912,7 +912,7 @@ export function enrichGlobeNodes(
 
   for (const user of users) {
     if (blockedNodeIds.has(user.id)) continue;
-    const isMe = Boolean(user.isMe || user.id === 0);
+    const isMe = Boolean(user.isMe);
     const resolved = resolveAndCoarsenLocation(user.lat, user.lon, user.id);
 
     if (!user.discoverable) {

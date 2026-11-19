@@ -5,33 +5,109 @@ import {
   isVoucherActiveAndValid,
   getActiveDatabaseVouchers,
 } from "../src/server/marketplaceMatcher.ts";
-import { DEFAULT_MERCHANTS, type FirestoreMerchant } from "../src/data/merchants.ts";
+import { type FirestoreMerchant } from "../src/data/merchants.ts";
+
+const TEST_MERCHANTS: FirestoreMerchant[] = [
+  {
+    id: "ruang_rasa",
+    name: "Ruang Rasa",
+    category: "Café",
+    offer: "Slow afternoon set",
+    value: "15% OFF",
+    description: "A quiet table, warm artisan drink, and peaceful room to pause.",
+    image: "https://images.unsplash.com/photo-1613274554329-70f997f5789f?auto=format&fit=crop&w=600&q=80",
+    validity: "Valid until 30 Jun 2027",
+    active: true,
+    expired: false,
+  },
+  {
+    id: "tangan_studio",
+    name: "Tangan Studio",
+    category: "Art / creative",
+    offer: "Mindful clay session",
+    value: "RM10 OFF",
+    description: "A gentle hands-on pottery session for curious beginners.",
+    image: "https://images.unsplash.com/photo-1590605095243-072811dbe64c?auto=format&fit=crop&w=600&q=80",
+    validity: "Weekdays only",
+    active: true,
+    expired: false,
+  },
+  {
+    id: "nafas_space",
+    name: "Nafas Space",
+    category: "Yoga / meditation",
+    offer: "First community class",
+    value: "RM18 CLASS",
+    description: "A calm guided yoga and meditation class with no experience required.",
+    image: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=600&q=80",
+    validity: "Valid for first visit",
+    active: true,
+    expired: false,
+  },
+  {
+    id: "tenang_goods",
+    name: "Tenang Goods",
+    category: "Wellness products",
+    offer: "Sleep ritual set",
+    value: "20% OFF",
+    description: "Handcrafted aromatherapy and herbal goods for a restful evening.",
+    image: "https://images.unsplash.com/photo-1761864293818-603c23655cee?auto=format&fit=crop&w=600&q=80",
+    validity: "Valid until 15 Jul 2027",
+    active: true,
+    expired: false,
+  },
+  {
+    id: "sora_sounds",
+    name: "Sora Sounds",
+    category: "Music",
+    offer: "Calming playlist session",
+    value: "FREE SESSION",
+    description: "Curated binaural soundscapes and relaxation listening guides.",
+    image: "https://images.unsplash.com/photo-1613040809024-b4ef7ba99bc3?auto=format&fit=crop&w=600&q=80",
+    validity: "Online access",
+    active: true,
+    expired: false,
+  },
+  {
+    id: "senja_rest",
+    name: "Senja Rest",
+    category: "Relaxation",
+    offer: "Quiet reset session",
+    value: "RM15 OFF",
+    description: "A calming head & shoulder relaxation and holistic wellness session.",
+    image: "https://images.unsplash.com/photo-1557388243-e1194223f99b?auto=format&fit=crop&w=600&q=80",
+    validity: "Weekdays only",
+    active: true,
+    expired: false,
+  },
+];
 
 console.log("=== ONY Emotion-Based Voucher Recommendation Test Suite ===");
 
-async function test1_databaseConnectionAndRealVouchers() {
-  console.log("\n[Test 1] Connect to existing voucher database & verify real data:");
-  const vouchers = await getActiveDatabaseVouchers();
-  assert.ok(vouchers.length > 0, "Must return active database merchants");
+async function test1_databaseConnectionAndNoMockContract() {
+  console.log("\n[Test 1] Verify unauthenticated REST query returns [] (zero hardcoded mock leaks) & schema fixture integrity:");
+  const unauthenticated = await getActiveDatabaseVouchers();
+  assert.equal(
+    unauthenticated.length,
+    0,
+    "Unauthenticated getActiveDatabaseVouchers() must return [] instead of mock fallback data",
+  );
 
-  // Verify real merchants and real data fields (no fabricated offers)
-  const names = vouchers.map((v) => v.name);
-  console.log("Found database vouchers:", names);
-  assert.ok(names.includes("Ruang Rasa"), "Ruang Rasa must be present in database");
-  assert.ok(names.includes("Tangan Studio"), "Tangan Studio must be present in database");
-  assert.ok(names.includes("Nafas Space"), "Nafas Space must be present in database");
+  const names = TEST_MERCHANTS.map((v) => v.name);
+  assert.ok(names.includes("Ruang Rasa"), "Ruang Rasa fixture present");
+  assert.ok(names.includes("Tangan Studio"), "Tangan Studio fixture present");
+  assert.ok(names.includes("Nafas Space"), "Nafas Space fixture present");
 
-  for (const v of vouchers) {
+  for (const v of TEST_MERCHANTS) {
     assert.ok(v.id, `Voucher ${v.name} must have an ID`);
     assert.ok(v.offer, `Voucher ${v.name} must have an offer description`);
     assert.ok(v.value, `Voucher ${v.name} must have a discount value`);
     assert.ok(v.category, `Voucher ${v.name} must have a category`);
     assert.ok(v.validity, `Voucher ${v.name} must have validity`);
-    // Ensure no fake 'Grab' vouchers exist in database
-    assert.ok(!v.name.toLowerCase().includes("grab"), "No Grab vouchers should exist in verified wellness DB");
+    assert.ok(!v.name.toLowerCase().includes("grab"), "No Grab vouchers exist in verified wellness DB");
   }
 
-  console.log("✓ PASS: Successfully retrieved real database vouchers with complete schema fields.");
+  console.log("✓ PASS: Unauthenticated lookup does not leak mock data & catalog fixture schema is valid.");
 }
 
 async function test2_normalStressMessageReturnsMatchingVouchers() {
@@ -43,6 +119,7 @@ async function test2_normalStressMessageReturnsMatchingVouchers() {
     recentHistory: [],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: TEST_MERCHANTS,
   });
   assert.equal(
     singleStatementRes.vouchers.length,
@@ -59,6 +136,7 @@ async function test2_normalStressMessageReturnsMatchingVouchers() {
     ],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: TEST_MERCHANTS,
   });
 
   assert.ok(continuousRes.vouchers.length > 0, "Should return matching vouchers when asking continuously for places/activities");
@@ -92,6 +170,7 @@ async function test3_studyPressureAndLonelinessMatches() {
     recentHistory: [],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: TEST_MERCHANTS,
   });
   const studyNames = studyRes.vouchers.map((v) => v.merchantName);
   console.log("Study pressure vouchers:", studyNames);
@@ -106,6 +185,7 @@ async function test3_studyPressureAndLonelinessMatches() {
     recentHistory: [],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: TEST_MERCHANTS,
   });
   const lonelyNames = lonelyRes.vouchers.map((v) => v.merchantName);
   console.log("Loneliness vouchers:", lonelyNames);
@@ -120,6 +200,7 @@ async function test3_studyPressureAndLonelinessMatches() {
     recentHistory: [],
     safetyAction: "support",
     language: "Bahasa Melayu",
+    merchantsOverride: TEST_MERCHANTS,
   });
   assert.ok(bmRes.vouchers.length > 0, "Bahasa Melayu study stress should match vouchers");
   assert.equal(bmRes.vouchers[0].actionLabel, "Lihat & Guna Baucar");
@@ -130,6 +211,7 @@ async function test3_studyPressureAndLonelinessMatches() {
     recentHistory: [],
     safetyAction: "support",
     language: "中文",
+    merchantsOverride: TEST_MERCHANTS,
   });
   assert.ok(zhRes.vouchers.length > 0, "Chinese work fatigue should match vouchers");
   assert.equal(zhRes.vouchers[0].actionLabel, "查看并使用礼券");
@@ -155,6 +237,7 @@ async function test4_noMatchingEmotionalNeedReturnsNoFabricatedOffers() {
       recentHistory: [],
       safetyAction: "support",
       language: "English",
+      merchantsOverride: TEST_MERCHANTS,
     });
     assert.equal(res.vouchers.length, 0, `Query '${input}' must not fabricate any vouchers`);
   }
@@ -214,6 +297,7 @@ async function test6_suicideRiskMessageNeverReturnsVouchers() {
       recentHistory: [],
       safetyAction: c.action,
       language: "English",
+      merchantsOverride: TEST_MERCHANTS,
     });
 
     assert.equal(
@@ -235,6 +319,7 @@ async function test7_avoidDuplicateRecommendationsInConsecutiveMessages() {
     recentHistory: [],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: TEST_MERCHANTS,
   });
   assert.ok(turn1.vouchers.length > 0);
   const firstMerchant = turn1.vouchers[0].merchantName;
@@ -248,6 +333,7 @@ async function test7_avoidDuplicateRecommendationsInConsecutiveMessages() {
     ],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: TEST_MERCHANTS,
   });
 
   const turn2Names = turn2.vouchers.map((v) => v.merchantName);
@@ -260,32 +346,32 @@ async function test7_avoidDuplicateRecommendationsInConsecutiveMessages() {
   console.log("✓ PASS: Consecutive duplicate vouchers are avoided.");
 }
 
-async function test8_databaseErrorGracefulFallback() {
-  console.log("\n[Test 8] Database / API error handling:");
+async function test8_emptyDatabaseReturnsZeroFabricatedVouchers() {
+  console.log("\n[Test 8] Empty / unavailable catalog fails gracefully without fabricated vouchers:");
 
-  // Even if live network fails, evaluateMarketplaceRecommendations uses valid DEFAULT_MERCHANTS fallback without throwing
   const res = await evaluateMarketplaceRecommendations({
     userMessage: "I feel stressed from exams, what places or activities do you suggest for a relaxing pause?",
     recentHistory: [],
     safetyAction: "support",
     language: "English",
+    merchantsOverride: [],
   });
 
   assert.ok(Array.isArray(res.vouchers), "Must always return an array");
-  assert.ok(res.vouchers.length > 0, "Returns verified fallback vouchers seamlessly");
+  assert.equal(res.vouchers.length, 0, "Empty database must return [] without fabricating offers");
 
-  console.log("✓ PASS: Database errors fall back gracefully without breaking chat.");
+  console.log("✓ PASS: Unavailable merchant catalog fails gracefully with zero fabricated offers.");
 }
 
 async function runAll() {
-  await test1_databaseConnectionAndRealVouchers();
+  await test1_databaseConnectionAndNoMockContract();
   await test2_normalStressMessageReturnsMatchingVouchers();
   await test3_studyPressureAndLonelinessMatches();
   await test4_noMatchingEmotionalNeedReturnsNoFabricatedOffers();
   await test5_expiredOrInactiveVouchersAreExcluded();
   await test6_suicideRiskMessageNeverReturnsVouchers();
   await test7_avoidDuplicateRecommendationsInConsecutiveMessages();
-  await test8_databaseErrorGracefulFallback();
+  await test8_emptyDatabaseReturnsZeroFabricatedVouchers();
 
   console.log("\n========================================================");
   console.log("ALL 8 VOUCHER RECOMMENDATION TESTS PASSED SUCCESSFULLY!");

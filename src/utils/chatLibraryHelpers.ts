@@ -80,13 +80,13 @@ export interface FolderColorOption {
 }
 
 export const FOLDER_COLOR_OPTIONS: FolderColorOption[] = [
-  { id: "peach", labelEn: "Warm Peach", labelBm: "Pic Hangat", labelZh: "暖桃", lightHex: "#d96552", darkHex: "#f59e8b" },
-  { id: "ocean", labelEn: "Calm Blue", labelBm: "Biru Tenang", labelZh: "静海蓝", lightHex: "#2563eb", darkHex: "#60a5fa" },
-  { id: "forest", labelEn: "Sage Teal", labelBm: "Hijau Damai", labelZh: "森语青", lightHex: "#0d9488", darkHex: "#2dd4bf" },
-  { id: "lavender", labelEn: "Soft Violet", labelBm: "Ungu Lembut", labelZh: "柔雾紫", lightHex: "#7c3aed", darkHex: "#c4b5fd" },
-  { id: "sunset", labelEn: "Gentle Rose", labelBm: "Mawar Lembut", labelZh: "暮玫瑰", lightHex: "#db2777", darkHex: "#f472b6" },
-  { id: "amber", labelEn: "Honey Gold", labelBm: "Emas Madu", labelZh: "暖杏金", lightHex: "#b45309", darkHex: "#fbbf24" },
-  { id: "slate", labelEn: "Quiet Slate", labelBm: "Kelabu Tenang", labelZh: "静石灰", lightHex: "#475569", darkHex: "#94a3b8" },
+  { id: "peach", labelEn: "Warm Peach", labelBm: "Pic Hangat", labelZh: "暖桃", lightHex: "var(--theme-folder-peach)", darkHex: "var(--theme-folder-peach)" },
+  { id: "ocean", labelEn: "Calm Blue", labelBm: "Biru Tenang", labelZh: "静海蓝", lightHex: "var(--theme-folder-ocean)", darkHex: "var(--theme-folder-ocean)" },
+  { id: "forest", labelEn: "Sage Teal", labelBm: "Hijau Damai", labelZh: "森语青", lightHex: "var(--theme-folder-forest)", darkHex: "var(--theme-folder-forest)" },
+  { id: "lavender", labelEn: "Soft Violet", labelBm: "Ungu Lembut", labelZh: "柔雾紫", lightHex: "var(--theme-folder-lavender)", darkHex: "var(--theme-folder-lavender)" },
+  { id: "sunset", labelEn: "Gentle Rose", labelBm: "Mawar Lembut", labelZh: "暮玫瑰", lightHex: "var(--theme-folder-sunset)", darkHex: "var(--theme-folder-sunset)" },
+  { id: "amber", labelEn: "Honey Gold", labelBm: "Emas Madu", labelZh: "暖杏金", lightHex: "var(--theme-folder-amber)", darkHex: "var(--theme-folder-amber)" },
+  { id: "slate", labelEn: "Quiet Slate", labelBm: "Kelabu Tenang", labelZh: "静石灰", lightHex: "var(--theme-folder-slate)", darkHex: "var(--theme-folder-slate)" },
 ];
 
 export const FOLDER_ICON_OPTIONS: { id: FolderIconId; labelEn: string; labelBm: string; labelZh: string }[] = [

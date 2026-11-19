@@ -36,6 +36,7 @@ function CommentVoicePlayer({
     existingTranscription?.trim() || null,
   );
   const [transcribing, setTranscribing] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -81,15 +82,10 @@ function CommentVoicePlayer({
     }
   };
 
-  const handleToggleTranscript = async () => {
-    if (showTranscript) {
-      setShowTranscript(false);
-      return;
-    }
-    setShowTranscript(true);
-    if (transcript || transcribing) return;
-
+  const fetchTranscript = async () => {
+    if (transcribing) return;
     setTranscribing(true);
+    setTranscriptError(null);
     try {
       const result = await transcribeCommunityVoice({
         messageId: itemId,
@@ -99,9 +95,28 @@ function CommentVoicePlayer({
         existingTranscription,
       });
       setTranscript(result);
+    } catch (err: any) {
+      setTranscriptError(
+        err?.message ||
+          (language === "Bahasa Melayu"
+            ? "Gagal mendapatkan transkrip suara."
+            : language === "中文"
+              ? "语音转写失败，请重试。"
+              : "Could not transcribe voice note."),
+      );
     } finally {
       setTranscribing(false);
     }
+  };
+
+  const handleToggleTranscript = async () => {
+    if (showTranscript) {
+      setShowTranscript(false);
+      return;
+    }
+    setShowTranscript(true);
+    if (transcript || transcribing) return;
+    await fetchTranscript();
   };
 
   return (
@@ -169,15 +184,34 @@ function CommentVoicePlayer({
       </button>
 
       {showTranscript && (
-        <p className="comment-transcript-box">
-          {transcribing
-            ? language === "Bahasa Melayu"
-              ? "Mentranskripsi suara…"
-              : language === "中文"
-                ? "正在转换文字…"
-                : "Transcribing voice note…"
-            : transcript || fallbackText}
-        </p>
+        <div className="comment-transcript-box">
+          {transcribing ? (
+            <span>
+              {language === "Bahasa Melayu"
+                ? "Mentranskripsi suara…"
+                : language === "中文"
+                  ? "正在转换文字…"
+                  : "Transcribing voice note…"}
+            </span>
+          ) : transcriptError ? (
+            <div className="composer-error-row" role="alert">
+              <span className="sheet-inline-error">{transcriptError}</span>
+              <button
+                type="button"
+                className="composer-retry-btn"
+                onClick={() => void fetchTranscript()}
+              >
+                {language === "Bahasa Melayu"
+                  ? "Cuba lagi"
+                  : language === "中文"
+                    ? "重试"
+                    : "Retry"}
+              </button>
+            </div>
+          ) : (
+            <span>{transcript || fallbackText}</span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -357,8 +391,7 @@ export function CommentList({
 }: CommentListProps) {
   const { t, language } = useLanguage();
 
-  const cleanUid = currentUid.trim() || "anonymous_user";
-  const cleanName = currentUserName.trim() || "ONY Member";
+  const cleanUid = currentUid.trim();
   const comments: PostCommentRecord[] = Array.isArray(post.comments)
     ? post.comments
     : [];
@@ -372,17 +405,8 @@ export function CommentList({
           (c.replies || []).some((r) => containsCrisisLanguage(r.text)),
       ));
 
-  const isOwnedByCurrentUser = (recordUserId?: string, recordUserName?: string) => {
-    if (recordUserId && recordUserId === cleanUid) return true;
-    const normRecord = (recordUserName || "").trim().toLowerCase();
-    const normCurrent = cleanName.toLowerCase();
-    return (
-      Boolean(normRecord) &&
-      (normRecord === normCurrent ||
-        normRecord === `${normCurrent} · ony profile` ||
-        normRecord === "my ony profile")
-    );
-  };
+  const isOwnedByCurrentUser = (recordUserId?: string) =>
+    Boolean(cleanUid && recordUserId === cleanUid);
 
   const likeLabel =
     language === "Bahasa Melayu" ? "Suka" : language === "中文" ? "暖心" : "Like";
@@ -460,12 +484,10 @@ export function CommentList({
             const commentLikeList = Array.isArray(item.likeRecords)
               ? item.likeRecords
               : [];
-            const commentLikedByMe = commentLikeList.some(
-              (l) =>
-                l.userId === cleanUid ||
-                l.userName.trim().toLowerCase() === cleanName.toLowerCase(),
+            const commentLikedByMe = Boolean(
+              cleanUid && commentLikeList.some((l) => l.userId === cleanUid),
             );
-            const isMyComment = isOwnedByCurrentUser(item.userId, item.userName);
+            const isMyComment = isOwnedByCurrentUser(item.userId);
             const replies = Array.isArray(item.replies) ? item.replies : [];
             const isVoiceComment = item.kind === "voice" || Boolean(item.audioUrl);
 
@@ -552,10 +574,7 @@ export function CommentList({
                   {replies.length > 0 && (
                     <div className="sheet-replies-list">
                       {replies.map((rep) => {
-                        const isMyReply = isOwnedByCurrentUser(
-                          rep.userId,
-                          rep.userName,
-                        );
+                        const isMyReply = isOwnedByCurrentUser(rep.userId);
                         const isVoiceReply =
                           rep.kind === "voice" || Boolean(rep.audioUrl);
 

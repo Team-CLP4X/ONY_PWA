@@ -24,13 +24,13 @@ export function DurationChip({
         display: "inline-flex",
         alignItems: "center",
         gap: "4px",
-        fontSize: "11px",
+        fontSize: "calc(11px * var(--font-scale, 1))",
         fontWeight: 700,
         padding: "3px 8px",
         borderRadius: "100px",
-        background: "var(--theme-surface-soft, rgba(0, 0, 0, 0.05))",
-        color: "var(--theme-text-secondary, #6b645f)",
-        border: "1px solid var(--theme-border, rgba(0, 0, 0, 0.08))",
+        background: "var(--theme-surface-soft)",
+        color: "var(--theme-text-secondary)",
+        border: "1px solid var(--theme-border)",
         whiteSpace: "nowrap",
       }}
     >
@@ -92,24 +92,20 @@ export function ToolCard({
         padding: "16px 14px",
         borderRadius: "22px",
         border: isActive
-          ? "2px solid var(--theme-primary, #F28C78)"
-          : "1.5px solid var(--theme-border, rgba(0,0,0,0.08))",
+          ? "2px solid var(--theme-primary)"
+          : "1.5px solid var(--theme-border)",
         background: isActive
           ? isDark
-            ? "color-mix(in srgb, var(--theme-primary, #F28C78) 18%, var(--theme-surface, #1e1919))"
-            : "var(--theme-surface-elevated, #FFF0EC)"
-          : isDark
-          ? "var(--theme-surface, #1e1919)"
-          : "var(--theme-surface, #ffffff)",
-        color: "var(--theme-text-primary, #2d2424)",
+            ? "color-mix(in srgb, var(--theme-primary) 18%, var(--theme-surface))"
+            : "var(--theme-surface-elevated)"
+          : "var(--theme-surface)",
+        color: "var(--theme-text-primary)",
         cursor: "pointer",
         textAlign: "left",
         position: "relative",
         minHeight: "132px",
         transition: "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        boxShadow: isActive
-          ? "0 8px 24px color-mix(in srgb, var(--theme-primary, #F28C78) 25%, transparent)"
-          : "0 2px 8px rgba(0,0,0,0.03)",
+        boxShadow: isActive ? "var(--theme-shadow-primary)" : "var(--theme-shadow-xs)",
         overflow: "hidden",
       }}
       aria-label={`${title}: ${subtitle} (${duration})`}
@@ -123,9 +119,9 @@ export function ToolCard({
             display: "grid",
             placeItems: "center",
             background: isDark
-              ? "color-mix(in srgb, var(--theme-primary, #F28C78) 22%, transparent)"
-              : "color-mix(in srgb, var(--theme-primary, #F28C78) 14%, white)",
-            color: "var(--theme-primary, #F28C78)",
+              ? "color-mix(in srgb, var(--theme-primary) 22%, transparent)"
+              : "color-mix(in srgb, var(--theme-primary) 14%, var(--theme-surface))",
+            color: "var(--theme-primary)",
           }}
         >
           {iconType === "breathe" && (
@@ -152,7 +148,7 @@ export function ToolCard({
 
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <strong style={{ fontSize: "14.5px", fontWeight: 800, color: "var(--theme-text-primary, #2d2424)" }}>
+          <strong style={{ fontSize: "calc(14.5px * var(--font-scale, 1))", fontWeight: 800, color: "var(--theme-text-primary)" }}>
             {title}
           </strong>
           {isPlayingSound && (
@@ -162,8 +158,8 @@ export function ToolCard({
                 width: "8px",
                 height: "8px",
                 borderRadius: "50%",
-                background: "#10b981",
-                boxShadow: "0 0 6px #10b981",
+                background: "var(--theme-success)",
+                boxShadow: "0 0 6px var(--theme-success)",
               }}
               title="Playing audio"
             />
@@ -172,8 +168,8 @@ export function ToolCard({
         <p
           style={{
             margin: "3px 0 0",
-            fontSize: "11px",
-            color: "var(--theme-text-secondary, #6b645f)",
+            fontSize: "calc(11px * var(--font-scale, 1))",
+            color: "var(--theme-text-secondary)",
             lineHeight: 1.35,
           }}
         >
@@ -236,16 +232,16 @@ export function FeelingFilterChips({
         onClick={() => onSelectFeeling("All")}
         style={{
           border: selectedFeeling === "All"
-            ? "1.5px solid var(--theme-primary, #F28C78)"
-            : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
+            ? "1.5px solid var(--theme-primary)"
+            : "1px solid var(--theme-border)",
           borderRadius: "100px",
           padding: "7px 14px",
-          fontSize: "12px",
+          fontSize: "var(--font-caption)",
           fontWeight: 700,
           background: selectedFeeling === "All"
-            ? "var(--theme-primary, #F28C78)"
-            : "var(--theme-surface, #ffffff)",
-          color: selectedFeeling === "All" ? "#ffffff" : "var(--theme-text-primary, #2d2424)",
+            ? "var(--theme-primary)"
+            : "var(--theme-surface)",
+          color: selectedFeeling === "All" ? "var(--theme-on-primary)" : "var(--theme-text-primary)",
           cursor: "pointer",
           whiteSpace: "nowrap",
           minHeight: "44px",
@@ -266,16 +262,16 @@ export function FeelingFilterChips({
             onClick={() => onSelectFeeling(feeling)}
             style={{
               border: isSelected
-                ? "1.5px solid var(--theme-primary, #F28C78)"
-                : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
+                ? "1.5px solid var(--theme-primary)"
+                : "1px solid var(--theme-border)",
               borderRadius: "100px",
               padding: "7px 14px",
-              fontSize: "12px",
+              fontSize: "var(--font-caption)",
               fontWeight: 700,
               background: isSelected
-                ? "var(--theme-primary, #F28C78)"
-                : "var(--theme-surface, #ffffff)",
-              color: isSelected ? "#ffffff" : "var(--theme-text-primary, #2d2424)",
+                ? "var(--theme-primary)"
+                : "var(--theme-surface)",
+              color: isSelected ? "var(--theme-on-primary)" : "var(--theme-text-primary)",
               cursor: "pointer",
               whiteSpace: "nowrap",
               minHeight: "44px",
@@ -320,14 +316,14 @@ export function GuideCard({ guide, onClick, lang = "English" }: GuideCardProps) 
         gap: "14px",
         padding: "16px 18px",
         borderRadius: "20px",
-        border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
-        background: isDark ? "var(--theme-surface, #1e1919)" : "var(--theme-surface, #ffffff)",
-        color: "var(--theme-text-primary, #2d2424)",
+        border: "1px solid var(--theme-border)",
+        background: "var(--theme-surface)",
+        color: "var(--theme-text-primary)",
         cursor: "pointer",
         textAlign: "left",
         minHeight: "78px",
         transition: "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
+        boxShadow: "var(--theme-shadow-xs)",
       }}
       aria-label={`Open guide: ${title}. ${summary}`}
     >
@@ -342,9 +338,9 @@ export function GuideCard({ guide, onClick, lang = "English" }: GuideCardProps) 
             placeItems: "center",
             flexShrink: 0,
             background: isDark
-              ? "color-mix(in srgb, var(--theme-accent, #FAD2C8) 20%, transparent)"
-              : "color-mix(in srgb, var(--theme-accent, #FAD2C8) 35%, white)",
-            color: "var(--theme-primary, #F28C78)",
+              ? "color-mix(in srgb, var(--theme-accent) 20%, transparent)"
+              : "color-mix(in srgb, var(--theme-accent) 35%, var(--theme-surface))",
+            color: "var(--theme-primary)",
             marginTop: "2px",
           }}
         >
@@ -393,7 +389,7 @@ export function GuideCard({ guide, onClick, lang = "English" }: GuideCardProps) 
         {/* Text Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
-            <strong style={{ fontSize: "14px", fontWeight: 800, color: "var(--theme-text-primary, #2d2424)" }}>
+            <strong style={{ fontSize: "var(--font-body)", fontWeight: 800, color: "var(--theme-text-primary)" }}>
               {title}
             </strong>
             <DurationChip duration={guide.duration} />
@@ -401,8 +397,8 @@ export function GuideCard({ guide, onClick, lang = "English" }: GuideCardProps) 
           <p
             style={{
               margin: 0,
-              fontSize: "12px",
-              color: "var(--theme-text-secondary, #6b645f)",
+              fontSize: "var(--font-caption)",
+              color: "var(--theme-text-secondary)",
               lineHeight: 1.35,
             }}
           >
@@ -412,7 +408,7 @@ export function GuideCard({ guide, onClick, lang = "English" }: GuideCardProps) 
       </div>
 
       {/* Clear Chevron */}
-      <div style={{ color: "var(--theme-text-secondary, #6b645f)", paddingLeft: "4px" }}>
+      <div style={{ color: "var(--theme-text-secondary)", paddingLeft: "4px" }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <polyline points="9 18 15 12 9 6" />
         </svg>
@@ -548,7 +544,7 @@ export function BreathingCircle({ onCycleComplete, lang = "English" }: Breathing
             position: "absolute",
             inset: 0,
             borderRadius: "50%",
-            background: "radial-gradient(circle, var(--theme-accent, #FAD2C8) 0%, transparent 70%)",
+            background: "radial-gradient(circle, var(--theme-accent) 0%, transparent 70%)",
             opacity: isDark ? 0.35 : 0.45,
             filter: "blur(18px)",
             transform: `scale(${circleScale * 1.1})`,
@@ -563,7 +559,7 @@ export function BreathingCircle({ onCycleComplete, lang = "English" }: Breathing
             width: "190px",
             height: "190px",
             borderRadius: "50%",
-            border: "2px dashed color-mix(in srgb, var(--theme-primary, #F28C78) 40%, transparent)",
+            border: "2px dashed color-mix(in srgb, var(--theme-primary) 40%, transparent)",
             opacity: 0.6,
           }}
         />
@@ -574,28 +570,27 @@ export function BreathingCircle({ onCycleComplete, lang = "English" }: Breathing
             width: "150px",
             height: "150px",
             borderRadius: "50%",
-            background: "radial-gradient(circle at 35% 35%, var(--theme-surface-elevated, #FFF0EC), var(--theme-primary, #F28C78))",
-            boxShadow: "0 14px 40px color-mix(in srgb, var(--theme-primary, #F28C78) 35%, transparent)",
+            background: "radial-gradient(circle at 35% 35%, var(--theme-accent), var(--theme-primary))",
+            boxShadow: "var(--theme-shadow-primary)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            color: "#ffffff",
+            color: "var(--theme-on-primary)",
             transform: `scale(${circleScale})`,
             transition: prefersReducedMotion ? "opacity 0.5s ease" : "transform 4s cubic-bezier(0.4, 0, 0.2, 1)",
             zIndex: 2,
           }}
         >
-          <span style={{ fontSize: "28px", fontWeight: 900, textShadow: "0 2px 6px rgba(0,0,0,0.2)" }}>
+          <span style={{ fontSize: "calc(28px * var(--font-scale, 1))", fontWeight: 900 }}>
             {secondsLeft}s
           </span>
           <span
             style={{
-              fontSize: "12px",
+              fontSize: "var(--font-caption)",
               fontWeight: 800,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
-              textShadow: "0 1px 4px rgba(0,0,0,0.25)",
               marginTop: "2px",
             }}
           >
@@ -604,13 +599,13 @@ export function BreathingCircle({ onCycleComplete, lang = "English" }: Breathing
         </div>
       </div>
 
-      <p style={{ fontSize: "13px", color: "var(--theme-text-secondary, #6b645f)", margin: "0 0 16px", minHeight: "20px" }}>
+      <p style={{ fontSize: "var(--font-body-sm)", color: "var(--theme-text-secondary)", margin: "0 0 16px", minHeight: "20px" }}>
         {getPhaseInstruction()}
       </p>
 
       {/* Cycle Indicator & Controls */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 700, opacity: 0.75 }}>
+        <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 700, opacity: 0.75 }}>
           {isBm ? `Kitaran ${cycleCount}` : isZh ? `第 ${cycleCount} 轮循环` : `Cycle ${cycleCount} of 4`}
         </span>
 
@@ -618,12 +613,12 @@ export function BreathingCircle({ onCycleComplete, lang = "English" }: Breathing
           type="button"
           onClick={() => setIsRunning(!isRunning)}
           style={{
-            border: "1px solid var(--theme-border, rgba(0,0,0,0.12))",
-            background: "var(--theme-surface, #ffffff)",
-            color: "var(--theme-text-primary, #2d2424)",
+            border: "1px solid var(--theme-border)",
+            background: "var(--theme-surface)",
+            color: "var(--theme-text-primary)",
             borderRadius: "100px",
             padding: "6px 14px",
-            fontSize: "12px",
+            fontSize: "var(--font-caption)",
             fontWeight: 700,
             cursor: "pointer",
           }}
@@ -641,8 +636,8 @@ export function BreathingCircle({ onCycleComplete, lang = "English" }: Breathing
           style={{
             border: "none",
             background: "transparent",
-            color: "var(--theme-text-secondary, #6b645f)",
-            fontSize: "12px",
+            color: "var(--theme-text-secondary)",
+            fontSize: "var(--font-caption)",
             fontWeight: 700,
             cursor: "pointer",
             textDecoration: "underline",
@@ -666,7 +661,6 @@ export interface StepViewerProps {
 
 export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const { isDark } = useTheme();
 
   const isBm = lang.includes("Melayu") || lang.includes("bm");
   const isZh = lang.includes("中文") || lang.includes("zh");
@@ -680,7 +674,7 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
     <div className="toolkit-step-viewer" style={{ width: "100%" }}>
       {/* Progress Bar */}
       <div style={{ marginBottom: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", fontWeight: 700, opacity: 0.7, marginBottom: "6px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 700, opacity: 0.7, marginBottom: "6px" }}>
           <span>{isBm ? `Langkah ${currentStepIndex + 1} daripada ${total}` : isZh ? `第 ${currentStepIndex + 1} / ${total} 步` : `Step ${currentStepIndex + 1} of ${total}`}</span>
           <span>{progressPercent}%</span>
         </div>
@@ -689,7 +683,7 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
             width: "100%",
             height: "6px",
             borderRadius: "100px",
-            background: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+            background: "var(--theme-surface-soft)",
             overflow: "hidden",
           }}
         >
@@ -697,7 +691,7 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
             style={{
               width: `${progressPercent}%`,
               height: "100%",
-              background: "var(--theme-primary, #F28C78)",
+              background: "var(--theme-primary)",
               borderRadius: "100px",
               transition: "width 0.3s ease",
             }}
@@ -710,8 +704,8 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
         style={{
           borderRadius: "22px",
           padding: "20px 18px",
-          background: isDark ? "var(--theme-surface-elevated, #282121)" : "var(--theme-surface-elevated, #FFF8F5)",
-          border: "1.5px solid var(--theme-border, rgba(0,0,0,0.08))",
+          background: "var(--theme-surface-elevated)",
+          border: "1.5px solid var(--theme-border)",
           minHeight: "160px",
           display: "flex",
           flexDirection: "column",
@@ -725,9 +719,9 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
                 width: "24px",
                 height: "24px",
                 borderRadius: "50%",
-                background: "var(--theme-primary, #F28C78)",
-                color: "#ffffff",
-                fontSize: "12px",
+                background: "var(--theme-primary)",
+                color: "var(--theme-on-primary)",
+                fontSize: "var(--font-caption)",
                 fontWeight: 800,
                 display: "grid",
                 placeItems: "center",
@@ -735,12 +729,12 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
             >
               {currentStep.number}
             </span>
-            <strong style={{ fontSize: "15px", fontWeight: 800, color: "var(--theme-text-primary, #2d2424)" }}>
+            <strong style={{ fontSize: "calc(15px * var(--font-scale, 1))", fontWeight: 800, color: "var(--theme-text-primary)" }}>
               {currentStep.title}
             </strong>
           </div>
 
-          <p style={{ fontSize: "13.5px", color: "var(--theme-text-primary, #2d2424)", lineHeight: 1.5, margin: "8px 0" }}>
+          <p style={{ fontSize: "var(--font-body-sm)", color: "var(--theme-text-primary)", lineHeight: 1.5, margin: "8px 0" }}>
             {currentStep.instruction}
           </p>
 
@@ -752,9 +746,9 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
                 gap: "6px",
                 padding: "8px 12px",
                 borderRadius: "12px",
-                background: isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.7)",
-                fontSize: "12px",
-                color: "var(--theme-text-secondary, #6b645f)",
+                background: "var(--theme-surface-soft)",
+                fontSize: "var(--font-caption)",
+                color: "var(--theme-text-secondary)",
                 marginTop: "10px",
               }}
             >
@@ -773,10 +767,10 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
             style={{
               padding: "10px 18px",
               borderRadius: "100px",
-              border: "1px solid var(--theme-border, rgba(0,0,0,0.12))",
+              border: "1px solid var(--theme-border)",
               background: "transparent",
-              color: "var(--theme-text-primary, inherit)",
-              fontSize: "12px",
+              color: "var(--theme-text-primary)",
+              fontSize: "var(--font-caption)",
               fontWeight: 700,
               cursor: currentStepIndex === 0 ? "not-allowed" : "pointer",
               opacity: currentStepIndex === 0 ? 0.35 : 1,
@@ -798,12 +792,12 @@ export function StepViewer({ steps, onComplete, lang = "English" }: StepViewerPr
               padding: "10px 24px",
               borderRadius: "100px",
               border: "none",
-              background: "var(--theme-primary, #F28C78)",
-              color: "#ffffff",
-              fontSize: "13px",
+              background: "var(--theme-primary)",
+              color: "var(--theme-on-primary)",
+              fontSize: "var(--font-body-sm)",
               fontWeight: 800,
               cursor: "pointer",
-              boxShadow: "0 4px 14px color-mix(in srgb, var(--theme-primary, #F28C78) 35%, transparent)",
+              boxShadow: "var(--theme-shadow-primary)",
             }}
           >
             {isLast ? (isBm ? "Selesai Panduan" : isZh ? "完成练习" : "Complete Guide") : (isBm ? "Langkah Seterusnya" : isZh ? "下一步" : "Next Step")}
@@ -829,7 +823,6 @@ export function JournalingStep({ guide, onSaveToVault, notify, lang = "English" 
   const [journalText, setJournalText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const { isDark } = useTheme();
 
   const isBm = lang.includes("Melayu") || lang.includes("bm");
   const isZh = lang.includes("中文") || lang.includes("zh");
@@ -885,13 +878,13 @@ export function JournalingStep({ guide, onSaveToVault, notify, lang = "English" 
               padding: "7px 14px",
               borderRadius: "100px",
               border: selectedPromptIndex === idx
-                ? "1.5px solid var(--theme-primary, #F28C78)"
-                : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
+                ? "1.5px solid var(--theme-primary)"
+                : "1px solid var(--theme-border)",
               background: selectedPromptIndex === idx
-                ? "var(--theme-surface-elevated, #FFF0EC)"
+                ? "var(--theme-surface-elevated)"
                 : "transparent",
               color: "inherit",
-              fontSize: "12px",
+              fontSize: "var(--font-caption)",
               fontWeight: 700,
               cursor: "pointer",
               whiteSpace: "nowrap",
@@ -907,15 +900,15 @@ export function JournalingStep({ guide, onSaveToVault, notify, lang = "English" 
         style={{
           borderRadius: "18px",
           padding: "16px",
-          background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-          border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+          background: "var(--theme-surface-soft)",
+          border: "1px solid var(--theme-border)",
           marginBottom: "12px",
         }}
       >
-        <span style={{ fontSize: "11px", fontWeight: 800, textTransform: "uppercase", color: "var(--theme-primary, #F28C78)", display: "block", marginBottom: "4px" }}>
+        <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 800, textTransform: "uppercase", color: "var(--theme-primary)", display: "block", marginBottom: "4px" }}>
           {isBm ? "Soalan Refleksi" : isZh ? "温和提示" : "Reflection Prompt"}
         </span>
-        <strong style={{ fontSize: "14px", color: "var(--theme-text-primary, #2d2424)", lineHeight: 1.4 }}>
+        <strong style={{ fontSize: "var(--font-body)", color: "var(--theme-text-primary)", lineHeight: 1.4 }}>
           {question}
         </strong>
       </div>
@@ -933,18 +926,18 @@ export function JournalingStep({ guide, onSaveToVault, notify, lang = "English" 
           style={{
             width: "100%",
             borderRadius: "16px",
-            border: "1px solid var(--theme-border, rgba(0,0,0,0.12))",
-            background: isDark ? "var(--theme-surface, #1e1919)" : "#ffffff",
-            color: "var(--theme-text-primary, #2d2424)",
+            border: "1px solid var(--theme-border)",
+            background: "var(--theme-surface)",
+            color: "var(--theme-text-primary)",
             padding: "14px",
-            fontSize: "13.5px",
+            fontSize: "var(--font-body-sm)",
             lineHeight: 1.5,
             resize: "vertical",
             boxSizing: "border-box",
             outline: "none",
           }}
         />
-        <span style={{ position: "absolute", bottom: "10px", right: "12px", fontSize: "11px", opacity: 0.5 }}>
+        <span style={{ position: "absolute", bottom: "10px", right: "12px", fontSize: "calc(11px * var(--font-scale, 1))", opacity: 0.5 }}>
           {journalText.length} chars
         </span>
       </div>
@@ -962,13 +955,13 @@ export function JournalingStep({ guide, onSaveToVault, notify, lang = "English" 
             padding: "10px 20px",
             borderRadius: "100px",
             border: "none",
-            background: savedSuccess ? "#10b981" : "var(--theme-primary, #F28C78)",
-            color: "#ffffff",
-            fontSize: "12.5px",
+            background: savedSuccess ? "var(--theme-success)" : "var(--theme-primary)",
+            color: savedSuccess ? "var(--theme-on-dark)" : "var(--theme-on-primary)",
+            fontSize: "var(--font-caption)",
             fontWeight: 800,
             cursor: !journalText.trim() ? "not-allowed" : "pointer",
             opacity: !journalText.trim() ? 0.6 : 1,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            boxShadow: "var(--theme-shadow-sm)",
           }}
         >
           {savedSuccess ? (
@@ -984,7 +977,7 @@ export function JournalingStep({ guide, onSaveToVault, notify, lang = "English" 
           )}
         </button>
 
-        <span style={{ fontSize: "11px", opacity: 0.65 }}>
+        <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", opacity: 0.65 }}>
           🔒 {isBm ? "Sulit & selamat" : isZh ? "私密加密存储" : "Private & safe"}
         </span>
       </div>
@@ -1008,7 +1001,6 @@ export function CrisisSupportSection({
   lang = "English",
   className = "",
 }: CrisisSupportSectionProps) {
-  const { isDark } = useTheme();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const isBm = lang.includes("Melayu") || lang.includes("bm");
@@ -1033,10 +1025,8 @@ export function CrisisSupportSection({
       style={{
         borderRadius: "24px",
         padding: "20px 18px",
-        background: isDark
-          ? "color-mix(in srgb, #ef4444 14%, var(--theme-surface, #1e1919))"
-          : "#FFF5F5",
-        border: "1.5px solid color-mix(in srgb, #ef4444 35%, transparent)",
+        background: "var(--theme-danger-soft)",
+        border: "1.5px solid var(--theme-danger-border)",
         margin: "24px 0 16px",
       }}
       aria-label="Malaysian crisis helplines and immediate support"
@@ -1047,8 +1037,8 @@ export function CrisisSupportSection({
             width: "36px",
             height: "36px",
             borderRadius: "12px",
-            background: "#ef4444",
-            color: "#ffffff",
+            background: "var(--theme-danger)",
+            color: "var(--theme-on-dark)",
             display: "grid",
             placeItems: "center",
             flexShrink: 0,
@@ -1059,10 +1049,10 @@ export function CrisisSupportSection({
           </svg>
         </div>
         <div>
-          <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 800, color: isDark ? "#FCA5A5" : "#991B1B" }}>
+          <h3 style={{ margin: 0, fontSize: "calc(15px * var(--font-scale, 1))", fontWeight: 800, color: "var(--theme-danger)" }}>
             {isBm ? "Perlukan Bantuan Segera? (Talian Krisis Malaysia)" : isZh ? "需要即时危机帮助？(马来西亚官方求助热线)" : "Need Urgent Help? (Malaysian Helplines)"}
           </h3>
-          <p style={{ margin: "2px 0 0", fontSize: "11px", color: isDark ? "#FECACA" : "#7F1D1D", opacity: 0.85 }}>
+          <p style={{ margin: "2px 0 0", fontSize: "calc(11px * var(--font-scale, 1))", color: "var(--theme-text-primary)", opacity: 0.85 }}>
             {isBm ? "Percuma, sulit & sedia mendengar apabila fikiran terasa terlalu berat" : isZh ? "免费、严格保密且随时守候，陪伴度过艰难时刻" : "Free, confidential, and ready to listen whenever things feel too heavy."}
           </p>
         </div>
@@ -1086,16 +1076,16 @@ export function CrisisSupportSection({
                 gap: "10px",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                background: isDark ? "rgba(255,255,255,0.04)" : "#ffffff",
-                border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+                background: "var(--theme-surface)",
+                border: "1px solid var(--theme-border)",
               }}
             >
               <div style={{ flex: 1, minWidth: "180px" }}>
-                <strong style={{ fontSize: "13.5px", display: "block", color: "var(--theme-text-primary, #2d2424)" }}>
+                <strong style={{ fontSize: "var(--font-body-sm)", display: "block", color: "var(--theme-text-primary)" }}>
                   {name}
                 </strong>
-                <span style={{ fontSize: "11px", color: "var(--theme-text-secondary, #6b645f)", display: "block", marginTop: "2px" }}>
-                  {service} · <strong style={{ color: "#ef4444" }}>{hours}</strong>
+                <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", color: "var(--theme-text-secondary)", display: "block", marginTop: "2px" }}>
+                  {service} · <strong style={{ color: "var(--theme-danger)" }}>{hours}</strong>
                 </span>
               </div>
 
@@ -1109,13 +1099,13 @@ export function CrisisSupportSection({
                     gap: "5px",
                     padding: "7px 14px",
                     borderRadius: "100px",
-                    background: "#ef4444",
-                    color: "#ffffff",
-                    fontSize: "12px",
+                    background: "var(--theme-danger)",
+                    color: "var(--theme-on-dark)",
+                    fontSize: "var(--font-caption)",
                     fontWeight: 800,
                     textDecoration: "none",
                     minHeight: "44px",
-                    boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)",
+                    boxShadow: "var(--theme-shadow-sm)",
                   }}
                   aria-label={`Call ${name} at ${item.displayPhone}`}
                 >
@@ -1131,10 +1121,10 @@ export function CrisisSupportSection({
                   style={{
                     padding: "7px 12px",
                     borderRadius: "100px",
-                    border: "1px solid var(--theme-border, rgba(0,0,0,0.12))",
-                    background: "var(--theme-surface, #ffffff)",
-                    color: "var(--theme-text-primary, #2d2424)",
-                    fontSize: "11px",
+                    border: "1px solid var(--theme-border)",
+                    background: "var(--theme-surface)",
+                    color: "var(--theme-text-primary)",
+                    fontSize: "calc(11px * var(--font-scale, 1))",
                     fontWeight: 700,
                     cursor: "pointer",
                     minHeight: "44px",
@@ -1150,8 +1140,7 @@ export function CrisisSupportSection({
         })}
       </div>
 
-      <div style={{ marginTop: "12px", fontSize: "10.5px", color: isDark ? "#FECACA" : "#7F1D1D", opacity: 0.8, textAlign: "center" }}>
-        {/* Verification notice for user / tester */}
+      <div style={{ marginTop: "12px", fontSize: "calc(10.5px * var(--font-scale, 1))", color: "var(--theme-text-secondary)", textAlign: "center" }}>
         ℹ️ {isBm ? "Nota Keselamatan: Sila hubungi 999 jika anda berada dalam kecemasan segera." : isZh ? "安全声明：若您或身边人员面临即时危险，请立即拨打 999 呼叫急救。" : "Safety Note: Please call 999 immediately if in active danger or life-threatening crisis."}
       </div>
     </section>
@@ -1166,6 +1155,11 @@ export interface GuideDetailScreenProps {
   onBack: () => void;
   onTalkToOny: (guideTitle: string) => void;
   onSaveToVault?: (text: string, title: string) => Promise<void> | void;
+  onRecordCompletion?: (
+    guideId: string,
+    guideTitle: string,
+    mood: "better" | "same" | "worse",
+  ) => Promise<void> | void;
   helplines: MalaysianHelpline[];
   notify?: (msg: string) => void;
   lang?: string;
@@ -1176,11 +1170,11 @@ export function GuideDetailScreen({
   onBack,
   onTalkToOny,
   onSaveToVault,
+  onRecordCompletion,
   helplines,
   notify,
   lang = "English",
 }: GuideDetailScreenProps) {
-  const { isDark } = useTheme();
   const [viewMode, setViewMode] = useState<"interactive" | "overview">("interactive");
   const [feedbackMood, setFeedbackMood] = useState<"better" | "same" | "worse" | null>(null);
   const [showCrisisDrawer, setShowCrisisDrawer] = useState(false);
@@ -1194,19 +1188,7 @@ export function GuideDetailScreen({
 
   const handleFeedback = (mood: "better" | "same" | "worse") => {
     setFeedbackMood(mood);
-
-    // Save completion outcome for monthly reflection insights
-    try {
-      const stored = localStorage.getItem("ony_toolkit_completions");
-      const list = stored ? JSON.parse(stored) : [];
-      list.push({
-        guideId: guide.id,
-        guideTitle: guide.title,
-        mood,
-        timestamp: new Date().toISOString(),
-      });
-      localStorage.setItem("ony_toolkit_completions", JSON.stringify(list));
-    } catch {}
+    void onRecordCompletion?.(guide.id, guide.title, mood);
 
     if (mood === "better" && notify) {
       notify(isBm ? "Bagus sekali! Ambil nafas dan teruskan hari anda dengan tenang." : isZh ? "太好了！带着这份轻盈继续生活吧。" : "Wonderful to hear! Carry this gentle feeling forward.");
@@ -1220,8 +1202,8 @@ export function GuideDetailScreen({
         display: "flex",
         flexDirection: "column",
         minHeight: "100%",
-        background: isDark ? "var(--theme-bg, #141010)" : "var(--theme-bg, #FFF9F5)",
-        color: "var(--theme-text-primary, #2d2424)",
+        background: "var(--theme-bg)",
+        color: "var(--theme-text-primary)",
       }}
     >
       {/* Detail Header */}
@@ -1231,8 +1213,8 @@ export function GuideDetailScreen({
           alignItems: "center",
           justifyContent: "space-between",
           padding: "12px 16px",
-          borderBottom: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
-          background: isDark ? "var(--theme-header-bg, #1e1919)" : "var(--theme-header-bg, #ffffff)",
+          borderBottom: "1px solid var(--theme-border)",
+          background: "var(--theme-header-bg)",
           position: "sticky",
           top: 0,
           zIndex: 10,
@@ -1248,8 +1230,8 @@ export function GuideDetailScreen({
             gap: "6px",
             border: "none",
             background: "transparent",
-            color: "var(--theme-text-primary, #2d2424)",
-            fontSize: "13px",
+            color: "var(--theme-text-primary)",
+            fontSize: "var(--font-body-sm)",
             fontWeight: 700,
             cursor: "pointer",
             minHeight: "44px",
@@ -1269,23 +1251,23 @@ export function GuideDetailScreen({
       <div style={{ padding: "16px", flex: 1 }}>
         {/* Title & Tags */}
         <div style={{ marginBottom: "16px" }}>
-          <h1 style={{ fontSize: "21px", fontWeight: 900, margin: "0 0 6px", letterSpacing: "-0.02em" }}>
+          <h1 style={{ fontSize: "var(--font-title)", fontWeight: 900, margin: "0 0 6px", letterSpacing: "-0.02em" }}>
             {title}
           </h1>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
-            <span style={{ fontSize: "11px", opacity: 0.65, fontWeight: 700, alignSelf: "center", marginRight: "2px" }}>
+            <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", opacity: 0.65, fontWeight: 700, alignSelf: "center", marginRight: "2px" }}>
               {isBm ? "Sesuai untuk:" : isZh ? "适用场景：" : "Good for:"}
             </span>
             {tags.map((t) => (
               <span
                 key={t}
                 style={{
-                  fontSize: "11px",
+                  fontSize: "calc(11px * var(--font-scale, 1))",
                   padding: "3px 9px",
                   borderRadius: "100px",
-                  background: isDark ? "rgba(255,255,255,0.08)" : "var(--theme-surface-elevated, #FFF0EC)",
-                  color: "var(--theme-primary, #F28C78)",
+                  background: "var(--theme-surface-elevated)",
+                  color: "var(--theme-primary)",
                   fontWeight: 700,
                 }}
               >
@@ -1294,7 +1276,7 @@ export function GuideDetailScreen({
             ))}
           </div>
 
-          <p style={{ fontSize: "13px", color: "var(--theme-text-secondary, #6b645f)", lineHeight: 1.45, margin: 0 }}>
+          <p style={{ fontSize: "var(--font-body-sm)", color: "var(--theme-text-secondary)", lineHeight: 1.45, margin: 0 }}>
             {intro}
           </p>
         </div>
@@ -1306,7 +1288,7 @@ export function GuideDetailScreen({
               display: "inline-flex",
               padding: "3px",
               borderRadius: "100px",
-              background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)",
+              background: "var(--theme-surface-soft)",
               marginBottom: "16px",
             }}
           >
@@ -1317,10 +1299,10 @@ export function GuideDetailScreen({
                 border: "none",
                 borderRadius: "100px",
                 padding: "6px 14px",
-                fontSize: "12px",
+                fontSize: "var(--font-caption)",
                 fontWeight: 700,
-                background: viewMode === "interactive" ? "var(--theme-primary, #F28C78)" : "transparent",
-                color: viewMode === "interactive" ? "#ffffff" : "inherit",
+                background: viewMode === "interactive" ? "var(--theme-primary)" : "transparent",
+                color: viewMode === "interactive" ? "var(--theme-on-primary)" : "inherit",
                 cursor: "pointer",
               }}
             >
@@ -1333,10 +1315,10 @@ export function GuideDetailScreen({
                 border: "none",
                 borderRadius: "100px",
                 padding: "6px 14px",
-                fontSize: "12px",
+                fontSize: "var(--font-caption)",
                 fontWeight: 700,
-                background: viewMode === "overview" ? "var(--theme-primary, #F28C78)" : "transparent",
-                color: viewMode === "overview" ? "#ffffff" : "inherit",
+                background: viewMode === "overview" ? "var(--theme-primary)" : "transparent",
+                color: viewMode === "overview" ? "var(--theme-on-primary)" : "inherit",
                 cursor: "pointer",
               }}
             >
@@ -1350,8 +1332,8 @@ export function GuideDetailScreen({
           <div
             style={{
               borderRadius: "24px",
-              background: isDark ? "var(--theme-surface, #1e1919)" : "var(--theme-surface, #ffffff)",
-              border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+              background: "var(--theme-surface)",
+              border: "1px solid var(--theme-border)",
               padding: "16px",
               marginBottom: "20px",
             }}
@@ -1364,8 +1346,8 @@ export function GuideDetailScreen({
           <div
             style={{
               borderRadius: "24px",
-              background: isDark ? "var(--theme-surface, #1e1919)" : "var(--theme-surface, #ffffff)",
-              border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+              background: "var(--theme-surface)",
+              border: "1px solid var(--theme-border)",
               padding: "18px",
               marginBottom: "20px",
             }}
@@ -1399,8 +1381,8 @@ export function GuideDetailScreen({
                     style={{
                       borderRadius: "18px",
                       padding: "14px 16px",
-                      background: isDark ? "var(--theme-surface, #1e1919)" : "var(--theme-surface, #ffffff)",
-                      border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+                      background: "var(--theme-surface)",
+                      border: "1px solid var(--theme-border)",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
@@ -1409,9 +1391,9 @@ export function GuideDetailScreen({
                           width: "22px",
                           height: "22px",
                           borderRadius: "50%",
-                          background: "var(--theme-primary, #F28C78)",
-                          color: "#ffffff",
-                          fontSize: "11px",
+                          background: "var(--theme-primary)",
+                          color: "var(--theme-on-primary)",
+                          fontSize: "calc(11px * var(--font-scale, 1))",
                           fontWeight: 800,
                           display: "grid",
                           placeItems: "center",
@@ -1419,13 +1401,13 @@ export function GuideDetailScreen({
                       >
                         {step.number}
                       </span>
-                      <strong style={{ fontSize: "14px", fontWeight: 800 }}>{step.title}</strong>
+                      <strong style={{ fontSize: "var(--font-body)", fontWeight: 800 }}>{step.title}</strong>
                     </div>
-                    <p style={{ margin: "4px 0 0", fontSize: "13px", lineHeight: 1.45, color: "var(--theme-text-primary, #2d2424)" }}>
+                    <p style={{ margin: "4px 0 0", fontSize: "var(--font-body-sm)", lineHeight: 1.45, color: "var(--theme-text-primary)" }}>
                       {step.instruction}
                     </p>
                     {step.tip && (
-                      <small style={{ display: "block", marginTop: "6px", color: "var(--theme-text-secondary, #6b645f)", fontSize: "11px" }}>
+                      <small style={{ display: "block", marginTop: "6px", color: "var(--theme-text-secondary)", fontSize: "calc(11px * var(--font-scale, 1))" }}>
                         💡 {step.tip}
                       </small>
                     )}
@@ -1438,7 +1420,7 @@ export function GuideDetailScreen({
 
         {/* Real Source Attribution (No fake badges) */}
         {guide.attribution && (
-          <div style={{ fontSize: "11px", color: "var(--theme-text-secondary, #6b645f)", opacity: 0.8, marginBottom: "20px" }}>
+          <div style={{ fontSize: "calc(11px * var(--font-scale, 1))", color: "var(--theme-text-secondary)", opacity: 0.8, marginBottom: "20px" }}>
             📚 <em>{guide.attribution}</em>
           </div>
         )}
@@ -1448,16 +1430,16 @@ export function GuideDetailScreen({
           style={{
             borderRadius: "22px",
             padding: "18px",
-            background: isDark ? "var(--theme-surface-elevated, #241c1c)" : "var(--theme-surface-elevated, #FFF5F2)",
-            border: "1.5px solid var(--theme-border, rgba(0,0,0,0.08))",
+            background: "var(--theme-surface-elevated)",
+            border: "1.5px solid var(--theme-border)",
             textAlign: "center",
             marginBottom: "20px",
           }}
         >
-          <span style={{ fontSize: "11px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--theme-primary, #F28C78)", display: "block", marginBottom: "4px" }}>
+          <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--theme-primary)", display: "block", marginBottom: "4px" }}>
             {isBm ? "Daftar Masuk Emosi" : isZh ? "练习成效自测" : "Check-In"}
           </span>
-          <h3 style={{ margin: "0 0 12px", fontSize: "16px", fontWeight: 800 }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "var(--font-subheading)", fontWeight: 800 }}>
             {isBm ? "Bagaimana perasaan anda sekarang?" : isZh ? "此刻，您的感觉如何？" : "How do you feel now?"}
           </h3>
 
@@ -1473,16 +1455,16 @@ export function GuideDetailScreen({
                 padding: "10px 18px",
                 borderRadius: "16px",
                 border: feedbackMood === "better"
-                  ? "2px solid #10b981"
-                  : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
-                background: feedbackMood === "better" ? (isDark ? "rgba(16, 185, 129, 0.2)" : "#ecfdf5") : "var(--theme-surface, #ffffff)",
+                  ? "2px solid var(--theme-success)"
+                  : "1px solid var(--theme-border)",
+                background: feedbackMood === "better" ? "var(--theme-success-soft)" : "var(--theme-surface)",
                 cursor: "pointer",
                 minWidth: "72px",
                 minHeight: "64px",
               }}
             >
-              <span style={{ fontSize: "24px" }}>😊</span>
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--theme-text-primary, #2d2424)" }}>
+              <span style={{ fontSize: "calc(24px * var(--font-scale, 1))" }}>😊</span>
+              <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 700, color: "var(--theme-text-primary)" }}>
                 {isBm ? "Lebih Baik" : isZh ? "更轻松了" : "Better"}
               </span>
             </button>
@@ -1498,16 +1480,16 @@ export function GuideDetailScreen({
                 padding: "10px 18px",
                 borderRadius: "16px",
                 border: feedbackMood === "same"
-                  ? "2px solid #f59e0b"
-                  : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
-                background: feedbackMood === "same" ? (isDark ? "rgba(245, 158, 11, 0.2)" : "#fffbeb") : "var(--theme-surface, #ffffff)",
+                  ? "2px solid var(--theme-warning)"
+                  : "1px solid var(--theme-border)",
+                background: feedbackMood === "same" ? "var(--theme-warning-soft)" : "var(--theme-surface)",
                 cursor: "pointer",
                 minWidth: "72px",
                 minHeight: "64px",
               }}
             >
-              <span style={{ fontSize: "24px" }}>😐</span>
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--theme-text-primary, #2d2424)" }}>
+              <span style={{ fontSize: "calc(24px * var(--font-scale, 1))" }}>😐</span>
+              <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 700, color: "var(--theme-text-primary)" }}>
                 {isBm ? "Sama Sahaja" : isZh ? "差不多" : "Same"}
               </span>
             </button>
@@ -1523,16 +1505,16 @@ export function GuideDetailScreen({
                 padding: "10px 18px",
                 borderRadius: "16px",
                 border: feedbackMood === "worse"
-                  ? "2px solid #ef4444"
-                  : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
-                background: feedbackMood === "worse" ? (isDark ? "rgba(239, 68, 68, 0.2)" : "#fef2f2") : "var(--theme-surface, #ffffff)",
+                  ? "2px solid var(--theme-danger)"
+                  : "1px solid var(--theme-border)",
+                background: feedbackMood === "worse" ? "var(--theme-danger-soft)" : "var(--theme-surface)",
                 cursor: "pointer",
                 minWidth: "72px",
                 minHeight: "64px",
               }}
             >
-              <span style={{ fontSize: "24px" }}>😔</span>
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--theme-text-primary, #2d2424)" }}>
+              <span style={{ fontSize: "calc(24px * var(--font-scale, 1))" }}>😔</span>
+              <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", fontWeight: 700, color: "var(--theme-text-primary)" }}>
                 {isBm ? "Lebih Berat" : isZh ? "依然沉重" : "Worse"}
               </span>
             </button>
@@ -1545,19 +1527,19 @@ export function GuideDetailScreen({
                 marginTop: "16px",
                 padding: "14px",
                 borderRadius: "16px",
-                background: isDark ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2",
-                border: "1px solid color-mix(in srgb, #ef4444 35%, transparent)",
+                background: "var(--theme-danger-soft)",
+                border: "1px solid var(--theme-danger-border)",
                 textAlign: "left",
               }}
             >
-              <strong style={{ fontSize: "13px", color: isDark ? "#FCA5A5" : "#991B1B", display: "block" }}>
+              <strong style={{ fontSize: "var(--font-body-sm)", color: "var(--theme-danger)", display: "block" }}>
                 {isBm ? "Tidak mengapa. Ada hari yang terasa lebih berat." : isZh ? "没关系的。有些时刻就是会比平常更沉重一些。" : "It's completely okay. Some days are heavier than others."}
               </strong>
-              <p style={{ margin: "4px 0 12px", fontSize: "12px", color: isDark ? "#FECACA" : "#7F1D1D", lineHeight: 1.4 }}>
+              <p style={{ margin: "4px 0 12px", fontSize: "var(--font-caption)", color: "var(--theme-text-primary)", lineHeight: 1.4 }}>
                 {isBm
                   ? "Anda tidak perlu menanggung perasaan ini sendirian. Mari bercakap dengan ONY atau hubungi talian sokongan percuma."
                   : isZh
-                  ? "您不必独自一人扛下所有重负。不妨找 ONY 聊聊此刻的心情，或随时联络经过核实的免费热线。"
+                  ? "您不必独自一人扛下所有重负。不妨找 ONY 聊聊此刻的心情，或随时联络免费保密的求助热线。"
                   : "You don't have to carry this alone. Talk to ONY about what came up, or connect with a free, confidential helpline."}
               </p>
 
@@ -1569,9 +1551,9 @@ export function GuideDetailScreen({
                     padding: "8px 16px",
                     borderRadius: "100px",
                     border: "none",
-                    background: "var(--theme-primary, #F28C78)",
-                    color: "#ffffff",
-                    fontSize: "12px",
+                    background: "var(--theme-primary)",
+                    color: "var(--theme-on-primary)",
+                    fontSize: "var(--font-caption)",
                     fontWeight: 800,
                     cursor: "pointer",
                   }}
@@ -1585,10 +1567,10 @@ export function GuideDetailScreen({
                   style={{
                     padding: "8px 16px",
                     borderRadius: "100px",
-                    border: "1px solid #ef4444",
+                    border: "1px solid var(--theme-danger)",
                     background: "transparent",
-                    color: "#ef4444",
-                    fontSize: "12px",
+                    color: "var(--theme-danger)",
+                    fontSize: "var(--font-caption)",
                     fontWeight: 800,
                     cursor: "pointer",
                   }}
@@ -1610,7 +1592,7 @@ export function GuideDetailScreen({
         )}
 
         {/* Short Disclaimer */}
-        <p style={{ fontSize: "11px", color: "var(--theme-text-secondary, #6b645f)", textAlign: "center", margin: "16px 0 24px" }}>
+        <p style={{ fontSize: "calc(11px * var(--font-scale, 1))", color: "var(--theme-text-secondary)", textAlign: "center", margin: "16px 0 24px" }}>
           ℹ️ {isBm ? "Alat bantu diri pendidikan, bukan pengganti rawatan perubatan profesional." : isZh ? "日常心理自助支持工具，不替代专业执业医师诊断或临床治疗。" : "Self-help tool, not a substitute for professional healthcare."}
         </p>
       </div>
@@ -1619,8 +1601,8 @@ export function GuideDetailScreen({
       <footer
         style={{
           padding: "14px 16px",
-          borderTop: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
-          background: isDark ? "var(--theme-surface, #1e1919)" : "#ffffff",
+          borderTop: "1px solid var(--theme-border)",
+          background: "var(--theme-surface)",
           display: "flex",
           gap: "10px",
           position: "sticky",
@@ -1635,10 +1617,10 @@ export function GuideDetailScreen({
             flex: 1,
             padding: "12px",
             borderRadius: "100px",
-            border: "1px solid var(--theme-border, rgba(0,0,0,0.12))",
+            border: "1px solid var(--theme-border)",
             background: "transparent",
-            color: "var(--theme-text-primary, #2d2424)",
-            fontSize: "13px",
+            color: "var(--theme-text-primary)",
+            fontSize: "var(--font-body-sm)",
             fontWeight: 800,
             cursor: "pointer",
             minHeight: "44px",
@@ -1655,13 +1637,13 @@ export function GuideDetailScreen({
             padding: "12px",
             borderRadius: "100px",
             border: "none",
-            background: "var(--theme-primary, #F28C78)",
-            color: "#ffffff",
-            fontSize: "13px",
+            background: "var(--theme-primary)",
+            color: "var(--theme-on-primary)",
+            fontSize: "var(--font-body-sm)",
             fontWeight: 800,
             cursor: "pointer",
             minHeight: "44px",
-            boxShadow: "0 4px 14px color-mix(in srgb, var(--theme-primary, #F28C78) 35%, transparent)",
+            boxShadow: "var(--theme-shadow-primary)",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",

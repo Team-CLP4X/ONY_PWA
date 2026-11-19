@@ -1,13 +1,21 @@
 {
+  "schemaVersion": 2,
   "entities": {
     "User": {
       "title": "User",
-      "description": "User profile, personalization settings, and consent preferences.",
+      "description": "User profile, personalization settings, profile details, and consent preferences.",
       "type": "object",
       "properties": {
         "displayName": { "type": "string", "maxLength": 50 },
         "email": { "type": "string", "format": "email" },
         "phoneNumber": { "type": "string", "maxLength": 40 },
+        "bio": { "type": "string", "maxLength": 300 },
+        "pronouns": { "type": "string", "maxLength": 40 },
+        "ageRange": { "type": "string", "maxLength": 40 },
+        "avatarType": { "type": "string", "enum": ["preset", "photo"] },
+        "presetAvatar": { "type": "string", "maxLength": 30 },
+        "avatarUrl": { "type": "string", "maxLength": 1500 },
+        "subscriptionStatus": { "type": "string", "enum": ["free", "payg", "monthly"] },
         "theme": { "type": "string", "enum": ["peach", "ocean", "sunset", "forest", "lavender", "neutral"] },
         "companion": { "type": "string", "enum": ["Cat", "Dog", "Bunny", "Bear", "Fox", "Panda"] },
         "persona": { "type": "string", "enum": ["gentle", "friendly", "calm"] },
@@ -53,7 +61,7 @@
     },
     "JournalEntry": {
       "title": "JournalEntry",
-      "description": "Private personal digital diary entry with date, title, reflection body, optional mood tags, tags, and photo attachment.",
+      "description": "Private personal digital diary entry with date, title, reflection body, mood tags, and Firebase Storage photo URL.",
       "type": "object",
       "properties": {
         "title": { "type": "string", "maxLength": 150 },
@@ -62,7 +70,7 @@
         "entryDate": { "type": "string", "format": "date-time" },
         "moodEmoji": { "type": "string", "maxLength": 10 },
         "moodLabel": { "type": "string", "maxLength": 40 },
-        "photoUrl": { "type": "string" },
+        "photoUrl": { "type": "string", "maxLength": 1500 },
         "tags": {
           "type": "array",
           "items": { "type": "string" }
@@ -81,6 +89,7 @@
         "category": { "type": "string" },
         "folderId": { "type": "number" },
         "reportAllowed": { "type": "boolean" },
+        "archived": { "type": "boolean" },
         "messages": {
           "type": "array",
           "items": {
@@ -98,29 +107,32 @@
     },
     "GlobeUser": {
       "title": "GlobeUser",
-      "description": "Anonymous discovery globe node representing opted-in or simulated users across regions.",
+      "description": "Anonymous discovery globe node owned by a single authenticated user (`globeUsers/{uid}`).",
       "type": "object",
       "properties": {
         "id": { "type": "number" },
+        "ownerUid": { "type": "string" },
         "moodGlow": { "type": "string", "enum": ["bright", "soft", "dim", "neutral"] },
         "moodLabel": { "type": "string", "maxLength": 50 },
         "discoverable": { "type": "boolean" },
         "acceptsMessages": { "type": "boolean" },
         "minLevel": { "type": "number" },
         "lon": { "type": "number" },
-        "lat": { "type": "number" }
+        "lat": { "type": "number" },
+        "regionName": { "type": "string", "maxLength": 120 },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "moodGlow", "moodLabel", "discoverable", "acceptsMessages", "minLevel", "lon", "lat"]
+      "required": ["id", "ownerUid", "moodGlow", "moodLabel", "discoverable", "acceptsMessages", "minLevel", "lon", "lat"]
     },
     "CommunityPost": {
       "title": "CommunityPost",
-      "description": "Community posts shared gently across categories, including likes with user and timestamp, comments with user, timestamp, and likes, and replies to comments with user and timestamp.",
+      "description": "Community posts shared across categories with reactions, media URLs, comments, and replies.",
       "type": "object",
       "properties": {
         "author": { "type": "string", "maxLength": 50 },
         "authorId": { "type": "string" },
-        "title": { "type": "string", "maxLength": 150 },
-        "body": { "type": "string", "maxLength": 2000 },
+        "title": { "type": "string", "maxLength": 200 },
+        "body": { "type": "string", "maxLength": 4000 },
         "category": { "type": "string", "maxLength": 50 },
         "likes": { "type": "number", "minimum": 0 },
         "likeRecords": {
@@ -130,6 +142,7 @@
             "properties": {
               "userId": { "type": "string" },
               "userName": { "type": "string" },
+              "reaction": { "type": "string", "maxLength": 20 },
               "createdAt": { "type": "string", "format": "date-time" }
             },
             "required": ["userId", "userName", "createdAt"]
@@ -144,6 +157,8 @@
               "userId": { "type": "string" },
               "userName": { "type": "string" },
               "text": { "type": "string", "maxLength": 1000 },
+              "audioUrl": { "type": "string" },
+              "audioDuration": { "type": "number" },
               "createdAt": { "type": "string", "format": "date-time" },
               "updatedAt": { "type": "string", "format": "date-time" },
               "likes": { "type": "number", "minimum": 0 },
@@ -179,13 +194,17 @@
           }
         },
         "media": { "type": "string", "enum": ["image", "voice", "text"] },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "imageUrl": { "type": "string", "maxLength": 1500 },
+        "audioUrl": { "type": "string", "maxLength": 1500 },
+        "audioDuration": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["author", "title", "body", "category", "likes", "createdAt"]
+      "required": ["author", "authorId", "title", "body", "category", "likes", "createdAt"]
     },
     "Merchant": {
       "title": "Merchant",
-      "description": "Wellness and discovery voucher providers.",
+      "description": "Verified wellness and discovery voucher providers managed by server/admin tooling.",
       "type": "object",
       "properties": {
         "name": { "type": "string", "maxLength": 100 },
@@ -194,35 +213,41 @@
         "value": { "type": "string", "maxLength": 50 },
         "description": { "type": "string", "maxLength": 500 },
         "image": { "type": "string" },
-        "validity": { "type": "string", "maxLength": 100 }
+        "validity": { "type": "string", "maxLength": 100 },
+        "active": { "type": "boolean" },
+        "expired": { "type": "boolean" }
       },
       "required": ["name", "category", "offer", "value", "description", "image", "validity"]
     },
     "CommunityMessage": {
       "title": "CommunityMessage",
-      "description": "Anonymous support message (text or voice) sent between community members.",
+      "description": "Anonymous peer encouragement message (text or voice) readable only by sender and recipient.",
       "type": "object",
       "properties": {
-        "toUserId": { "type": "string", "maxLength": 100 },
+        "toUserId": { "type": "string", "maxLength": 128 },
         "toUserMood": { "type": "string", "maxLength": 100 },
-        "fromUserId": { "type": "string", "maxLength": 100 },
+        "fromUserId": { "type": "string", "maxLength": 128 },
         "senderAnonymous": { "type": "string", "maxLength": 100 },
         "recipientAnonymous": { "type": "string", "maxLength": 100 },
         "kind": { "type": "string", "enum": ["text", "voice"] },
         "text": { "type": "string", "maxLength": 2000 },
-        "audioUrl": { "type": "string" },
+        "audioUrl": { "type": "string", "maxLength": 1500 },
         "audioDuration": { "type": "number" },
+        "transcript": { "type": "string", "maxLength": 2000 },
+        "isRead": { "type": "boolean" },
+        "readAt": { "type": "string", "format": "date-time" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["toUserId", "fromUserId", "senderAnonymous", "recipientAnonymous", "kind", "text", "createdAt"]
     },
     "UserDirectory": {
       "title": "UserDirectory",
-      "description": "Directory of registered ONY accounts for verifying and looking up trusted contacts.",
+      "description": "Minimal registered user directory record enabling exact trusted-contact lookup without exposing private user data.",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "maxLength": 128 },
         "displayName": { "type": "string", "maxLength": 50 },
+        "displayNameLower": { "type": "string", "maxLength": 50 },
         "email": { "type": "string", "format": "email" },
         "emailLower": { "type": "string", "maxLength": 120 },
         "phoneNumber": { "type": "string", "maxLength": 40 },
@@ -232,15 +257,17 @@
     },
     "TrustedContactRequest": {
       "title": "TrustedContactRequest",
-      "description": "Trusted contact invitation or link-based emergency contact request between registered ONY users, supporting pending, accepted, and rejected states.",
+      "description": "Trusted contact invitation or link-based emergency contact request between registered ONY users.",
       "type": "object",
       "properties": {
         "fromUid": { "type": "string", "maxLength": 128 },
         "fromName": { "type": "string", "maxLength": 50 },
         "fromEmail": { "type": "string", "format": "email" },
+        "fromEmailLower": { "type": "string", "maxLength": 120 },
         "toUid": { "type": "string", "maxLength": 128 },
         "toName": { "type": "string", "maxLength": 50 },
         "toEmail": { "type": "string", "format": "email" },
+        "toEmailLower": { "type": "string", "maxLength": 120 },
         "contactPhone": { "type": "string", "maxLength": 40 },
         "relationshipNote": { "type": "string", "maxLength": 300 },
         "requestKind": { "type": "string", "enum": ["direct_invite", "invite_link"] },
@@ -251,9 +278,9 @@
       },
       "required": ["fromUid", "fromName", "fromEmail", "toUid", "toName", "toEmail", "status", "createdAt", "updatedAt"]
     },
-    "SystemLog": {
-      "title": "SystemLog",
-      "description": "Production audit and system event logs recorded in Firestore for security, compliance, error tracing, and activity monitoring.",
+    "UserAuditLog": {
+      "title": "UserAuditLog",
+      "description": "Owner-scoped security and account activity log under users/{userId}/auditLogs.",
       "type": "object",
       "properties": {
         "timestamp": { "type": "string", "format": "date-time" },
@@ -262,18 +289,93 @@
         "action": { "type": "string", "maxLength": 100 },
         "message": { "type": "string", "maxLength": 2000 },
         "userId": { "type": "string", "maxLength": 128 },
-        "userEmail": { "type": "string", "maxLength": 120 },
-        "clientInfo": {
-          "type": "object",
-          "properties": {
-            "platform": { "type": "string" },
-            "userAgent": { "type": "string", "maxLength": 300 },
-            "version": { "type": "string" }
-          }
-        },
         "metadata": { "type": "object" }
       },
-      "required": ["timestamp", "level", "category", "action", "message"]
+      "required": ["timestamp", "level", "category", "action", "message", "userId"]
+    },
+    "SavedPostRef": {
+      "title": "SavedPostRef",
+      "description": "Owner-private bookmarked post reference.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "savedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "savedAt"]
+    },
+    "HiddenPostRef": {
+      "title": "HiddenPostRef",
+      "description": "Owner-private hidden post reference.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "hiddenAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "hiddenAt"]
+    },
+    "BlockedUserRef": {
+      "title": "BlockedUserRef",
+      "description": "Owner-private blocked anonymous node/user record.",
+      "type": "object",
+      "properties": {
+        "blockedUid": { "type": "string" },
+        "blockedAt": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["blockedUid", "blockedAt"]
+    },
+    "VoucherClaim": {
+      "title": "VoucherClaim",
+      "description": "Owner-private marketplace voucher claim record.",
+      "type": "object",
+      "properties": {
+        "merchantId": { "type": "string" },
+        "merchantName": { "type": "string" },
+        "offer": { "type": "string" },
+        "value": { "type": "string" },
+        "voucherCode": { "type": "string" },
+        "claimedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["claimed", "redeemed"] }
+      },
+      "required": ["merchantId", "merchantName", "voucherCode", "claimedAt", "status"]
+    },
+    "ToolkitCompletion": {
+      "title": "ToolkitCompletion",
+      "description": "Owner-private self-help coping toolkit completion log.",
+      "type": "object",
+      "properties": {
+        "toolId": { "type": "string" },
+        "title": { "type": "string" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["toolId", "title", "completedAt"]
+    },
+    "ModerationReport": {
+      "title": "ModerationReport",
+      "description": "User-submitted safety or moderation report for posts, comments, or community messages.",
+      "type": "object",
+      "properties": {
+        "reporterUid": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["post", "comment", "message", "node"] },
+        "targetId": { "type": "string" },
+        "targetAuthorId": { "type": "string" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterUid", "targetType", "targetId", "reason", "createdAt"]
+    },
+    "FeedbackReport": {
+      "title": "FeedbackReport",
+      "description": "User-submitted bug report or product feedback with optional Firebase Storage screenshot URL.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "category": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "screenshotUrl": { "type": "string", "maxLength": 1500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "category", "description", "createdAt"]
     },
     "VaultShelf": {
       "title": "VaultShelf",
@@ -311,7 +413,7 @@
     },
     "VaultPage": {
       "title": "VaultPage",
-      "description": "An individual written page inside a vault book with rich/plain text, mood, tags, and photos.",
+      "description": "An individual written page inside a vault book with rich/plain text, mood, tags, and Storage photos.",
       "type": "object",
       "properties": {
         "ownerId": { "type": "string" },
@@ -338,7 +440,7 @@
     },
     "UserSettings": {
       "title": "UserSettings",
-      "description": "User persistent theme mode, color palette, typography font scale, companion preferences, notification settings, and app lock controls.",
+      "description": "User persistent theme mode, color palette, typography font scale, companion preferences, notification preferences, UI state, and app lock controls.",
       "type": "object",
       "properties": {
         "schemaVersion": { "type": "number" },
@@ -348,8 +450,12 @@
         "fontSizeScale": { "type": "string", "enum": ["small", "default", "large", "extraLarge"] },
         "fontSizePercent": { "type": "number" },
         "chatViewMode": { "type": "string", "enum": ["companion", "classic"] },
-        "postsViewMode": { "type": "string", "enum": ["feed", "list"] },
+        "postsViewMode": { "type": "string", "enum": ["desk", "feed", "list"] },
         "language": { "type": "string" },
+        "autoTranslateMessages": { "type": "boolean" },
+        "seenPostIds": { "type": "array", "items": { "type": "string" } },
+        "recentColors": { "type": "array", "items": { "type": "string" } },
+        "readNotificationIds": { "type": "array", "items": { "type": "string" } },
         "companionPreferences": { "type": "object" },
         "notificationPreferences": { "type": "object" },
         "soundHapticsPreferences": { "type": "object" },
@@ -367,63 +473,91 @@
     },
     "/users/{userId}": {
       "schema": "User",
-      "description": "Stores user profiles, preferences, and consent controls."
+      "description": "Owner-private user profiles, preferences, and consent controls."
     },
     "/users/{userId}/vaultShelves/{shelfId}": {
       "schema": "VaultShelf",
-      "description": "Stores user Memory Vault shelves."
+      "description": "Owner-private Memory Vault shelves."
     },
     "/users/{userId}/vaultBooks/{bookId}": {
       "schema": "VaultBook",
-      "description": "Stores user Memory Vault books."
+      "description": "Owner-private Memory Vault books."
     },
     "/users/{userId}/vaultBooks/{bookId}/pages/{pageId}": {
       "schema": "VaultPage",
-      "description": "Stores user Memory Vault pages inside books."
+      "description": "Owner-private Memory Vault pages inside books."
     },
     "/users/{userId}/moodCheckins/{checkinId}": {
       "schema": "MoodCheckin",
-      "description": "Stores private mood entries per user."
+      "description": "Owner-private daily mood check-in entries."
     },
     "/users/{userId}/memories/{memoryId}": {
       "schema": "Memory",
-      "description": "Stores user-managed context and memory vault items."
+      "description": "Owner-private user-managed memory context items."
     },
     "/users/{userId}/journalEntries/{entryId}": {
       "schema": "JournalEntry",
-      "description": "Stores private personal diary and journal reflection entries per user."
+      "description": "Owner-private personal diary and journal reflection entries."
     },
     "/users/{userId}/conversations/{conversationId}": {
       "schema": "Conversation",
-      "description": "Stores conversation history per user."
+      "description": "Owner-private conversation history."
+    },
+    "/users/{userId}/savedPosts/{postId}": {
+      "schema": "SavedPostRef",
+      "description": "Owner-private bookmarked community post references."
+    },
+    "/users/{userId}/hiddenPosts/{postId}": {
+      "schema": "HiddenPostRef",
+      "description": "Owner-private hidden community post references."
+    },
+    "/users/{userId}/blockedUsers/{blockedUid}": {
+      "schema": "BlockedUserRef",
+      "description": "Owner-private blocked community users/nodes."
+    },
+    "/users/{userId}/voucherClaims/{claimId}": {
+      "schema": "VoucherClaim",
+      "description": "Owner-private claimed wellness partner vouchers."
+    },
+    "/users/{userId}/toolkitCompletions/{completionId}": {
+      "schema": "ToolkitCompletion",
+      "description": "Owner-private completed toolkit activities."
+    },
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": "UserAuditLog",
+      "description": "Owner-private account security and activity audit logs."
     },
     "/globeUsers/{nodeId}": {
       "schema": "GlobeUser",
-      "description": "Stores anonymous globe presence nodes for community discovery."
+      "description": "Anonymous globe discovery nodes keyed by user UID."
     },
     "/communityPosts/{postId}": {
       "schema": "CommunityPost",
-      "description": "Stores community feed posts and reflections."
+      "description": "Authenticated community posts feed, reactions, comments, and replies."
     },
     "/merchants/{merchantId}": {
       "schema": "Merchant",
-      "description": "Stores discoverable wellness merchants and voucher offerings."
+      "description": "Read-only curated wellness merchants and voucher offerings."
     },
     "/communityMessages/{messageId}": {
       "schema": "CommunityMessage",
-      "description": "Stores supportive anonymous messages between community members."
+      "description": "Peer encouragement messages readable strictly by sender and recipient."
     },
     "/userDirectory/{userId}": {
       "schema": "UserDirectory",
-      "description": "Stores registered ONY user directory entries so users can verify accounts when sending trusted contact requests."
+      "description": "Limited registered account lookup records for trusted contact matching."
     },
     "/trustedContactRequests/{requestId}": {
       "schema": "TrustedContactRequest",
-      "description": "Stores trusted contact requests between registered ONY users with pending, accepted, and rejected statuses."
+      "description": "Trusted contact requests readable and editable only by sender or recipient."
     },
-    "/systemLogs/{logId}": {
-      "schema": "SystemLog",
-      "description": "Stores production application activity logs, security audit events, and system diagnostic records in Firestore."
+    "/moderationReports/{reportId}": {
+      "schema": "ModerationReport",
+      "description": "User-submitted safety/moderation reports."
+    },
+    "/feedbackReports/{reportId}": {
+      "schema": "FeedbackReport",
+      "description": "User-submitted app feedback and bug reports."
     }
   }
 }

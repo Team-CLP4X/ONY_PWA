@@ -212,12 +212,22 @@ export function PostListCard({
             </div>
           ) : isImage ? (
             <div className="post-list-thumb-scenic">
-              <svg viewBox="0 0 80 80" fill="none" className="thumb-scenic-svg">
-                <rect width="80" height="80" rx="14" fill="color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface-soft))" />
-                <circle cx="55" cy="24" r="9" fill="color-mix(in srgb, var(--theme-accent) 72%, #fde68a)" />
-                <path d="M0 58c18-16 32-16 46-4 11-10 22-10 34 2v24H0V58Z" fill="color-mix(in srgb, var(--theme-primary) 34%, var(--theme-surface))" />
-                <path d="M0 66c22-10 48-6 80 4v10H0V66Z" fill="color-mix(in srgb, var(--theme-accent) 26%, var(--theme-surface-elevated))" />
-              </svg>
+              {post.imageUrl ? (
+                <img
+                  src={post.imageUrl}
+                  alt={displayTitle || "Post attachment"}
+                  className="post-list-thumb-img"
+                  loading="lazy"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "14px" }}
+                />
+              ) : (
+                <svg viewBox="0 0 80 80" fill="none" className="thumb-scenic-svg">
+                  <rect width="80" height="80" rx="14" fill="color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface-soft))" />
+                  <circle cx="55" cy="24" r="9" fill="color-mix(in srgb, var(--theme-accent) 72%, var(--theme-sun-glow))" />
+                  <path d="M0 58c18-16 32-16 46-4 11-10 22-10 34 2v24H0V58Z" fill="color-mix(in srgb, var(--theme-primary) 34%, var(--theme-surface))" />
+                  <path d="M0 66c22-10 48-6 80 4v10H0V66Z" fill="color-mix(in srgb, var(--theme-accent) 26%, var(--theme-surface-elevated))" />
+                </svg>
+              )}
             </div>
           ) : (
             <div className="post-list-thumb-art">

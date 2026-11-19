@@ -31,10 +31,13 @@ export type NotifyInput =
   | { text: string; actionLabel?: string; onAction?: () => void };
 
 export interface MyNodeTabProps {
+  currentUid?: string;
   discoverable: boolean;
   acceptMessages: boolean;
   onSetDiscoverable: (v: boolean) => void;
   onSetAcceptMessages: (v: boolean) => void;
+  autoTranslate?: boolean;
+  onSetAutoTranslate?: (v: boolean) => void;
   myMoodEmoji: string;
   myMoodLabel: string;
   myMoodGlow?: string;
@@ -47,6 +50,11 @@ export interface MyNodeTabProps {
   onRefreshMessages: () => void;
   onDeleteMessage?: (id: string) => Promise<void> | void;
   onReportMessage?: (id: string) => void;
+  onMarkMessagesRead?: (ids: string[], unread?: boolean) => Promise<void> | void;
+  onTranscriptResolved?: (id: string, transcript: string) => void;
+  blockedSenders?: BlockedSenderEntry[];
+  onBlockSender?: (msg: InboxMessage) => Promise<void> | void;
+  onUnblockSender?: (id: string) => Promise<void> | void;
   detectingLocation?: boolean;
   locationChoice?: "none" | "allowed" | "declined";
   onEnableLocation?: () => void;
@@ -76,10 +84,13 @@ const PAGE_SIZE = 20;
 const OVERSCAN_PX = 360;
 
 export default function MyNodeTab({
+  currentUid,
   discoverable,
   acceptMessages,
   onSetDiscoverable,
   onSetAcceptMessages,
+  autoTranslate: autoTranslateProp,
+  onSetAutoTranslate: onSetAutoTranslateProp,
   myMoodEmoji,
   myMoodLabel,
   myMoodGlow = "soft",
@@ -92,6 +103,11 @@ export default function MyNodeTab({
   onRefreshMessages,
   onDeleteMessage,
   onReportMessage,
+  onMarkMessagesRead,
+  onTranscriptResolved: onTranscriptResolvedProp,
+  blockedSenders: blockedSendersProp,
+  onBlockSender: onBlockSenderProp,
+  onUnblockSender: onUnblockSenderProp,
   detectingLocation = false,
   onEnableLocation,
   onSelectManualArea,
@@ -104,12 +120,20 @@ export default function MyNodeTab({
   // Settings screen state
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Auto-translate preference (controlled inside NodeSettingsScreen)
-  const [autoTranslate, setAutoTranslate] = useState<boolean>(() => loadAutoTranslatePref());
+  // Auto-translate preference (controlled via props when available, cached UID-scoped)
+  const [localAutoTranslate, setLocalAutoTranslate] = useState<boolean>(() =>
+    loadAutoTranslatePref(currentUid),
+  );
+  useEffect(() => {
+    setLocalAutoTranslate(loadAutoTranslatePref(currentUid));
+  }, [currentUid]);
+
+  const autoTranslate = autoTranslateProp ?? localAutoTranslate;
   const handleToggleAutoTranslate = useCallback(
     (checked: boolean) => {
-      setAutoTranslate(checked);
-      saveAutoTranslatePref(checked);
+      setLocalAutoTranslate(checked);
+      saveAutoTranslatePref(checked, currentUid);
+      onSetAutoTranslateProp?.(checked);
       notify(
         checked
           ? language === "中文"
@@ -124,24 +148,37 @@ export default function MyNodeTab({
               : "Auto-translate turned off",
       );
     },
-    [language, notify],
+    [currentUid, language, notify, onSetAutoTranslateProp],
   );
 
-  // Local read/unread state & blocked senders state
-  // TODO: Persist `isRead` & `readAt` directly on `communityMessages/{id}` and `blockedSenderIds` on user/node preferences in Firestore when backend fields are added.
-  const [readIds, setReadIds] = useState<Set<string>>(() => loadReadMessageIds());
+  // UID-scoped read/unread state & blocked senders state synced with Firestore callbacks
+  const [readIds, setReadIds] = useState<Set<string>>(() => loadReadMessageIds(currentUid));
   const [unreadOverrideIds, setUnreadOverrideIds] = useState<Set<string>>(() =>
-    loadUnreadOverrideIds(),
+    loadUnreadOverrideIds(currentUid),
   );
-  const [blockedSenders, setBlockedSenders] = useState<BlockedSenderEntry[]>(() =>
-    loadBlockedSenders(),
+  const [localBlockedSenders, setLocalBlockedSenders] = useState<BlockedSenderEntry[]>(() =>
+    loadBlockedSenders(currentUid),
   );
+
+  useEffect(() => {
+    setReadIds(loadReadMessageIds(currentUid));
+    setUnreadOverrideIds(loadUnreadOverrideIds(currentUid));
+    setLocalBlockedSenders(loadBlockedSenders(currentUid));
+  }, [currentUid]);
+
+  const blockedSenders = blockedSendersProp ?? localBlockedSenders;
 
   // Transcript cache mirror so search matches live-fetched transcripts too
   const [resolvedTranscripts, setResolvedTranscripts] = useState<Record<string, string>>({});
-  const handleTranscriptResolved = useCallback((id: string, transcript: string) => {
-    setResolvedTranscripts((prev) => (prev[id] === transcript ? prev : { ...prev, [id]: transcript }));
-  }, []);
+  const handleTranscriptResolved = useCallback(
+    (id: string, transcript: string) => {
+      setResolvedTranscripts((prev) =>
+        prev[id] === transcript ? prev : { ...prev, [id]: transcript },
+      );
+      onTranscriptResolvedProp?.(id, transcript);
+    },
+    [onTranscriptResolvedProp],
+  );
 
   // Soft-deleted IDs pending undo snackbar completion
   const [pendingDeletedIds, setPendingDeletedIds] = useState<Set<string>>(() => new Set());
@@ -165,7 +202,7 @@ export default function MyNodeTab({
 
   // Pagination (load 20 at a time with infinite scroll)
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore] = useState(false);
 
   // Scroll & header collapse
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -256,13 +293,9 @@ export default function MyNodeTab({
   const hasMorePages = pagedMessages.length < filteredMessages.length;
 
   const handleLoadMore = useCallback(() => {
-    if (!hasMorePages || loadingMore) return;
-    setLoadingMore(true);
-    window.setTimeout(() => {
-      setVisibleLimit((prev) => prev + PAGE_SIZE);
-      setLoadingMore(false);
-    }, 160);
-  }, [hasMorePages, loadingMore]);
+    if (!hasMorePages) return;
+    setVisibleLimit((prev) => prev + PAGE_SIZE);
+  }, [hasMorePages]);
 
   // Flatten date buckets into virtual entries (`Today`, `Yesterday`, `This week`, `Earlier`)
   const virtualEntries = useMemo<VirtualEntry[]>(() => {
@@ -419,51 +452,59 @@ export default function MyNodeTab({
   ]);
 
   // Read / Unread mutators
-  const markMessagesRead = useCallback((ids: string[]) => {
-    if (ids.length === 0) return;
-    setReadIds((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const id of ids) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      if (!changed) return prev;
-      saveReadMessageIds(next);
-      return next;
-    });
-    setUnreadOverrideIds((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const id of ids) {
-        if (next.delete(id)) changed = true;
-      }
-      if (!changed) return prev;
-      saveUnreadOverrideIds(next);
-      return next;
-    });
-  }, []);
-
-  const handleToggleUnread = useCallback((id: string, nextUnread: boolean) => {
-    if (nextUnread) {
+  const markMessagesRead = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
       setReadIds((prev) => {
+        let changed = false;
         const next = new Set(prev);
-        next.delete(id);
-        saveReadMessageIds(next);
+        for (const id of ids) {
+          if (!next.has(id)) {
+            next.add(id);
+            changed = true;
+          }
+        }
+        if (!changed) return prev;
+        saveReadMessageIds(next, currentUid);
         return next;
       });
       setUnreadOverrideIds((prev) => {
+        let changed = false;
         const next = new Set(prev);
-        next.add(id);
-        saveUnreadOverrideIds(next);
+        for (const id of ids) {
+          if (next.delete(id)) changed = true;
+        }
+        if (!changed) return prev;
+        saveUnreadOverrideIds(next, currentUid);
         return next;
       });
-    } else {
-      markMessagesRead([id]);
-    }
-  }, [markMessagesRead]);
+      void onMarkMessagesRead?.(ids, false);
+    },
+    [currentUid, onMarkMessagesRead],
+  );
+
+  const handleToggleUnread = useCallback(
+    (id: string, nextUnread: boolean) => {
+      if (nextUnread) {
+        setReadIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          saveReadMessageIds(next, currentUid);
+          return next;
+        });
+        setUnreadOverrideIds((prev) => {
+          const next = new Set(prev);
+          next.add(id);
+          saveUnreadOverrideIds(next, currentUid);
+          return next;
+        });
+        void onMarkMessagesRead?.([id], true);
+      } else {
+        markMessagesRead([id]);
+      }
+    },
+    [currentUid, markMessagesRead, onMarkMessagesRead],
+  );
 
   const handleMarkAllRead = useCallback(() => {
     const allIds = activeMessages.map((m) => m.id);
@@ -604,31 +645,33 @@ export default function MyNodeTab({
     (msg: InboxMessage) => {
       const key = getSenderBlockKey(msg);
       const label = formatInboxSenderLabel(msg.senderAnonymous, language);
-      setBlockedSenders((prev) => {
+      setLocalBlockedSenders((prev) => {
         if (prev.some((b) => b.id === key)) return prev;
         const next = [
           ...prev,
           { id: key, label, blockedAt: new Date().toISOString() },
         ];
-        saveBlockedSenders(next);
+        saveBlockedSenders(next, currentUid);
         return next;
       });
+      void onBlockSenderProp?.(msg);
       notify(strings.senderBlockedToast(label));
     },
-    [language, notify, strings],
+    [currentUid, language, notify, onBlockSenderProp, strings],
   );
 
   const handleUnblockSender = useCallback(
     (senderId: string) => {
-      setBlockedSenders((prev) => {
-        const target = prev.find((b) => b.id === senderId);
+      const target = blockedSenders.find((b) => b.id === senderId);
+      setLocalBlockedSenders((prev) => {
         const next = prev.filter((b) => b.id !== senderId);
-        saveBlockedSenders(next);
-        if (target) notify(strings.senderUnblockedToast(target.label));
+        saveBlockedSenders(next, currentUid);
         return next;
       });
+      void onUnblockSenderProp?.(senderId);
+      if (target) notify(strings.senderUnblockedToast(target.label));
     },
-    [notify, strings],
+    [blockedSenders, currentUid, notify, onUnblockSenderProp, strings],
   );
 
   // Selection helpers

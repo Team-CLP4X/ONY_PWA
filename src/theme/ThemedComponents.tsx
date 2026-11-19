@@ -189,7 +189,7 @@ export const ThemedButton: React.FC<ThemedButtonProps> = ({
     border = "transparent";
   } else if (variant === "danger") {
     bg = tokens.error;
-    text = "#ffffff";
+    text = "var(--theme-on-dark)";
     border = "transparent";
   }
 

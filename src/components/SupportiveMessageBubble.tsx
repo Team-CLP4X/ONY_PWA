@@ -97,6 +97,7 @@ export function SupportiveMessageBubble({
     getCachedTranscript(id, audioUrl) || transcription || null,
   );
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
 
   const [showVoiceTranslation, setShowVoiceTranslation] = useState(false);
   const [translatedVoiceText, setTranslatedVoiceText] = useState<string | null>(() =>
@@ -232,18 +233,10 @@ export function SupportiveMessageBubble({
   };
 
   // --- Voice Transcription Handler ---
-  const handleFetchTranscript = async () => {
-    if (showTranscript) {
-      setShowTranscript(false);
-      return;
-    }
-
-    if (transcriptText) {
-      setShowTranscript(true);
-      return;
-    }
-
+  const runTranscription = async () => {
     setIsTranscribing(true);
+    setTranscriptError(null);
+    setShowTranscript(true);
     try {
       const result = await transcribeCommunityVoice({
         messageId: id,
@@ -253,7 +246,6 @@ export function SupportiveMessageBubble({
         existingTranscription: transcription,
       });
       setTranscriptText(result);
-      setShowTranscript(true);
       notify(
         language === "Bahasa Melayu"
           ? "Teks suara berjaya didapatkan"
@@ -261,17 +253,34 @@ export function SupportiveMessageBubble({
             ? "已获取语音文字"
             : "Voice text retrieved",
       );
-    } catch {
-      notify(
-        language === "Bahasa Melayu"
+    } catch (err: any) {
+      const msg =
+        err?.message ||
+        (language === "Bahasa Melayu"
           ? "Tidak dapat mendapatkan teks suara"
           : language === "中文"
             ? "未能获取语音文字"
-            : "Could not fetch voice text",
-      );
+            : "Could not fetch voice text");
+      setTranscriptError(msg);
+      notify(msg);
     } finally {
       setIsTranscribing(false);
     }
+  };
+
+  const handleFetchTranscript = async () => {
+    if (showTranscript) {
+      setShowTranscript(false);
+      return;
+    }
+
+    if (transcriptText) {
+      setTranscriptError(null);
+      setShowTranscript(true);
+      return;
+    }
+
+    await runTranscription();
   };
 
   // --- Voice Transcript Translation Handler ---
@@ -511,9 +520,27 @@ export function SupportiveMessageBubble({
                     )}
                   </div>
 
-                  <p className="support-transcript-text">
-                    "{displayVoiceText}"
-                  </p>
+                  {transcriptError && !displayVoiceText ? (
+                    <div className="composer-error-row" role="alert">
+                      <span className="sheet-inline-error">{transcriptError}</span>
+                      <button
+                        type="button"
+                        className="composer-retry-btn"
+                        onClick={() => void runTranscription()}
+                        disabled={isTranscribing}
+                      >
+                        {language === "Bahasa Melayu"
+                          ? "Cuba lagi"
+                          : language === "中文"
+                            ? "重试"
+                            : "Retry"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="support-transcript-text">
+                      "{displayVoiceText}"
+                    </p>
+                  )}
 
                   <div className="support-transcript-footer">
                     <button

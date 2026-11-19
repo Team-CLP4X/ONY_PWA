@@ -764,6 +764,7 @@ class VaultService {
   // Clear search index on user logout
   clearSearchIndex(): void {
     this.searchIndexCache.clear();
+    this.searchIndexLoading = false;
     this.searchIndexReady = false;
   }
 
@@ -777,22 +778,18 @@ class VaultService {
       return { migratedCount: 0, didMigrate: false };
     }
 
-    // Gather legacy entries from localStorage and users doc
-    const localRaw = typeof window !== "undefined" ? localStorage.getItem("ony_cached_journal_entries") : null;
-    let localEntries: any[] = [];
-    try {
-      if (localRaw) {
-        const parsed = JSON.parse(localRaw);
-        if (Array.isArray(parsed)) localEntries = parsed;
-      }
-    } catch {}
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("ony_cached_journal_entries");
+      } catch {}
+    }
 
     const uData = userSnap.exists() ? userSnap.data() : {};
     const docEntries = Array.isArray(uData.journalEntries) ? uData.journalEntries : [];
 
-    // Combine & deduplicate legacy entries by id or title+entryDate
+    // Deduplicate legacy Firestore user-doc entries by id or title+entryDate
     const entriesMap = new Map<string, any>();
-    [...docEntries, ...localEntries].forEach((e) => {
+    docEntries.forEach((e) => {
       const key = e.id || `${e.title}_${e.entryDate || e.createdAt}`;
       if (!entriesMap.has(key)) {
         entriesMap.set(key, e);

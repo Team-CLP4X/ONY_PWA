@@ -2,70 +2,227 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidGlobeNodeData(userId) {
+      return request.resource.data.keys().hasAll([
+        'id', 'ownerUid', 'moodGlow', 'moodLabel', 'discoverable', 'acceptsMessages', 'minLevel', 'lon', 'lat'
+      ])
+      && request.resource.data.ownerUid == userId
+      && request.resource.data.id is number
+      && request.resource.data.moodGlow in ['bright', 'soft', 'dim', 'neutral']
+      && isValidString(request.resource.data.moodLabel, 1, 60)
+      && request.resource.data.discoverable is bool
+      && request.resource.data.acceptsMessages is bool
+      && request.resource.data.minLevel is number
+      && request.resource.data.lon is number
+      && request.resource.data.lat is number;
+    }
+
+    function isValidCommunityPostCreate() {
+      return request.resource.data.keys().hasAll([
+        'author', 'authorId', 'title', 'body', 'category', 'likes', 'createdAt'
+      ])
+      && request.resource.data.authorId == request.auth.uid
+      && isValidString(request.resource.data.author, 1, 80)
+      && isValidString(request.resource.data.title, 1, 200)
+      && isValidString(request.resource.data.body, 1, 4000)
+      && isValidString(request.resource.data.category, 1, 60)
+      && request.resource.data.likes is number
+      && request.resource.data.likes >= 0;
+    }
+
     // Default deny all
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // User profile and settings
+    // Owner-private user profile document and subcollections
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+      allow delete: if isOwner(userId);
 
-      // All subcollections belonging to this user (vaultShelves, vaultBooks, pages, moodCheckins, memories, conversations, etc.)
-      match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      match /vaultShelves/{shelfId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /vaultBooks/{bookId} {
+        allow read, write: if isOwner(userId);
+
+        match /pages/{pageId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+
+      match /moodCheckins/{checkinId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /memories/{memoryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /journalEntries/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /conversations/{conversationId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /savedPosts/{postId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /hiddenPosts/{postId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /blockedUsers/{blockedUid} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /voucherClaims/{claimId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /toolkitCompletions/{completionId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /auditLogs/{logId} {
+        allow read, create, delete: if isOwner(userId);
+        allow update: if false;
       }
     }
 
-    // Dedicated User Settings collection keyed by userId
+    // User persistent settings keyed by userId
     match /user_settings/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow get, create, update, delete: if isOwner(userId);
     }
 
-    // Collection group query for pages owned by the authenticated user
+    // Collection group query for pages strictly owned by the authenticated user
     match /{path=**}/pages/{pageId} {
-      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
     }
 
-    // Community Globe nodes (Anonymous presence nodes)
+    // Anonymous Community Globe nodes keyed by owner UID
     match /globeUsers/{nodeId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow create: if isOwner(nodeId) && isValidGlobeNodeData(nodeId);
+      allow update: if isOwner(nodeId) && isValidGlobeNodeData(nodeId);
+      allow delete: if isOwner(nodeId);
     }
 
-    // Community Posts feed (Read, Create, Like/Update, Comment, Reply, Delete)
+    // Authenticated Community Posts
     match /communityPosts/{postId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCommunityPostCreate();
+      allow update: if isAuthenticated() && (
+        (resource.data.authorId == request.auth.uid
+          && request.resource.data.authorId == resource.data.authorId)
+        || request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likes', 'likeRecords', 'comments', 'updatedAt'])
+      );
+      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
     }
 
-    // Marketplace merchants and wellness vouchers
+    // Read-only verified wellness merchants (seeded/managed by admin)
     match /merchants/{merchantId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
-    // Community support messages (Anonymous peer encouragement text/voice)
+    // Private peer-to-peer anonymous community support messages
     match /communityMessages/{messageId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated()
+        && (resource.data.toUserId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
+      allow create: if isAuthenticated()
+        && request.resource.data.fromUserId == request.auth.uid
+        && isValidString(request.resource.data.toUserId, 1, 128)
+        && request.resource.data.kind in ['text', 'voice']
+        && isValidString(request.resource.data.text, 0, 2000);
+      allow update: if isAuthenticated()
+        && resource.data.toUserId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isRead', 'readAt', 'transcript']);
+      allow delete: if isAuthenticated()
+        && (resource.data.toUserId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
     }
 
-    // Registered user directory for Trusted Contact account lookup
+    // Minimal user directory for exact trusted contact lookup
     match /userDirectory/{userId} {
-      allow read, write: if true;
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated() && request.query.limit != null && request.query.limit <= 5;
+      allow create, update: if isOwner(userId)
+        && request.resource.data.uid == request.auth.uid
+        && isValidString(request.resource.data.emailLower, 3, 120);
+      allow delete: if isOwner(userId);
     }
 
     // Trusted contact requests between registered users
     match /trustedContactRequests/{requestId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (
+        resource.data.fromUid == request.auth.uid ||
+        resource.data.toUid == request.auth.uid ||
+        ('email' in request.auth.token
+          && request.auth.token.email is string
+          && (resource.data.toEmailLower == request.auth.token.email
+              || resource.data.toEmailLower == request.auth.token.email.lower()))
+      );
+      allow create: if isAuthenticated()
+        && request.resource.data.fromUid == request.auth.uid
+        && isValidString(request.resource.data.toUid, 1, 128)
+        && request.resource.data.fromUid != request.resource.data.toUid
+        && request.resource.data.status == 'pending';
+      allow update: if isAuthenticated() && (
+        (
+          (resource.data.toUid == request.auth.uid
+            || ('email' in request.auth.token
+                && request.auth.token.email is string
+                && (resource.data.toEmailLower == request.auth.token.email
+                    || resource.data.toEmailLower == request.auth.token.email.lower())))
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'respondedAt', 'updatedAt'])
+          && request.resource.data.status in ['accepted', 'rejected']
+        )
+        || (
+          resource.data.fromUid == request.auth.uid
+          && request.resource.data.fromUid == resource.data.fromUid
+          && request.resource.data.toUid == resource.data.toUid
+        )
+      );
+      allow delete: if isAuthenticated()
+        && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
     }
 
-    // System audit & production activity logs
-    match /systemLogs/{logId} {
-      allow read, write: if true;
+    // Moderation & safety reports
+    match /moderationReports/{reportId} {
+      allow create: if isAuthenticated()
+        && request.resource.data.reporterUid == request.auth.uid
+        && isValidString(request.resource.data.reason, 1, 500);
+      allow read, delete: if isAuthenticated() && resource.data.reporterUid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // App feedback & bug reports
+    match /feedbackReports/{reportId} {
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && isValidString(request.resource.data.description, 1, 2000);
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if false;
     }
   }
 }

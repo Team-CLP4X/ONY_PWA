@@ -69,6 +69,22 @@ export interface SemanticThemeTokens {
 
   // Ambient Environment Glow
   envGradient: string;
+
+  // Memory Vault & Digital Journal Paper Surfaces
+  journalStageBg: string;
+  journalPaper: string;
+  journalPaperAlt: string;
+  journalPaperEdge1: string;
+  journalPaperEdge2: string;
+  journalPaperEdge3: string;
+  journalPaperEdge4: string;
+  journalPaperCurl: string;
+  journalInk: string;
+  journalInkMuted: string;
+  journalPlaceholder: string;
+  journalRule: string;
+  journalGutter: string;
+  shelfPlank: string;
 }
 
 export interface ThemeDefinition {
@@ -129,6 +145,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#b45309",
       error: "#b91c1c",
       envGradient: "linear-gradient(180deg, #e4f3ee, #f4faf7 55%, #dcefe9)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #f8fbf9 0%, #dfece7 100%)",
+      journalPaper: "#fdfbf7",
+      journalPaperAlt: "#f5f8f6",
+      journalPaperEdge1: "#eae4da",
+      journalPaperEdge2: "#e1dbd0",
+      journalPaperEdge3: "#d7d0c4",
+      journalPaperEdge4: "#cdc5b8",
+      journalPaperCurl: "#e7e1d5",
+      journalInk: "#213330",
+      journalInkMuted: "#56706a",
+      journalPlaceholder: "#6c847e",
+      journalRule: "rgba(13, 148, 136, 0.13)",
+      journalGutter: "rgba(19, 46, 43, 0.08)",
+      shelfPlank: "linear-gradient(180deg, #e6d7c6, #d6c3ad)",
     },
     dark: {
       background: "#091614",
@@ -164,6 +194,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#fbbf24",
       error: "#f87171",
       envGradient: "linear-gradient(180deg, #0e201d, #091614 60%, #060e0d)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #0e211e 0%, #060f0d 100%)",
+      journalPaper: "#122420",
+      journalPaperAlt: "#172d28",
+      journalPaperEdge1: "#1a332d",
+      journalPaperEdge2: "#162b26",
+      journalPaperEdge3: "#11221e",
+      journalPaperEdge4: "#0c1916",
+      journalPaperCurl: "#1c3831",
+      journalInk: "#effaf7",
+      journalInkMuted: "#9bc2ba",
+      journalPlaceholder: "#81aba3",
+      journalRule: "rgba(94, 234, 212, 0.11)",
+      journalGutter: "rgba(0, 0, 0, 0.35)",
+      shelfPlank: "linear-gradient(180deg, #1b342f, #112320)",
     },
   },
 
@@ -212,6 +256,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#b45309",
       error: "#b91c1c",
       envGradient: "linear-gradient(180deg, #e0f2fe, #f1f8fc 50%, #d4eaf7)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #f7fbfe 0%, #dcebf5 100%)",
+      journalPaper: "#fdfbf7",
+      journalPaperAlt: "#f2f7fb",
+      journalPaperEdge1: "#eae4db",
+      journalPaperEdge2: "#e0dad0",
+      journalPaperEdge3: "#d6cfc4",
+      journalPaperEdge4: "#cbc3b7",
+      journalPaperCurl: "#e7e1d6",
+      journalInk: "#162c3d",
+      journalInkMuted: "#536e82",
+      journalPlaceholder: "#698296",
+      journalRule: "rgba(2, 132, 199, 0.12)",
+      journalGutter: "rgba(13, 40, 60, 0.08)",
+      shelfPlank: "linear-gradient(180deg, #e6d7c6, #d6c3ad)",
     },
     dark: {
       background: "#07131e",
@@ -247,6 +305,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#fbbf24",
       error: "#f87171",
       envGradient: "linear-gradient(180deg, #0d2134, #07131e 60%, #040c14)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #0e2234 0%, #061019 100%)",
+      journalPaper: "#102131",
+      journalPaperAlt: "#162a3e",
+      journalPaperEdge1: "#1b334a",
+      journalPaperEdge2: "#162a3e",
+      journalPaperEdge3: "#112131",
+      journalPaperEdge4: "#0c1824",
+      journalPaperCurl: "#1f3a54",
+      journalInk: "#eef7fe",
+      journalInkMuted: "#98bad5",
+      journalPlaceholder: "#7ea1be",
+      journalRule: "rgba(125, 211, 252, 0.11)",
+      journalGutter: "rgba(0, 0, 0, 0.38)",
+      shelfPlank: "linear-gradient(180deg, #1b3145, #102030)",
     },
   },
 
@@ -295,6 +367,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#b45309",
       error: "#b91c1c",
       envGradient: "linear-gradient(165deg, #fff1ee, #fde4df 50%, #fbd5ce)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #fff9f7 0%, #f5dfdb 100%)",
+      journalPaper: "#fdfbf7",
+      journalPaperAlt: "#fbf3f2",
+      journalPaperEdge1: "#eee2dc",
+      journalPaperEdge2: "#e5d7cf",
+      journalPaperEdge3: "#dbcbc2",
+      journalPaperEdge4: "#d1bfb5",
+      journalPaperCurl: "#ece0d9",
+      journalInk: "#361c20",
+      journalInkMuted: "#745056",
+      journalPlaceholder: "#8a6268",
+      journalRule: "rgba(225, 91, 100, 0.12)",
+      journalGutter: "rgba(59, 23, 28, 0.08)",
+      shelfPlank: "linear-gradient(180deg, #e6d7c6, #d6c3ad)",
     },
     dark: {
       background: "#180b11",
@@ -330,6 +416,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#fbbf24",
       error: "#f87171",
       envGradient: "linear-gradient(165deg, #27101c, #180b11 60%, #10060c)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #24111a 0%, #12080d 100%)",
+      journalPaper: "#23121a",
+      journalPaperAlt: "#2d1822",
+      journalPaperEdge1: "#361d29",
+      journalPaperEdge2: "#2e1822",
+      journalPaperEdge3: "#25131c",
+      journalPaperEdge4: "#1c0e15",
+      journalPaperCurl: "#3b202d",
+      journalInk: "#fcf0f2",
+      journalInkMuted: "#c8a3ab",
+      journalPlaceholder: "#ab848c",
+      journalRule: "rgba(251, 113, 133, 0.11)",
+      journalGutter: "rgba(0, 0, 0, 0.38)",
+      shelfPlank: "linear-gradient(180deg, #371d28, #25131b)",
     },
   },
 
@@ -378,6 +478,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#b45309",
       error: "#ba454e",
       envGradient: "radial-gradient(circle at 85% 22%, rgba(239,139,121,.16), transparent 36%), linear-gradient(#fff9f1, #ffede2)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #fefcf9 0%, #ebe4d8 100%)",
+      journalPaper: "#fdfbf7",
+      journalPaperAlt: "#faf5ee",
+      journalPaperEdge1: "#ede2d5",
+      journalPaperEdge2: "#e6dacb",
+      journalPaperEdge3: "#dfd1c1",
+      journalPaperEdge4: "#d8c7b6",
+      journalPaperCurl: "#ede3d4",
+      journalInk: "#2b2420",
+      journalInkMuted: "#6b5d53",
+      journalPlaceholder: "#807064",
+      journalRule: "rgba(180, 115, 95, 0.12)",
+      journalGutter: "rgba(50, 35, 25, 0.08)",
+      shelfPlank: "linear-gradient(180deg, #e6d7c6, #d6c3ad)",
     },
     dark: {
       background: "#18110b",
@@ -413,6 +527,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#fbbf24",
       error: "#f87171",
       envGradient: "linear-gradient(180deg, #281910, #18110b 60%, #100a06)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #231912 0%, #120c08 100%)",
+      journalPaper: "#211812",
+      journalPaperAlt: "#2b1f18",
+      journalPaperEdge1: "#33261d",
+      journalPaperEdge2: "#2c2019",
+      journalPaperEdge3: "#241a14",
+      journalPaperEdge4: "#1c140f",
+      journalPaperCurl: "#392a20",
+      journalInk: "#faf1e8",
+      journalInkMuted: "#c8b3a4",
+      journalPlaceholder: "#ab9484",
+      journalRule: "rgba(251, 146, 60, 0.11)",
+      journalGutter: "rgba(0, 0, 0, 0.38)",
+      shelfPlank: "linear-gradient(180deg, #39281d, #251b14)",
     },
   },
 
@@ -461,6 +589,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#b45309",
       error: "#b91c1c",
       envGradient: "radial-gradient(circle at 80% 20%, #e9def2, transparent 38%), linear-gradient(#f7f3fa, #eee7f4)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #fbf9fd 0%, #eae2f3 100%)",
+      journalPaper: "#fdfbf7",
+      journalPaperAlt: "#f6f2fa",
+      journalPaperEdge1: "#eae3ee",
+      journalPaperEdge2: "#e1d9e6",
+      journalPaperEdge3: "#d7cede",
+      journalPaperEdge4: "#cdc3d5",
+      journalPaperCurl: "#e7dfed",
+      journalInk: "#271b33",
+      journalInkMuted: "#615173",
+      journalPlaceholder: "#76658a",
+      journalRule: "rgba(139, 92, 246, 0.12)",
+      journalGutter: "rgba(38, 25, 51, 0.08)",
+      shelfPlank: "linear-gradient(180deg, #e6d7c6, #d6c3ad)",
     },
     dark: {
       background: "#130c1c",
@@ -496,6 +638,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#fbbf24",
       error: "#f87171",
       envGradient: "linear-gradient(180deg, #241334, #130c1c 60%, #0c0712)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #1d112b 0%, #0e0716 100%)",
+      journalPaper: "#1b1227",
+      journalPaperAlt: "#241833",
+      journalPaperEdge1: "#2d1e40",
+      journalPaperEdge2: "#261936",
+      journalPaperEdge3: "#1f142c",
+      journalPaperEdge4: "#180f22",
+      journalPaperCurl: "#322247",
+      journalInk: "#f7f2fc",
+      journalInkMuted: "#bcaad1",
+      journalPlaceholder: "#9e8bb5",
+      journalRule: "rgba(196, 181, 253, 0.11)",
+      journalGutter: "rgba(0, 0, 0, 0.38)",
+      shelfPlank: "linear-gradient(180deg, #2d1e40, #1f142b)",
     },
   },
 
@@ -544,6 +700,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#b45309",
       error: "#b91c1c",
       envGradient: "linear-gradient(#fbfaf8, #f2efeb)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #faf9f7 0%, #eae6df 100%)",
+      journalPaper: "#fdfbf7",
+      journalPaperAlt: "#f4f2ee",
+      journalPaperEdge1: "#ebe7e1",
+      journalPaperEdge2: "#e2ded7",
+      journalPaperEdge3: "#d9d4cc",
+      journalPaperEdge4: "#cfcac1",
+      journalPaperCurl: "#e7e3dc",
+      journalInk: "#1c1917",
+      journalInkMuted: "#5c5752",
+      journalPlaceholder: "#706a64",
+      journalRule: "rgba(87, 83, 78, 0.12)",
+      journalGutter: "rgba(28, 25, 23, 0.08)",
+      shelfPlank: "linear-gradient(180deg, #e6d7c6, #d6c3ad)",
     },
     dark: {
       background: "#0f0f10",
@@ -579,6 +749,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       warning: "#fbbf24",
       error: "#f87171",
       envGradient: "linear-gradient(180deg, #1c1c1f, #0f0f10 60%, #0a0a0b)",
+      journalStageBg: "radial-gradient(circle at 50% 25%, #1b1b1e 0%, #0c0c0e 100%)",
+      journalPaper: "#19191c",
+      journalPaperAlt: "#222226",
+      journalPaperEdge1: "#29292e",
+      journalPaperEdge2: "#222227",
+      journalPaperEdge3: "#1b1b1f",
+      journalPaperEdge4: "#141417",
+      journalPaperCurl: "#2e2e34",
+      journalInk: "#f4f3f0",
+      journalInkMuted: "#b5b1ac",
+      journalPlaceholder: "#96928d",
+      journalRule: "rgba(245, 245, 244, 0.10)",
+      journalGutter: "rgba(0, 0, 0, 0.38)",
+      shelfPlank: "linear-gradient(180deg, #2a2a2e, #1a1a1c)",
     },
   },
 };
@@ -709,18 +893,135 @@ export function applyTokensToDocument(
   root.style.setProperty("--theme-env-gradient", tokens.envGradient);
 
   // Soft status colors for badges & alerts
+  root.style.setProperty("--theme-danger", tokens.error);
   root.style.setProperty(
     "--theme-error-soft",
     isDark ? "rgba(248, 113, 113, 0.18)" : "#fee2e2"
+  );
+  root.style.setProperty(
+    "--theme-danger-soft",
+    isDark ? "rgba(248, 113, 113, 0.18)" : "#fee2e2"
+  );
+  root.style.setProperty(
+    "--theme-danger-border",
+    isDark ? "rgba(248, 113, 113, 0.35)" : "rgba(185, 28, 28, 0.25)"
   );
   root.style.setProperty(
     "--theme-success-soft",
     isDark ? "rgba(74, 222, 128, 0.18)" : "#dcfce7"
   );
   root.style.setProperty(
+    "--theme-success-border",
+    isDark ? "rgba(74, 222, 128, 0.35)" : "rgba(21, 128, 61, 0.25)"
+  );
+  root.style.setProperty(
     "--theme-warning-soft",
     isDark ? "rgba(251, 191, 36, 0.18)" : "#fef3c7"
   );
+  root.style.setProperty(
+    "--theme-warning-border",
+    isDark ? "rgba(251, 191, 36, 0.35)" : "rgba(180, 83, 9, 0.25)"
+  );
+  root.style.setProperty("--theme-info", isDark ? "#38bdf8" : "#0284c7");
+  root.style.setProperty(
+    "--theme-info-soft",
+    isDark ? "rgba(56, 189, 248, 0.16)" : "#e0f2fe"
+  );
+
+  // Memory Vault & Journal Paper Tokens
+  root.style.setProperty("--theme-journal-stage-bg", tokens.journalStageBg);
+  root.style.setProperty("--theme-journal-paper", tokens.journalPaper);
+  root.style.setProperty("--theme-journal-paper-alt", tokens.journalPaperAlt);
+  root.style.setProperty("--theme-journal-edge-1", tokens.journalPaperEdge1);
+  root.style.setProperty("--theme-journal-edge-2", tokens.journalPaperEdge2);
+  root.style.setProperty("--theme-journal-edge-3", tokens.journalPaperEdge3);
+  root.style.setProperty("--theme-journal-edge-4", tokens.journalPaperEdge4);
+  root.style.setProperty("--theme-journal-curl", tokens.journalPaperCurl);
+  root.style.setProperty("--theme-journal-ink", tokens.journalInk);
+  root.style.setProperty("--theme-journal-ink-muted", tokens.journalInkMuted);
+  root.style.setProperty("--theme-journal-placeholder", tokens.journalPlaceholder);
+  root.style.setProperty("--theme-journal-rule", tokens.journalRule);
+  root.style.setProperty("--theme-journal-gutter", tokens.journalGutter);
+  root.style.setProperty("--theme-shelf-plank", tokens.shelfPlank);
+
+  // Global Shadows, Backdrops, Glass & Structural Accents
+  root.style.setProperty("--theme-on-dark", "#ffffff");
+  root.style.setProperty(
+    "--theme-backdrop",
+    isDark ? "rgba(4, 7, 11, 0.72)" : "rgba(25, 18, 14, 0.46)"
+  );
+  root.style.setProperty(
+    "--theme-backdrop-strong",
+    isDark ? "rgba(4, 7, 11, 0.85)" : "rgba(25, 18, 14, 0.62)"
+  );
+  root.style.setProperty(
+    "--theme-glass",
+    isDark ? "rgba(18, 22, 28, 0.88)" : "rgba(255, 255, 255, 0.90)"
+  );
+  root.style.setProperty(
+    "--theme-glass-soft",
+    isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.55)"
+  );
+  root.style.setProperty(
+    "--theme-scrim-light",
+    isDark ? "rgba(255, 255, 255, 0.14)" : "rgba(255, 255, 255, 0.75)"
+  );
+  root.style.setProperty(
+    "--theme-scrim-dark",
+    isDark ? "rgba(0, 0, 0, 0.52)" : "rgba(0, 0, 0, 0.35)"
+  );
+  root.style.setProperty(
+    "--theme-tape",
+    isDark ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.72)"
+  );
+  root.style.setProperty("--theme-sun-glow", isDark ? "#fef3c7" : "#fde68a");
+  root.style.setProperty("--theme-picker-dark", "#000000");
+  root.style.setProperty("--theme-picker-light", "#ffffff");
+  root.style.setProperty(
+    "--theme-hue-gradient",
+    "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)"
+  );
+  root.style.setProperty(
+    "--theme-conic-rainbow",
+    "conic-gradient(from 180deg at 50% 50%, #f87171, #fbbf24, #34d399, #60a5fa, #a78bfa, #f472b6, #f87171)"
+  );
+  root.style.setProperty(
+    "--theme-focus-ring",
+    `0 0 0 3px ${isDark ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.10)"}`
+  );
+  root.style.setProperty(
+    "--theme-shadow-xs",
+    isDark ? "0 1px 3px rgba(0, 0, 0, 0.32)" : "0 1px 3px rgba(0, 0, 0, 0.05)"
+  );
+  root.style.setProperty(
+    "--theme-shadow-sm",
+    isDark ? "0 4px 12px rgba(0, 0, 0, 0.38)" : "0 2px 8px rgba(0, 0, 0, 0.06)"
+  );
+  root.style.setProperty(
+    "--theme-shadow-md",
+    isDark ? "0 8px 24px rgba(0, 0, 0, 0.48)" : "0 8px 20px rgba(0, 0, 0, 0.08)"
+  );
+  root.style.setProperty(
+    "--theme-shadow-lg",
+    isDark ? "0 20px 50px rgba(0, 0, 0, 0.65)" : "0 16px 40px rgba(0, 0, 0, 0.14)"
+  );
+  root.style.setProperty(
+    "--theme-shadow-up",
+    isDark ? "0 -4px 16px rgba(0, 0, 0, 0.42)" : "0 -3px 12px rgba(0, 0, 0, 0.06)"
+  );
+  root.style.setProperty(
+    "--theme-shadow-primary",
+    `0 6px 18px ${isDark ? "rgba(0, 0, 0, 0.42)" : "rgba(0, 0, 0, 0.12)"}`
+  );
+
+  // Chat Folder Color Palette Tokens
+  root.style.setProperty("--theme-folder-peach", isDark ? "#f59e8b" : "#d96552");
+  root.style.setProperty("--theme-folder-ocean", isDark ? "#60a5fa" : "#2563eb");
+  root.style.setProperty("--theme-folder-forest", isDark ? "#2dd4bf" : "#0d9488");
+  root.style.setProperty("--theme-folder-lavender", isDark ? "#c4b5fd" : "#7c3aed");
+  root.style.setProperty("--theme-folder-sunset", isDark ? "#f472b6" : "#db2777");
+  root.style.setProperty("--theme-folder-amber", isDark ? "#fbbf24" : "#b45309");
+  root.style.setProperty("--theme-folder-slate", isDark ? "#94a3b8" : "#475569");
 
   if (document.body) {
     document.body.setAttribute("data-theme", themeId);
@@ -746,3 +1047,153 @@ export function applyTokensToDocument(
 
   return { isDark };
 }
+
+export interface MascotPalette {
+  shadowInk: string;
+  catFur: [string, string, string];
+  catEar: string;
+  catEarInner: string;
+  catStripe: string;
+  dogFur: [string, string, string];
+  dogEar: [string, string];
+  dogMuzzle: string;
+  bunnyFur: [string, string, string];
+  bunnyEar: [string, string];
+  bearFur: [string, string, string];
+  bearFurRich: [string, string, string];
+  bearBelly: string;
+  bearEarOuter: string;
+  bearEarInner: string;
+  bearMuzzle: string;
+  foxFur: [string, string, string];
+  foxTip: string;
+  foxFluff: string;
+  pandaWhite: [string, string, string];
+  pandaSlate: [string, string];
+  eyeIris: string;
+  eyeDarkAlt: string;
+  eyeArcStroke: string;
+  eyeHighlight: string;
+  noseFeature: string;
+  catNose: string;
+  bearNose: string;
+  dogNose: string;
+  mouthPink: string;
+  mouthStroke: string;
+  mouthSpeakingStroke: string;
+  whisker: string;
+  collarBlue: string;
+  collarRed: string;
+  collarLavender: string;
+  badgeGold: string;
+  badgeText: string;
+  goldStops: [string, string, string];
+  goldStroke: string;
+  goldText: string;
+  heartCoral: string;
+  sparkleGold: string;
+  creamTummy: string;
+}
+
+export function getMascotPalette(isDark: boolean): MascotPalette {
+  return {
+    shadowInk: isDark ? "#0A0A0E" : "#5A3E36",
+    catFur: isDark ? ["#FFF2E6", "#F8E0CF", "#EED0BA"] : ["#FFF7F0", "#FEECE0", "#F7DCC8"],
+    catEar: isDark ? "#F5A0AD" : "#F8B2BE",
+    catEarInner: isDark ? "#F7B8C6" : "#FBB7C7",
+    catStripe: isDark ? "#D8A381" : "#E2AC8D",
+    dogFur: isDark ? ["#FCE4CA", "#F4CCA4", "#E6B885"] : ["#FFECCE", "#F6D8B6", "#E8C297"],
+    dogEar: isDark ? ["#D89A65", "#BD7E47"] : ["#DE9E69", "#C78750"],
+    dogMuzzle: "#FFFDF9",
+    bunnyFur: isDark ? ["#FFFFFF", "#FFF0F4", "#FCE0E8"] : ["#FFFFFF", "#FFF5F7", "#FEE6ED"],
+    bunnyEar: isDark ? ["#F8BAC7", "#F9C5D0"] : ["#FDC4D1", "#FDD9E3"],
+    bearFur: isDark ? ["#C6915F", "#AC7542", "#925D30"] : ["#D49E69", "#BC834C", "#A06936"],
+    bearFurRich: isDark ? ["#E8BA8E", "#D49E69", "#BC834C"] : ["#E2AF7E", "#CFA070", "#B88452"],
+    bearBelly: isDark ? "#F5DEC9" : "#FBE2CC",
+    bearEarOuter: isDark ? "#B07A48" : "#C48A52",
+    bearEarInner: isDark ? "#F8E0CF" : "#FFF1E5",
+    bearMuzzle: isDark ? "#FCEFE2" : "#FFF3E5",
+    foxFur: isDark ? ["#FF9A68", "#F47D47", "#E0642B"] : ["#FF935E", "#F2783F", "#DD5E23"],
+    foxTip: "#322E30",
+    foxFluff: "#FFF9F5",
+    pandaWhite: isDark ? ["#FFFFFF", "#F1F1F5", "#DFE0E6"] : ["#FFFFFF", "#F7F7FA", "#E8E9F0"],
+    pandaSlate: isDark ? ["#484752", "#33313B"] : ["#3D3C46", "#2A2932"],
+    eyeIris: isDark ? "#281E1C" : "#2F2321",
+    eyeDarkAlt: "#2A2932",
+    eyeArcStroke: isDark ? "#EFEAE7" : "#2F2321",
+    eyeHighlight: "#FFFFFF",
+    noseFeature: "#2A282A",
+    catNose: isDark ? "#F08FA3" : "#E88297",
+    bearNose: "#593320",
+    dogNose: "#784B34",
+    mouthPink: isDark ? "#F88F9E" : "#E27382",
+    mouthStroke: isDark ? "#4B3632" : "#5A3830",
+    mouthSpeakingStroke: isDark ? "#3A2B27" : "#5A3830",
+    whisker: "#A68779",
+    collarBlue: "#38BDF8",
+    collarRed: "#E64646",
+    collarLavender: "#C084FC",
+    badgeGold: "#FACC15",
+    badgeText: "#713F12",
+    goldStops: ["#FFF2B2", "#F6C344", "#D99E18"],
+    goldStroke: "#C28912",
+    goldText: "#5E3807",
+    heartCoral: "#F472B6",
+    sparkleGold: "#FBBF24",
+    creamTummy: "#FFFDFB",
+  };
+}
+
+export const MASCOT_SWATCH_DESCRIPTIONS: Record<
+  "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda",
+  { summary: string; swatches: { label: string; color: string }[] }
+> = {
+  Cat: {
+    summary: "Cream, Peach & Warm Tabby",
+    swatches: [
+      { label: "Cream", color: "#FFF7F0" },
+      { label: "Peach", color: "#FEECE0" },
+      { label: "Tabby", color: "#E2AC8D" },
+    ],
+  },
+  Dog: {
+    summary: "Caramel, Amber & Cream",
+    swatches: [
+      { label: "Caramel", color: "#FFECCE" },
+      { label: "Amber", color: "#C78750" },
+      { label: "Cream", color: "#FFFDF9" },
+    ],
+  },
+  Bunny: {
+    summary: "Marshmallow, Blossom & Rose",
+    swatches: [
+      { label: "Marshmallow", color: "#FFFFFF" },
+      { label: "Blossom", color: "#FEE6ED" },
+      { label: "Rose", color: "#FDC4D1" },
+    ],
+  },
+  Bear: {
+    summary: "Honey Brown, Biscuit & Vanilla",
+    swatches: [
+      { label: "Honey Brown", color: "#D49E69" },
+      { label: "Biscuit", color: "#BC834C" },
+      { label: "Vanilla", color: "#FFF3E5" },
+    ],
+  },
+  Fox: {
+    summary: "Cinnamon, Charcoal Tip & Fluff",
+    swatches: [
+      { label: "Cinnamon", color: "#FF935E" },
+      { label: "Charcoal Tip", color: "#322E30" },
+      { label: "Fluff", color: "#FFF9F5" },
+    ],
+  },
+  Panda: {
+    summary: "Milk White, Cloud & Soft Slate",
+    swatches: [
+      { label: "Milk White", color: "#FFFFFF" },
+      { label: "Cloud", color: "#E8E9F0" },
+      { label: "Soft Slate", color: "#3D3C46" },
+    ],
+  },
+};

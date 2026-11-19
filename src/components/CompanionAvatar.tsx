@@ -1,5 +1,6 @@
 import React, { useId, useMemo } from "react";
 import { useTheme } from "../theme/ThemeContext";
+import { getMascotPalette } from "../theme/palettes";
 
 export type CompanionAnimal = "Cat" | "Dog" | "Bunny" | "Bear" | "Fox" | "Panda";
 export type CompanionExpression = "idle" | "listening" | "speaking" | "happy" | "comforting";
@@ -60,6 +61,7 @@ export function CompanionAvatar({
   alt,
 }: CompanionAvatarProps) {
   const { isDark } = useTheme();
+  const mc = getMascotPalette(isDark);
   const idPrefix = useId().replace(/:/g, "_");
 
   // Resolve animal type
@@ -76,6 +78,7 @@ export function CompanionAvatar({
 
   const shouldGlow = showGlow !== undefined ? showGlow : pixelSize >= 84;
   const isMini = pixelSize <= 42;
+  const outlineStroke = isDark ? mc.eyeHighlight : mc.shadowInk;
 
   // Accessible label
   const accessibleLabel =
@@ -135,17 +138,17 @@ export function CompanionAvatar({
           >
             <stop
               offset="0%"
-              stopColor="var(--theme-primary, #F28C78)"
+              stopColor="var(--theme-primary)"
               stopOpacity={isDark ? "0.32" : "0.22"}
             />
             <stop
               offset="65%"
-              stopColor="var(--theme-accent, #FAD2C8)"
+              stopColor="var(--theme-accent)"
               stopOpacity={isDark ? "0.15" : "0.10"}
             />
             <stop
               offset="100%"
-              stopColor="var(--theme-surface, #FFF9F5)"
+              stopColor="var(--theme-surface)"
               stopOpacity="0"
             />
           </radialGradient>
@@ -159,17 +162,17 @@ export function CompanionAvatar({
           >
             <stop
               offset="0%"
-              stopColor={isDark ? "#0A0A0E" : "#5A3E36"}
+              stopColor={mc.shadowInk}
               stopOpacity={isDark ? "0.45" : "0.18"}
             />
             <stop
               offset="80%"
-              stopColor={isDark ? "#0A0A0E" : "#5A3E36"}
+              stopColor={mc.shadowInk}
               stopOpacity={isDark ? "0.12" : "0.04"}
             />
             <stop
               offset="100%"
-              stopColor={isDark ? "#0A0A0E" : "#5A3E36"}
+              stopColor={mc.shadowInk}
               stopOpacity="0"
             />
           </radialGradient>
@@ -177,59 +180,59 @@ export function CompanionAvatar({
           {/* Shading Gradients for Animal Bodies */}
           {/* CAT: Warm Peach Cream */}
           <linearGradient id={`${idPrefix}_cat_body`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#FFF2E6" : "#FFF7F0"} />
-            <stop offset="60%" stopColor={isDark ? "#F8E0CF" : "#FEECE0"} />
-            <stop offset="100%" stopColor={isDark ? "#EED0BA" : "#F7DCC8"} />
+            <stop offset="0%" stopColor={mc.catFur[0]} />
+            <stop offset="60%" stopColor={mc.catFur[1]} />
+            <stop offset="100%" stopColor={mc.catFur[2]} />
           </linearGradient>
 
           {/* DOG: Warm Caramel and Cream */}
           <linearGradient id={`${idPrefix}_dog_body`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#FCE4CA" : "#FFECCE"} />
-            <stop offset="55%" stopColor={isDark ? "#F4CCA4" : "#F6D8B6"} />
-            <stop offset="100%" stopColor={isDark ? "#E6B885" : "#E8C297"} />
+            <stop offset="0%" stopColor={mc.dogFur[0]} />
+            <stop offset="55%" stopColor={mc.dogFur[1]} />
+            <stop offset="100%" stopColor={mc.dogFur[2]} />
           </linearGradient>
           <linearGradient id={`${idPrefix}_dog_ear`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#D89A65" : "#DE9E69"} />
-            <stop offset="100%" stopColor={isDark ? "#BD7E47" : "#C78750"} />
+            <stop offset="0%" stopColor={mc.dogEar[0]} />
+            <stop offset="100%" stopColor={mc.dogEar[1]} />
           </linearGradient>
 
           {/* BUNNY: Marshmallow White-Pink */}
           <linearGradient id={`${idPrefix}_bunny_body`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#FFFFFF" : "#FFFFFF"} />
-            <stop offset="65%" stopColor={isDark ? "#FFF0F4" : "#FFF5F7"} />
-            <stop offset="100%" stopColor={isDark ? "#FCE0E8" : "#FEE6ED"} />
+            <stop offset="0%" stopColor={mc.bunnyFur[0]} />
+            <stop offset="65%" stopColor={mc.bunnyFur[1]} />
+            <stop offset="100%" stopColor={mc.bunnyFur[2]} />
           </linearGradient>
 
           {/* BEAR: Warm Honey Brown */}
           <linearGradient id={`${idPrefix}_bear_body`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#E8BA8E" : "#E2AF7E"} />
-            <stop offset="60%" stopColor={isDark ? "#D49E69" : "#CFA070"} />
-            <stop offset="100%" stopColor={isDark ? "#BC834C" : "#B88452"} />
+            <stop offset="0%" stopColor={mc.bearFurRich[0]} />
+            <stop offset="60%" stopColor={mc.bearFurRich[1]} />
+            <stop offset="100%" stopColor={mc.bearFurRich[2]} />
           </linearGradient>
 
           {/* FOX: Warm Soft Orange */}
           <linearGradient id={`${idPrefix}_fox_body`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#FF9A68" : "#FF935E"} />
-            <stop offset="65%" stopColor={isDark ? "#F47D47" : "#F2783F"} />
-            <stop offset="100%" stopColor={isDark ? "#E0642B" : "#DD5E23"} />
+            <stop offset="0%" stopColor={mc.foxFur[0]} />
+            <stop offset="65%" stopColor={mc.foxFur[1]} />
+            <stop offset="100%" stopColor={mc.foxFur[2]} />
           </linearGradient>
 
           {/* PANDA: Soft Milk White & Slate Charcoal */}
           <linearGradient id={`${idPrefix}_panda_body`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#FFFFFF" : "#FFFFFF"} />
-            <stop offset="65%" stopColor={isDark ? "#F1F1F5" : "#F7F7FA"} />
-            <stop offset="100%" stopColor={isDark ? "#DFE0E6" : "#E8E9F0"} />
+            <stop offset="0%" stopColor={mc.pandaWhite[0]} />
+            <stop offset="65%" stopColor={mc.pandaWhite[1]} />
+            <stop offset="100%" stopColor={mc.pandaWhite[2]} />
           </linearGradient>
           <linearGradient id={`${idPrefix}_panda_dark`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? "#484752" : "#3D3C46"} />
-            <stop offset="100%" stopColor={isDark ? "#33313B" : "#2A2932"} />
+            <stop offset="0%" stopColor={mc.pandaSlate[0]} />
+            <stop offset="100%" stopColor={mc.pandaSlate[1]} />
           </linearGradient>
 
           {/* Golden Collar Tag Gradient */}
           <linearGradient id={`${idPrefix}_gold_tag`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#FFF2B2" />
-            <stop offset="50%" stopColor="#F6C344" />
-            <stop offset="100%" stopColor="#D99E18" />
+            <stop offset="0%" stopColor={mc.goldStops[0]} />
+            <stop offset="50%" stopColor={mc.goldStops[1]} />
+            <stop offset="100%" stopColor={mc.goldStops[2]} />
           </linearGradient>
         </defs>
 
@@ -261,7 +264,8 @@ export function CompanionAvatar({
             <path
               d="M 116 126 C 138 122, 146 100, 138 88 C 132 78, 122 84, 126 94 C 128 102, 120 114, 110 120 Z"
               fill={`url(#${idPrefix}_cat_body)`}
-              stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(180,120,90,0.18)"}
+              stroke={outlineStroke}
+              strokeOpacity="0.18"
               strokeWidth="1.2"
               className="ony-tail-wiggle"
             />
@@ -271,7 +275,8 @@ export function CompanionAvatar({
             <path
               d="M 116 125 C 136 120, 144 105, 140 94 C 136 84, 124 88, 128 98 C 130 106, 122 116, 112 120 Z"
               fill={`url(#${idPrefix}_dog_body)`}
-              stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(180,120,90,0.18)"}
+              stroke={outlineStroke}
+              strokeOpacity="0.18"
               strokeWidth="1.2"
               className="ony-tail-wiggle"
             />
@@ -283,7 +288,8 @@ export function CompanionAvatar({
               cy="126"
               r="11"
               fill={`url(#${idPrefix}_bunny_body)`}
-              stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(220,160,180,0.18)"}
+              stroke={isDark ? mc.eyeHighlight : mc.bunnyEar[0]}
+              strokeOpacity="0.25"
               strokeWidth="1.2"
               className="ony-tail-wiggle"
             />
@@ -295,7 +301,8 @@ export function CompanionAvatar({
               cy="125"
               r="8.5"
               fill={`url(#${idPrefix}_bear_body)`}
-              stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(150,90,50,0.18)"}
+              stroke={isDark ? mc.eyeHighlight : mc.bearNose}
+              strokeOpacity="0.18"
               strokeWidth="1.2"
             />
           )}
@@ -308,7 +315,7 @@ export function CompanionAvatar({
               />
               <path
                 d="M 148 74 C 143 58, 127 64, 131 73 C 136 82, 143 82, 148 74 Z"
-                fill="#FFF9F5"
+                fill={mc.foxFluff}
               />
             </g>
           )}
@@ -329,12 +336,13 @@ export function CompanionAvatar({
               <path
                 d="M 44 54 C 38 34, 46 18, 58 24 C 67 28, 69 44, 67 52 Z"
                 fill={`url(#${idPrefix}_cat_body)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(180,120,90,0.18)"}
+                stroke={outlineStroke}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
               />
               <path
                 d="M 48 48 C 44 36, 48 26, 56 30 C 62 33, 63 43, 61 48 Z"
-                fill={isDark ? "#F7B8C6" : "#FBB7C7"}
+                fill={mc.catEarInner}
                 opacity="0.85"
               />
 
@@ -342,12 +350,13 @@ export function CompanionAvatar({
               <path
                 d="M 116 54 C 122 34, 114 18, 102 24 C 93 28, 91 44, 93 52 Z"
                 fill={`url(#${idPrefix}_cat_body)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(180,120,90,0.18)"}
+                stroke={outlineStroke}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
               />
               <path
                 d="M 112 48 C 116 36, 112 26, 104 30 C 98 33, 97 43, 99 48 Z"
-                fill={isDark ? "#F7B8C6" : "#FBB7C7"}
+                fill={mc.catEarInner}
                 opacity="0.85"
               />
             </g>
@@ -359,7 +368,8 @@ export function CompanionAvatar({
               <path
                 d="M 46 48 C 30 46, 21 62, 25 84 C 27 95, 38 98, 43 87 C 47 77, 49 59, 49 48 Z"
                 fill={`url(#${idPrefix}_dog_ear)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(140,80,40,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.bearNose}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
                 className="ony-floppy-ear-left"
               />
@@ -367,7 +377,8 @@ export function CompanionAvatar({
               <path
                 d="M 114 48 C 130 46, 139 62, 135 84 C 133 95, 122 98, 117 87 C 113 77, 111 59, 111 48 Z"
                 fill={`url(#${idPrefix}_dog_ear)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(140,80,40,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.bearNose}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
                 className="ony-floppy-ear-right"
               />
@@ -380,12 +391,13 @@ export function CompanionAvatar({
               <path
                 d="M 52 50 C 42 30, 42 6, 56 6 C 68 6, 70 28, 68 50 Z"
                 fill={`url(#${idPrefix}_bunny_body)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(220,160,180,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.bunnyEar[0]}
+                strokeOpacity="0.25"
                 strokeWidth="1.2"
               />
               <path
                 d="M 54 44 C 47 30, 47 13, 56 13 C 64 13, 66 28, 64 44 Z"
-                fill={isDark ? "#F8BAC7" : "#FDC4D1"}
+                fill={mc.bunnyEar[0]}
                 opacity="0.88"
               />
 
@@ -393,12 +405,13 @@ export function CompanionAvatar({
               <path
                 d="M 108 50 C 118 30, 118 6, 104 6 C 92 6, 90 28, 92 50 Z"
                 fill={`url(#${idPrefix}_bunny_body)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(220,160,180,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.bunnyEar[0]}
+                strokeOpacity="0.25"
                 strokeWidth="1.2"
               />
               <path
                 d="M 106 44 C 113 30, 113 13, 104 13 C 96 13, 94 28, 96 44 Z"
-                fill={isDark ? "#F8BAC7" : "#FDC4D1"}
+                fill={mc.bunnyEar[0]}
                 opacity="0.88"
               />
             </g>
@@ -412,14 +425,15 @@ export function CompanionAvatar({
                 cy="41"
                 r="15"
                 fill={`url(#${idPrefix}_bear_body)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(150,90,50,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.bearNose}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
               />
               <circle
                 cx="47"
                 cy="42"
                 r="8.5"
-                fill={isDark ? "#F8E0CF" : "#FFF1E5"}
+                fill={mc.bearEarInner}
                 opacity="0.9"
               />
 
@@ -429,14 +443,15 @@ export function CompanionAvatar({
                 cy="41"
                 r="15"
                 fill={`url(#${idPrefix}_bear_body)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(150,90,50,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.bearNose}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
               />
               <circle
                 cx="113"
                 cy="42"
                 r="8.5"
-                fill={isDark ? "#F8E0CF" : "#FFF1E5"}
+                fill={mc.bearEarInner}
                 opacity="0.9"
               />
             </g>
@@ -451,11 +466,11 @@ export function CompanionAvatar({
               />
               <path
                 d="M 48 30 C 45 22, 50 18, 56 21 C 58 24, 56 29, 51 31 Z"
-                fill="#322E30"
+                fill={mc.foxTip}
               />
               <path
                 d="M 49 48 C 45 36, 50 28, 58 32 C 63 35, 63 44, 61 48 Z"
-                fill="#FFF9F5"
+                fill={mc.foxFluff}
                 opacity="0.9"
               />
 
@@ -466,11 +481,11 @@ export function CompanionAvatar({
               />
               <path
                 d="M 112 30 C 115 22, 110 18, 104 21 C 102 24, 104 29, 109 31 Z"
-                fill="#322E30"
+                fill={mc.foxTip}
               />
               <path
                 d="M 111 48 C 115 36, 110 28, 102 32 C 97 35, 97 44, 99 48 Z"
-                fill="#FFF9F5"
+                fill={mc.foxFluff}
                 opacity="0.9"
               />
             </g>
@@ -484,7 +499,8 @@ export function CompanionAvatar({
                 cy="41"
                 r="16"
                 fill={`url(#${idPrefix}_panda_dark)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(30,30,40,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.noseFeature}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
               />
               {/* Right Panda Ear */}
@@ -493,7 +509,8 @@ export function CompanionAvatar({
                 cy="41"
                 r="16"
                 fill={`url(#${idPrefix}_panda_dark)`}
-                stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(30,30,40,0.18)"}
+                stroke={isDark ? mc.eyeHighlight : mc.noseFeature}
+                strokeOpacity="0.18"
                 strokeWidth="1.2"
               />
             </g>
@@ -517,13 +534,14 @@ export function CompanionAvatar({
             }
             stroke={
               isDark
-                ? "rgba(255, 255, 255, 0.16)"
+                ? mc.eyeHighlight
                 : targetAnimal === "Fox"
-                ? "rgba(180, 70, 30, 0.18)"
+                ? mc.foxFur[2]
                 : targetAnimal === "Bear"
-                ? "rgba(130, 80, 40, 0.18)"
-                : "rgba(160, 120, 100, 0.16)"
+                ? mc.bearNose
+                : mc.whisker
             }
+            strokeOpacity="0.18"
             strokeWidth="1.2"
             className="ony-body-plush"
           />
@@ -534,7 +552,7 @@ export function CompanionAvatar({
             cy="52"
             rx="32"
             ry="7"
-            fill="#FFFFFF"
+            fill={mc.eyeHighlight}
             opacity={isDark ? "0.22" : "0.38"}
           />
 
@@ -544,19 +562,19 @@ export function CompanionAvatar({
               {/* Soft Tabby Forehead Marks */}
               <path
                 d="M 80 48 L 80 56"
-                stroke={isDark ? "#D8A381" : "#E2AC8D"}
+                stroke={mc.catStripe}
                 strokeWidth="2.2"
                 strokeLinecap="round"
               />
               <path
                 d="M 74 50 L 73 57"
-                stroke={isDark ? "#D8A381" : "#E2AC8D"}
+                stroke={mc.catStripe}
                 strokeWidth="1.8"
                 strokeLinecap="round"
               />
               <path
                 d="M 86 50 L 87 57"
-                stroke={isDark ? "#D8A381" : "#E2AC8D"}
+                stroke={mc.catStripe}
                 strokeWidth="1.8"
                 strokeLinecap="round"
               />
@@ -566,7 +584,7 @@ export function CompanionAvatar({
                 cy="126"
                 rx="22"
                 ry="14"
-                fill="#FFFDFB"
+                fill={mc.creamTummy}
                 opacity={isDark ? "0.45" : "0.65"}
               />
             </>
@@ -580,7 +598,7 @@ export function CompanionAvatar({
                 cy="92"
                 rx="18"
                 ry="11"
-                fill="#FFFDF9"
+                fill={mc.dogMuzzle}
                 opacity={isDark ? "0.85" : "0.95"}
               />
               <ellipse
@@ -588,7 +606,7 @@ export function CompanionAvatar({
                 cy="128"
                 rx="24"
                 ry="13"
-                fill="#FFFDF9"
+                fill={mc.dogMuzzle}
                 opacity={isDark ? "0.55" : "0.75"}
               />
             </>
@@ -602,7 +620,7 @@ export function CompanionAvatar({
                 cy="126"
                 rx="22"
                 ry="14"
-                fill="#FFFFFF"
+                fill={mc.eyeHighlight}
                 opacity="0.8"
               />
             </>
@@ -616,7 +634,7 @@ export function CompanionAvatar({
                 cy="92"
                 rx="19"
                 ry="12"
-                fill={isDark ? "#FCEFE2" : "#FFF3E5"}
+                fill={mc.bearMuzzle}
                 opacity="0.95"
               />
               {/* Lighter belly patch */}
@@ -625,7 +643,7 @@ export function CompanionAvatar({
                 cy="126"
                 rx="23"
                 ry="14"
-                fill={isDark ? "#F5DEC9" : "#FBE2CC"}
+                fill={mc.bearBelly}
                 opacity="0.7"
               />
             </>
@@ -636,16 +654,16 @@ export function CompanionAvatar({
               {/* Fluffy Cream Cheeks */}
               <path
                 d="M 36 84 C 44 88, 50 94, 56 96 C 48 95, 41 91, 38 86 Z"
-                fill="#FFF9F5"
+                fill={mc.foxFluff}
               />
               <path
                 d="M 124 84 C 116 88, 110 94, 104 96 C 112 95, 119 91, 122 86 Z"
-                fill="#FFF9F5"
+                fill={mc.foxFluff}
               />
               {/* White Chest Bib */}
               <path
                 d="M 66 104 C 74 98, 86 98, 94 104 C 90 124, 70 124, 66 104 Z"
-                fill="#FFF9F5"
+                fill={mc.foxFluff}
               />
             </>
           )}
@@ -688,14 +706,14 @@ export function CompanionAvatar({
             <g className="ony-happy-eyes">
               <path
                 d="M 58 84 Q 64 77 70 84"
-                stroke={targetAnimal === "Panda" ? "#FFFFFF" : isDark ? "#EFEAE7" : "#2F2321"}
+                stroke={targetAnimal === "Panda" ? mc.eyeHighlight : mc.eyeArcStroke}
                 strokeWidth="3.2"
                 strokeLinecap="round"
                 fill="none"
               />
               <path
                 d="M 90 84 Q 96 77 102 84"
-                stroke={targetAnimal === "Panda" ? "#FFFFFF" : isDark ? "#EFEAE7" : "#2F2321"}
+                stroke={targetAnimal === "Panda" ? mc.eyeHighlight : mc.eyeArcStroke}
                 strokeWidth="3.2"
                 strokeLinecap="round"
                 fill="none"
@@ -710,7 +728,7 @@ export function CompanionAvatar({
                 cy="82"
                 rx="5"
                 ry="6"
-                fill={targetAnimal === "Panda" ? "#FFFFFF" : isDark ? "#281E1C" : "#2F2321"}
+                fill={targetAnimal === "Panda" ? mc.eyeHighlight : mc.eyeIris}
                 className="ony-eye-left"
               />
               {/* Left Specular Highlight */}
@@ -718,13 +736,13 @@ export function CompanionAvatar({
                 cx="62"
                 cy="80"
                 r="2.2"
-                fill={targetAnimal === "Panda" ? "#2A2932" : "#FFFFFF"}
+                fill={targetAnimal === "Panda" ? mc.eyeDarkAlt : mc.eyeHighlight}
               />
               <circle
                 cx="65.5"
                 cy="84"
                 r="0.9"
-                fill={targetAnimal === "Panda" ? "#2A2932" : "#FFFFFF"}
+                fill={targetAnimal === "Panda" ? mc.eyeDarkAlt : mc.eyeHighlight}
               />
 
               {/* Right Eye */}
@@ -733,7 +751,7 @@ export function CompanionAvatar({
                 cy="82"
                 rx="5"
                 ry="6"
-                fill={targetAnimal === "Panda" ? "#FFFFFF" : isDark ? "#281E1C" : "#2F2321"}
+                fill={targetAnimal === "Panda" ? mc.eyeHighlight : mc.eyeIris}
                 className="ony-eye-right"
               />
               {/* Right Specular Highlight */}
@@ -741,13 +759,13 @@ export function CompanionAvatar({
                 cx="94"
                 cy="80"
                 r="2.2"
-                fill={targetAnimal === "Panda" ? "#2A2932" : "#FFFFFF"}
+                fill={targetAnimal === "Panda" ? mc.eyeDarkAlt : mc.eyeHighlight}
               />
               <circle
                 cx="97.5"
                 cy="84"
                 r="0.9"
-                fill={targetAnimal === "Panda" ? "#2A2932" : "#FFFFFF"}
+                fill={targetAnimal === "Panda" ? mc.eyeDarkAlt : mc.eyeHighlight}
               />
             </g>
           )}
@@ -758,7 +776,7 @@ export function CompanionAvatar({
             cy="91"
             rx="8.5"
             ry="5"
-            fill="var(--theme-accent, #F6A89E)"
+            fill="var(--theme-accent)"
             opacity={
               activeMood === "happy" || activeMood === "comforting"
                 ? isDark
@@ -775,7 +793,7 @@ export function CompanionAvatar({
             cy="91"
             rx="8.5"
             ry="5"
-            fill="var(--theme-accent, #F6A89E)"
+            fill="var(--theme-accent)"
             opacity={
               activeMood === "happy" || activeMood === "comforting"
                 ? isDark
@@ -793,14 +811,12 @@ export function CompanionAvatar({
             d="M 77.5 87 Q 80 85 82.5 87 Q 80 89.5 77.5 87 Z"
             fill={
               targetAnimal === "Cat" || targetAnimal === "Bunny"
-                ? isDark
-                  ? "#F08FA3"
-                  : "#E88297"
+                ? mc.catNose
                 : targetAnimal === "Bear"
-                ? "#593320"
+                ? mc.bearNose
                 : targetAnimal === "Fox" || targetAnimal === "Panda"
-                ? "#2A282A"
-                : "#784B34"
+                ? mc.noseFeature
+                : mc.dogNose
             }
           />
 
@@ -809,8 +825,8 @@ export function CompanionAvatar({
             /* Speaking Gentle Bounce Mouth */
             <path
               d="M 76 91 Q 80 90 84 91 Q 80 97 76 91 Z"
-              fill={isDark ? "#F88F9E" : "#E27382"}
-              stroke={isDark ? "#3A2B27" : "#5A3830"}
+              fill={mc.mouthPink}
+              stroke={mc.mouthSpeakingStroke}
               strokeWidth="1.2"
               className="ony-mouth-speaking"
             />
@@ -818,7 +834,7 @@ export function CompanionAvatar({
             /* Soft Upcurved Smile */
             <path
               d="M 75 91 Q 80 96 85 91"
-              stroke={isDark ? "#4B3632" : "#5A3830"}
+              stroke={mc.mouthStroke}
               strokeWidth="1.8"
               strokeLinecap="round"
               fill="none"
@@ -827,7 +843,7 @@ export function CompanionAvatar({
             /* Classic Gentle Chibi 'w' Mouth */
             <path
               d="M 75 91 Q 77.5 93.8 80 91.2 Q 82.5 93.8 85 91"
-              stroke={isDark ? "#4B3632" : "#5A3830"}
+              stroke={mc.mouthStroke}
               strokeWidth="1.6"
               strokeLinecap="round"
               fill="none"
@@ -850,12 +866,13 @@ export function CompanionAvatar({
                   : targetAnimal === "Bear"
                   ? `url(#${idPrefix}_bear_body)`
                   : targetAnimal === "Fox"
-                  ? "#FFF9F5"
+                  ? mc.foxFluff
                   : targetAnimal === "Bunny"
                   ? `url(#${idPrefix}_bunny_body)`
                   : `url(#${idPrefix}_cat_body)`
               }
-              stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(160,110,90,0.18)"}
+              stroke={outlineStroke}
+              strokeOpacity="0.18"
               strokeWidth="1.1"
             />
             <ellipse
@@ -871,12 +888,13 @@ export function CompanionAvatar({
                   : targetAnimal === "Bear"
                   ? `url(#${idPrefix}_bear_body)`
                   : targetAnimal === "Fox"
-                  ? "#FFF9F5"
+                  ? mc.foxFluff
                   : targetAnimal === "Bunny"
                   ? `url(#${idPrefix}_bunny_body)`
                   : `url(#${idPrefix}_cat_body)`
               }
-              stroke={isDark ? "rgba(255,255,255,0.18)" : "rgba(160,110,90,0.18)"}
+              stroke={outlineStroke}
+              strokeOpacity="0.18"
               strokeWidth="1.1"
             />
           </g>
@@ -887,7 +905,7 @@ export function CompanionAvatar({
               {/* Theme-colored collar ribbon */}
               <path
                 d="M 64 107 Q 80 114 96 107"
-                stroke="var(--theme-primary, #F28C78)"
+                stroke="var(--theme-primary)"
                 strokeWidth="3.2"
                 strokeLinecap="round"
                 fill="none"
@@ -899,7 +917,7 @@ export function CompanionAvatar({
                 cy="114"
                 r="5.5"
                 fill={`url(#${idPrefix}_gold_tag)`}
-                stroke="#C28912"
+                stroke={mc.goldStroke}
                 strokeWidth="0.8"
               />
               {/* Cute tiny ONY engraving or heart */}
@@ -907,11 +925,11 @@ export function CompanionAvatar({
                 x="80"
                 y="116"
                 textAnchor="middle"
-                fontSize="4px"
+                fontSize="4"
                 fontWeight="900"
-                fill="#5E3807"
+                fill={mc.goldText}
                 fontFamily="system-ui, sans-serif"
-                letterSpacing="-0.2px"
+                letterSpacing="-0.2"
               >
                 ONY
               </text>
@@ -924,7 +942,7 @@ export function CompanionAvatar({
               {/* Heart floating over right cheek */}
               <path
                 d="M 112 62 C 112 58, 116 56, 118 58 C 120 56, 124 58, 124 62 C 124 67, 118 71, 118 71 C 118 71, 112 67, 112 62 Z"
-                fill="var(--theme-primary, #F28C78)"
+                fill="var(--theme-primary)"
                 opacity="0.9"
               />
             </g>
@@ -935,7 +953,7 @@ export function CompanionAvatar({
               {/* Tiny soft star twinkle */}
               <path
                 d="M 114 62 L 115.5 65.5 L 119 67 L 115.5 68.5 L 114 72 L 112.5 68.5 L 109 67 L 112.5 65.5 Z"
-                fill="var(--theme-accent, #FAD2C8)"
+                fill="var(--theme-accent)"
                 opacity="0.85"
               />
             </g>

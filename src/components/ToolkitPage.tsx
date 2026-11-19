@@ -23,6 +23,11 @@ export interface ToolkitPageProps {
   isMusicPlaying?: boolean;
   onToggleMusic?: () => void;
   onSaveToVault?: (text: string, title: string) => Promise<void> | void;
+  onRecordCompletion?: (
+    guideId: string,
+    guideTitle: string,
+    mood: "better" | "same" | "worse",
+  ) => Promise<void> | void;
   onPreloadChatTopic?: (topic: string) => void;
   initialGuideId?: string;
 }
@@ -44,6 +49,7 @@ export function ToolkitPage({
   isMusicPlaying = false,
   onToggleMusic,
   onSaveToVault,
+  onRecordCompletion,
   onPreloadChatTopic,
   initialGuideId,
 }: ToolkitPageProps) {
@@ -104,6 +110,7 @@ export function ToolkitPage({
         onBack={() => setActiveGuide(null)}
         onTalkToOny={handleTalkToOnyAboutGuide}
         onSaveToVault={onSaveToVault}
+        onRecordCompletion={onRecordCompletion}
         helplines={MALAYSIAN_CRISIS_HELPLINES}
         notify={notify}
         lang={language}
@@ -118,8 +125,8 @@ export function ToolkitPage({
         display: "flex",
         flexDirection: "column",
         minHeight: "100%",
-        background: isDark ? "var(--theme-bg, #141010)" : "var(--theme-bg, #FFF9F5)",
-        color: "var(--theme-text-primary, #2d2424)",
+        background: "var(--theme-bg)",
+        color: "var(--theme-text-primary)",
       }}
     >
       {/* 1. Page Header with back button */}
@@ -130,8 +137,8 @@ export function ToolkitPage({
           alignItems: "center",
           justifyContent: "space-between",
           padding: "12px 16px",
-          background: isDark ? "var(--theme-header-bg, #1e1919)" : "var(--theme-header-bg, #ffffff)",
-          borderBottom: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+          background: "var(--theme-header-bg)",
+          borderBottom: "1px solid var(--theme-border)",
           position: "sticky",
           top: 0,
           zIndex: 10,
@@ -147,8 +154,8 @@ export function ToolkitPage({
             gap: "6px",
             border: "none",
             background: "transparent",
-            color: "var(--theme-text-primary, #2d2424)",
-            fontSize: "14px",
+            color: "var(--theme-text-primary)",
+            fontSize: "var(--font-button)",
             fontWeight: 800,
             cursor: "pointer",
             minHeight: "44px",
@@ -163,10 +170,10 @@ export function ToolkitPage({
 
         <span
           style={{
-            fontSize: "15px",
+            fontSize: "calc(15px * var(--font-scale, 1))",
             fontWeight: 900,
             letterSpacing: "-0.01em",
-            color: "var(--theme-text-primary, #2d2424)",
+            color: "var(--theme-text-primary)",
           }}
         >
           {isBm ? "Peralatan" : isZh ? "心理工具箱" : "Toolkit"}
@@ -181,12 +188,12 @@ export function ToolkitPage({
             }
           }}
           style={{
-            border: "1px solid color-mix(in srgb, #ef4444 40%, transparent)",
+            border: "1px solid var(--theme-danger-border)",
             borderRadius: "100px",
             padding: "5px 10px",
-            background: isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2",
-            color: "#ef4444",
-            fontSize: "11px",
+            background: "var(--theme-danger-soft)",
+            color: "var(--theme-danger)",
+            fontSize: "calc(11px * var(--font-scale, 1))",
             fontWeight: 800,
             cursor: "pointer",
             minHeight: "36px",
@@ -205,13 +212,9 @@ export function ToolkitPage({
           style={{
             borderRadius: "24px",
             padding: "18px 20px",
-            background: isDark
-              ? "var(--theme-surface, #1e1919)"
-              : "var(--theme-surface, #ffffff)",
-            border: "1.5px solid var(--theme-border, rgba(0,0,0,0.08))",
-            boxShadow: isDark
-              ? "0 4px 20px rgba(0,0,0,0.3)"
-              : "0 4px 20px rgba(233,111,115,0.08)",
+            background: "var(--theme-surface)",
+            border: "1.5px solid var(--theme-border)",
+            boxShadow: "var(--theme-shadow-sm)",
             marginBottom: "20px",
             display: "flex",
             alignItems: "flex-start",
@@ -223,12 +226,12 @@ export function ToolkitPage({
               width: "44px",
               height: "44px",
               borderRadius: "14px",
-              background: "var(--theme-primary, #F28C78)",
-              color: "#ffffff",
+              background: "var(--theme-primary)",
+              color: "var(--theme-on-primary)",
               display: "grid",
               placeItems: "center",
               flexShrink: 0,
-              boxShadow: "0 4px 12px color-mix(in srgb, var(--theme-primary, #F28C78) 40%, transparent)",
+              boxShadow: "var(--theme-shadow-primary)",
             }}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -240,9 +243,9 @@ export function ToolkitPage({
             <h1
               style={{
                 margin: "0 0 4px",
-                fontSize: "18px",
+                fontSize: "var(--font-heading)",
                 fontWeight: 900,
-                color: "var(--theme-text-primary, #2d2424)",
+                color: "var(--theme-text-primary)",
                 letterSpacing: "-0.01em",
               }}
             >
@@ -251,8 +254,8 @@ export function ToolkitPage({
             <p
               style={{
                 margin: 0,
-                fontSize: "12.5px",
-                color: "var(--theme-text-secondary, #6b645f)",
+                fontSize: "var(--font-body-sm)",
+                color: "var(--theme-text-secondary)",
                 lineHeight: 1.4,
               }}
             >
@@ -269,11 +272,11 @@ export function ToolkitPage({
         <section style={{ marginBottom: "24px" }}>
           <h2
             style={{
-              fontSize: "13px",
+              fontSize: "var(--font-body-sm)",
               fontWeight: 800,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
-              color: "var(--theme-primary, #F28C78)",
+              color: "var(--theme-primary)",
               margin: "0 0 12px",
             }}
           >
@@ -331,10 +334,10 @@ export function ToolkitPage({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
             <h2
               style={{
-                fontSize: "14px",
+                fontSize: "var(--font-body)",
                 fontWeight: 800,
                 margin: 0,
-                color: "var(--theme-text-primary, #2d2424)",
+                color: "var(--theme-text-primary)",
               }}
             >
               {isBm ? "Bagaimanakah perasaan anda sekarang?" : isZh ? "您此刻的心情是？" : "How are you feeling?"}
@@ -347,8 +350,8 @@ export function ToolkitPage({
                 style={{
                   border: "none",
                   background: "transparent",
-                  fontSize: "11px",
-                  color: "var(--theme-primary, #F28C78)",
+                  fontSize: "calc(11px * var(--font-scale, 1))",
+                  color: "var(--theme-primary)",
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
@@ -371,18 +374,18 @@ export function ToolkitPage({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
             <h2
               style={{
-                fontSize: "13px",
+                fontSize: "var(--font-body-sm)",
                 fontWeight: 800,
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
-                color: "var(--theme-primary, #F28C78)",
+                color: "var(--theme-primary)",
                 margin: 0,
               }}
             >
               📖 {isBm ? "Panduan Bantuan Diri" : isZh ? "自护指引库" : "Self-Help Guides"}
             </h2>
 
-            <span style={{ fontSize: "11px", opacity: 0.65, fontWeight: 700 }}>
+            <span style={{ fontSize: "calc(11px * var(--font-scale, 1))", opacity: 0.65, fontWeight: 700 }}>
               {filteredGuides.length} {isBm ? "panduan" : isZh ? "个指南" : "guides"}
             </span>
           </div>

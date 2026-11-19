@@ -6,11 +6,21 @@ import React, {
   type ChangeEvent,
 } from "react";
 import type { User } from "firebase/auth";
+import { auth } from "../firebase/config";
 import {
+  changeUserPassword,
+  linkGoogleProvider,
+  sendPasswordReset,
+  unlinkGoogleProvider,
+} from "../firebase/auth";
+import {
+  exportUserData,
+  submitFeedbackReport,
   updateUserProfile,
   writeSystemLog,
   type UserProfileData,
 } from "../firebase/firestore";
+import { uploadUserMedia } from "../firebase/storage";
 import {
   useTheme,
   useSettings,
@@ -42,20 +52,10 @@ export function getAnimalFromPreset(preset?: string): "Cat" | "Dog" | "Bunny" | 
   return null;
 }
 
-// ==========================================
-// Settings Custom Storage Keys & Types
-// ==========================================
-
-export const SETTINGS_STORAGE_KEYS = {
-  PROFILE: "ony_profile_customization_v1",
-  APPEARANCE_MODE: "ony_appearance_mode_v1",
-  COLOR_THEME: "ony_color_theme_v1",
-  FONT_SCALE: "ony_font_scale_v1",
-  NOTIFICATION_PREFS: "ony_notification_prefs_v1",
-  QUIET_HOURS: "ony_quiet_hours_v1",
-  APP_LOCK: "ony_app_lock_settings_v1",
-  SOUND_HAPTICS: "ony_sound_haptics_prefs_v1",
-};
+function getScopedProfileKey(uid?: string | null): string {
+  const clean = (uid || "").trim();
+  return clean ? `ony_profile_customization_v2_${clean}` : "ony_profile_customization_v2_signed_out";
+}
 
 export interface StoredProfileCustomization {
   displayName: string;
@@ -75,23 +75,18 @@ export interface StoredAppearanceSettings {
   fontSizePercent?: number;
 }
 
-export interface StoredAppLockSettings {
-  enabled: boolean;
-  pin?: string;
-  pinHash?: string;
-  biometricEnabled: boolean;
-  lockDelay: "immediately" | "1min" | "5min";
-}
-
-export interface StoredSoundHapticsSettings {
-  soundsEnabled: boolean;
-  hapticsEnabled: boolean;
-  voiceVolume: number; // 0 to 100
-}
-
-export function loadStoredProfile(): StoredProfileCustomization {
+export function loadStoredProfile(uid?: string | null): StoredProfileCustomization {
+  const cleanUid = (uid || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) {
+    return {
+      displayName: "",
+      avatarType: "initials",
+      ageRange: "18-24",
+      pronouns: "prefer not to say",
+    };
+  }
   try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEYS.PROFILE);
+    const raw = localStorage.getItem(getScopedProfileKey(cleanUid));
     if (raw) return JSON.parse(raw);
   } catch {}
   return {
@@ -102,25 +97,12 @@ export function loadStoredProfile(): StoredProfileCustomization {
   };
 }
 
-export function saveStoredProfile(profile: StoredProfileCustomization) {
+export function saveStoredProfile(profile: StoredProfileCustomization, uid?: string | null) {
+  const cleanUid = (uid || auth.currentUser?.uid || "").trim();
+  if (!cleanUid) return;
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    localStorage.setItem(getScopedProfileKey(cleanUid), JSON.stringify(profile));
   } catch {}
-}
-
-export function loadStoredAppearance(): StoredAppearanceSettings {
-  try {
-    const rawMode = localStorage.getItem(SETTINGS_STORAGE_KEYS.APPEARANCE_MODE);
-    const rawTheme = localStorage.getItem(SETTINGS_STORAGE_KEYS.COLOR_THEME);
-    const scale = localStorage.getItem(SETTINGS_STORAGE_KEYS.FONT_SCALE);
-    return {
-      themeMode: (rawMode as "light" | "dark" | "system") || "system",
-      themeId: (rawTheme as ThemeId) || "peach",
-      fontSizeScale: (scale as "small" | "default" | "large" | "extraLarge") || "default",
-      fontSizePercent: scale ? FONT_SCALE_VALUES[scale as FontSizeScale] : 100,
-    };
-  } catch {}
-  return { themeMode: "system", themeId: "peach", fontSizeScale: "default", fontSizePercent: 100 };
 }
 
 export function applyAppearanceToDom(settings: StoredAppearanceSettings) {
@@ -129,32 +111,6 @@ export function applyAppearanceToDom(settings: StoredAppearanceSettings) {
   const tMode = settings.themeMode || "system";
   const percent = settings.fontSizePercent || FONT_SCALE_VALUES[settings.fontSizeScale || "default"] || 100;
   applyTokensToDocument(tId, tMode, percent);
-}
-
-export function loadStoredAppLock(): StoredAppLockSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEYS.APP_LOCK);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {
-    enabled: false,
-    pin: "",
-    pinHash: "",
-    biometricEnabled: false,
-    lockDelay: "immediately",
-  };
-}
-
-export function loadStoredSoundHaptics(): StoredSoundHapticsSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEYS.SOUND_HAPTICS);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {
-    soundsEnabled: true,
-    hapticsEnabled: true,
-    voiceVolume: 80,
-  };
 }
 
 // ==========================================
@@ -540,6 +496,7 @@ export interface EditProfileScreenProps {
   currentDisplayName: string;
   onSaveDisplayName: (name: string) => void;
   currentEmail?: string;
+  initialProfile?: UserProfileData | null;
   notify: (msg: string) => void;
   currentUser?: User | null;
 }
@@ -560,36 +517,63 @@ export function EditProfileScreen({
   currentDisplayName,
   onSaveDisplayName,
   currentEmail,
+  initialProfile,
   notify,
   currentUser,
 }: EditProfileScreenProps) {
-  const stored = loadStoredProfile();
+  const uid = currentUser?.uid || auth.currentUser?.uid || "";
+  const stored = loadStoredProfile(uid);
 
-  const [username, setUsername] = useState(currentDisplayName || stored.displayName || "ONY Member");
-  const [preferredName, setPreferredName] = useState(stored.preferredName || "");
-  const [bio, setBio] = useState(stored.bio || "");
-  const [avatarType, setAvatarType] = useState<"initials" | "photo" | "preset">(stored.avatarType || "initials");
-  const [avatarUrl, setAvatarUrl] = useState<string>(stored.avatarUrl || "");
-  const [presetAvatar, setPresetAvatar] = useState<string>(stored.presetAvatar || "🐱");
-  const [ageRange, setAgeRange] = useState(stored.ageRange || "18-24");
-  const [pronouns, setPronouns] = useState(stored.pronouns || "prefer not to say");
+  const initialAvatarUrlRaw = initialProfile?.avatarUrl || stored.avatarUrl || "";
+  const isHttpAvatar = initialAvatarUrlRaw.startsWith("http://") || initialAvatarUrlRaw.startsWith("https://");
+  const initialAvatarType: "initials" | "photo" | "preset" = isHttpAvatar
+    ? "photo"
+    : initialAvatarUrlRaw
+      ? "preset"
+      : stored.avatarType || "initials";
+
+  const [username, setUsername] = useState(
+    currentDisplayName || initialProfile?.displayName || stored.displayName || "ONY Member",
+  );
+  const [preferredName, setPreferredName] = useState(
+    initialProfile?.preferredName ?? stored.preferredName ?? "",
+  );
+  const [bio, setBio] = useState(initialProfile?.bio ?? stored.bio ?? "");
+  const [avatarType, setAvatarType] = useState<"initials" | "photo" | "preset">(initialAvatarType);
+  const [avatarUrl, setAvatarUrl] = useState<string>(isHttpAvatar ? initialAvatarUrlRaw : "");
+  const [presetAvatar, setPresetAvatar] = useState<string>(
+    !isHttpAvatar && initialAvatarUrlRaw ? initialAvatarUrlRaw : stored.presetAvatar || "🐱",
+  );
+  const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
+  const [ageRange, setAgeRange] = useState(initialProfile?.ageRange || stored.ageRange || "18-24");
+  const [pronouns, setPronouns] = useState(
+    initialProfile?.pronouns || stored.pronouns || "prefer not to say",
+  );
   const [customPronouns, setCustomPronouns] = useState("");
 
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
 
-  // Initial reference to track changes
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+  }, []);
+
   const initialValuesRef = useRef({
-    username: currentDisplayName || stored.displayName || "ONY Member",
-    preferredName: stored.preferredName || "",
-    bio: stored.bio || "",
-    avatarType: stored.avatarType || "initials",
-    avatarUrl: stored.avatarUrl || "",
-    presetAvatar: stored.presetAvatar || "🐱",
-    ageRange: stored.ageRange || "18-24",
-    pronouns: stored.pronouns || "prefer not to say",
+    username: currentDisplayName || initialProfile?.displayName || stored.displayName || "ONY Member",
+    preferredName: initialProfile?.preferredName ?? stored.preferredName ?? "",
+    bio: initialProfile?.bio ?? stored.bio ?? "",
+    avatarType: initialAvatarType,
+    avatarUrl: isHttpAvatar ? initialAvatarUrlRaw : "",
+    presetAvatar: !isHttpAvatar && initialAvatarUrlRaw ? initialAvatarUrlRaw : stored.presetAvatar || "🐱",
+    ageRange: initialProfile?.ageRange || stored.ageRange || "18-24",
+    pronouns: initialProfile?.pronouns || stored.pronouns || "prefer not to say",
     customPronouns: "",
   });
 
@@ -610,6 +594,7 @@ export function EditProfileScreen({
     bio !== initialValuesRef.current.bio ||
     avatarType !== initialValuesRef.current.avatarType ||
     avatarUrl !== initialValuesRef.current.avatarUrl ||
+    Boolean(pendingPhotoFile) ||
     presetAvatar !== initialValuesRef.current.presetAvatar ||
     ageRange !== initialValuesRef.current.ageRange ||
     pronouns !== initialValuesRef.current.pronouns ||
@@ -635,66 +620,61 @@ export function EditProfileScreen({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        // Resize square to 200x200 canvas
-        const canvas = document.createElement("canvas");
-        const size = Math.min(img.width, img.height);
-        canvas.width = 200;
-        canvas.height = 200;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          const sx = (img.width - size) / 2;
-          const sy = (img.height - size) / 2;
-          ctx.drawImage(img, sx, sy, size, size, 0, 0, 200, 200);
-          const compressed = canvas.toDataURL("image/jpeg", 0.85);
-          setAvatarUrl(compressed);
-          setAvatarType("photo");
-          notify("Photo attached. Remember to tap Save!");
-        }
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+    }
+    const objUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objUrl;
+    setPendingPhotoFile(file);
+    setAvatarUrl(objUrl);
+    setAvatarType("photo");
+    notify("Photo selected. Tap Save to upload.");
   };
 
   const handleSave = async () => {
     if (!canSave) return;
+    if (!uid) {
+      notify("Please sign in to save your profile.");
+      return;
+    }
     setIsSaving(true);
 
-    const resolvedPronouns = pronouns === "Custom" && customPronouns.trim() ? customPronouns.trim() : pronouns;
-
-    const profileData: StoredProfileCustomization = {
-      displayName: trimmedUsername,
-      preferredName: preferredName.trim(),
-      bio: bio.trim(),
-      avatarType,
-      avatarUrl: avatarType === "photo" ? avatarUrl : "",
-      presetAvatar: avatarType === "preset" ? presetAvatar : "",
-      ageRange,
-      pronouns: resolvedPronouns,
-    };
+    const resolvedPronouns =
+      pronouns === "Custom" && customPronouns.trim() ? customPronouns.trim() : pronouns;
 
     try {
-      // 1. Save locally
-      saveStoredProfile(profileData);
-
-      // 2. Update global display name immediately everywhere
-      onSaveDisplayName(trimmedUsername);
-
-      // 3. Save to Firebase profile if user is authenticated
-      if (currentUser?.uid) {
-        await updateUserProfile(currentUser.uid, {
-          displayName: trimmedUsername,
-          bio: bio.trim(),
-          avatarUrl: avatarType === "photo" ? avatarUrl : presetAvatar,
-          preferredName: preferredName.trim(),
-          ageRange,
-          pronouns: resolvedPronouns,
-        } as Partial<UserProfileData>);
+      let resolvedPhotoUrl = avatarType === "photo" ? avatarUrl : "";
+      if (avatarType === "photo" && pendingPhotoFile) {
+        const uploaded = await uploadUserMedia(uid, "avatars", pendingPhotoFile, {
+          maxDimension: 512,
+        });
+        resolvedPhotoUrl = uploaded.url;
       }
+
+      const persistedAvatarValue =
+        avatarType === "photo" ? resolvedPhotoUrl : avatarType === "preset" ? presetAvatar : "";
+
+      await updateUserProfile(uid, {
+        displayName: trimmedUsername,
+        bio: bio.trim(),
+        avatarUrl: persistedAvatarValue,
+        preferredName: preferredName.trim(),
+        ageRange,
+        pronouns: resolvedPronouns,
+      } as Partial<UserProfileData>);
+
+      const profileData: StoredProfileCustomization = {
+        displayName: trimmedUsername,
+        preferredName: preferredName.trim(),
+        bio: bio.trim(),
+        avatarType,
+        avatarUrl: avatarType === "photo" ? resolvedPhotoUrl : "",
+        presetAvatar: avatarType === "preset" ? presetAvatar : "",
+        ageRange,
+        pronouns: resolvedPronouns,
+      };
+      saveStoredProfile(profileData, uid);
+      onSaveDisplayName(trimmedUsername);
 
       writeSystemLog({
         level: "info",
@@ -705,10 +685,9 @@ export function EditProfileScreen({
 
       notify("Profile updated successfully!");
       back();
-    } catch (err) {
-      console.error("[EditProfile] Save notice:", err);
-      notify("Profile saved locally!");
-      back();
+    } catch (err: any) {
+      console.error("[EditProfile] Save failed:", err);
+      notify(err?.message || "Could not save profile changes. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -822,7 +801,7 @@ export function EditProfileScreen({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               maxLength={30}
-              placeholder="e.g. Alex Tan"
+              placeholder="e.g. Nadia"
             />
             {usernameError && <span className="form-field-error-text">{usernameError}</span>}
             <small className="form-field-hint">
@@ -1232,7 +1211,7 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
                         height: "18px",
                         borderRadius: "50%",
                         backgroundColor: def.previewHex,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                        boxShadow: "var(--theme-shadow-xs)",
                       }}
                     />
                     <span
@@ -1241,7 +1220,7 @@ export function AppearanceScreen({ back, notify }: AppearanceScreenProps) {
                         height: "18px",
                         borderRadius: "50%",
                         backgroundColor: def.accentHex,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                        boxShadow: "var(--theme-shadow-xs)",
                       }}
                     />
                   </div>
@@ -1497,25 +1476,6 @@ export function NotificationSettingsScreen({ back, notify }: NotificationSetting
   }, [settings.notifications]);
 
   const handleSave = async () => {
-    try {
-      localStorage.setItem(
-        SETTINGS_STORAGE_KEYS.NOTIFICATION_PREFS,
-        JSON.stringify({
-          dailyCheckin: dailyCheckinEnabled,
-          dailyCheckinTime,
-          categories,
-        }),
-      );
-      localStorage.setItem(
-        SETTINGS_STORAGE_KEYS.QUIET_HOURS,
-        JSON.stringify({
-          enabled: quietHoursEnabled,
-          start: quietStart,
-          end: quietEnd,
-        }),
-      );
-    } catch {}
-
     await updateSettings({
       notifications: {
         dailyCheckinEnabled,
@@ -1689,45 +1649,38 @@ export interface AppLockScreenProps {
 
 export function AppLockScreen({ back, notify }: AppLockScreenProps) {
   const { settings, updateSettings } = useSettings();
-  const stored = loadStoredAppLock();
+  const activeLock = settings.appLock || settings.appLockPreferences;
 
-  const [enabled, setEnabled] = useState(
-    settings.appLock?.enabled ?? stored.enabled
-  );
+  const [enabled, setEnabled] = useState(activeLock?.enabled ?? false);
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [hasExistingPin, setHasExistingPin] = useState(
-    Boolean(settings.appLock?.pinHash || stored.pinHash || stored.pin)
-  );
-  const [biometricEnabled, setBiometricEnabled] = useState(
-    settings.appLock?.biometricEnabled ?? stored.biometricEnabled
-  );
+  const [hasExistingPin, setHasExistingPin] = useState(Boolean(activeLock?.pinHash));
+  const [biometricEnabled, setBiometricEnabled] = useState(activeLock?.biometricEnabled ?? false);
   const [lockDelay, setLockDelay] = useState<"immediately" | "1min" | "5min">(
-    settings.appLock?.lockDelay ?? (stored.lockDelay || "immediately")
+    activeLock?.lockDelay || activeLock?.lockAfter || "immediately",
   );
 
   const [isChangingPin, setIsChangingPin] = useState(!hasExistingPin);
   const [pinError, setPinError] = useState("");
 
-  // Sync if settings load asynchronously
   useEffect(() => {
-    if (settings.appLock) {
-      setEnabled(settings.appLock.enabled);
-      setBiometricEnabled(settings.appLock.biometricEnabled);
-      setLockDelay(settings.appLock.lockDelay || "immediately");
-      if (settings.appLock.pinHash) {
+    const lockCfg = settings.appLock || settings.appLockPreferences;
+    if (lockCfg) {
+      setEnabled(lockCfg.enabled);
+      setBiometricEnabled(lockCfg.biometricEnabled);
+      setLockDelay(lockCfg.lockDelay || lockCfg.lockAfter || "immediately");
+      if (lockCfg.pinHash) {
         setHasExistingPin(true);
       }
     }
-  }, [settings.appLock]);
+  }, [settings.appLock, settings.appLockPreferences]);
 
-  // Check biometric support
   const isBiometricSupported =
     typeof window !== "undefined" &&
     typeof window.PublicKeyCredential !== "undefined";
 
   const handleSave = async () => {
-    let nextPinHash = settings.appLock?.pinHash || stored.pinHash || "";
+    let nextPinHash = activeLock?.pinHash || "";
 
     if (enabled && isChangingPin) {
       if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
@@ -1744,19 +1697,6 @@ export function AppLockScreen({ back, notify }: AppLockScreenProps) {
     if (!enabled) {
       nextPinHash = "";
     }
-
-    try {
-      // Never store plaintext pin in localStorage! Store hash only.
-      localStorage.setItem(
-        SETTINGS_STORAGE_KEYS.APP_LOCK,
-        JSON.stringify({
-          enabled,
-          pinHash: nextPinHash,
-          biometricEnabled: enabled && biometricEnabled,
-          lockDelay,
-        }),
-      );
-    } catch {}
 
     await updateSettings({
       appLock: {
@@ -1919,38 +1859,22 @@ export interface SoundHapticsScreenProps {
 
 export function SoundHapticsScreen({ back, notify, onOpenAmbientModal }: SoundHapticsScreenProps) {
   const { settings, updateSettings } = useSettings();
-  const stored = loadStoredSoundHaptics();
+  const activeSound = settings.soundHaptics || settings.soundHapticsPreferences;
 
-  const [sounds, setSounds] = useState(
-    settings.soundHaptics?.soundsEnabled ?? stored.soundsEnabled
-  );
-  const [haptics, setHaptics] = useState(
-    settings.soundHaptics?.hapticsEnabled ?? stored.hapticsEnabled
-  );
-  const [volume, setVolume] = useState(
-    settings.soundHaptics?.voiceVolume ?? stored.voiceVolume
-  );
+  const [sounds, setSounds] = useState(activeSound?.soundsEnabled ?? true);
+  const [haptics, setHaptics] = useState(activeSound?.hapticsEnabled ?? true);
+  const [volume, setVolume] = useState(activeSound?.voiceVolume ?? 80);
 
   useEffect(() => {
-    if (settings.soundHaptics) {
-      setSounds(settings.soundHaptics.soundsEnabled);
-      setHaptics(settings.soundHaptics.hapticsEnabled);
-      setVolume(settings.soundHaptics.voiceVolume);
+    const soundCfg = settings.soundHaptics || settings.soundHapticsPreferences;
+    if (soundCfg) {
+      setSounds(soundCfg.soundsEnabled);
+      setHaptics(soundCfg.hapticsEnabled);
+      setVolume(soundCfg.voiceVolume);
     }
-  }, [settings.soundHaptics]);
+  }, [settings.soundHaptics, settings.soundHapticsPreferences]);
 
   const handleSave = async () => {
-    try {
-      localStorage.setItem(
-        SETTINGS_STORAGE_KEYS.SOUND_HAPTICS,
-        JSON.stringify({
-          soundsEnabled: sounds,
-          hapticsEnabled: haptics,
-          voiceVolume: volume,
-        }),
-      );
-    } catch {}
-
     await updateSettings({
       soundHaptics: {
         soundsEnabled: sounds,
@@ -2074,12 +1998,24 @@ export function ChangePasswordScreen({ back, notify, userEmail }: ChangePassword
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resetSending, setResetSending] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const hasPasswordProvider =
+    auth.currentUser?.providerData.some((p) => p.providerId === "password") ?? true;
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
+    if (!hasPasswordProvider) {
+      setError("Your account uses Google sign-in. Manage your password through your Google account.");
+      return;
+    }
+    if (!currentPassword) {
+      setError("Please enter your current password.");
+      return;
+    }
     if (!newPassword || newPassword.length < 6) {
       setError("New password must be at least 6 characters long.");
       return;
@@ -2090,18 +2026,47 @@ export function ChangePasswordScreen({ back, notify, userEmail }: ChangePassword
     }
 
     setLoading(true);
-    // TODO: Connect Firebase Auth reauthentication and updatePassword(auth.currentUser, newPassword)
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await changeUserPassword(currentPassword, newPassword);
       writeSystemLog({
         level: "info",
         category: "auth",
         action: "PASSWORD_CHANGED",
-        message: "User updated account credentials.",
+        message: "User updated account password.",
       }).catch(() => {});
       notify("Password updated successfully!");
       back();
-    }, 900);
+    } catch (err: any) {
+      const code = err?.code || "";
+      if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+        setError("Current password is incorrect.");
+      } else if (code === "auth/weak-password") {
+        setError("New password is too weak. Use at least 6 characters.");
+      } else if (code === "auth/requires-recent-login") {
+        setError("Please sign out and sign back in before changing your password.");
+      } else {
+        setError(err?.message || "Could not update password.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendResetEmail = async () => {
+    const email = userEmail || auth.currentUser?.email;
+    if (!email) {
+      notify("No email address associated with this account.");
+      return;
+    }
+    setResetSending(true);
+    try {
+      await sendPasswordReset(email);
+      notify(`Password reset email sent to ${email}`);
+    } catch (err: any) {
+      notify(err?.message || "Could not send password reset email.");
+    } finally {
+      setResetSending(false);
+    }
   };
 
   return (
@@ -2129,6 +2094,7 @@ export function ChangePasswordScreen({ back, notify, userEmail }: ChangePassword
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 placeholder="Enter current password"
+                disabled={!hasPasswordProvider}
               />
               <button
                 type="button"
@@ -2150,6 +2116,7 @@ export function ChangePasswordScreen({ back, notify, userEmail }: ChangePassword
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Enter new password"
+                disabled={!hasPasswordProvider}
               />
               <button
                 type="button"
@@ -2170,20 +2137,32 @@ export function ChangePasswordScreen({ back, notify, userEmail }: ChangePassword
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Re-type new password"
+              disabled={!hasPasswordProvider}
             />
           </div>
 
           {userEmail && (
-            <p className="form-field-hint" style={{ marginTop: "4px" }}>
-              Registered for {userEmail}. If you signed in via Google or forgot your password, you can also request a reset link.
-            </p>
+            <div style={{ marginTop: "4px", display: "flex", flexDirection: "column", gap: "6px" }}>
+              <p className="form-field-hint" style={{ margin: 0 }}>
+                Registered for {userEmail}. Forgot your current password?
+              </p>
+              <button
+                type="button"
+                className="settings-small-link-btn"
+                onClick={() => void handleSendResetEmail()}
+                disabled={resetSending}
+                style={{ alignSelf: "flex-start" }}
+              >
+                {resetSending ? "Sending reset email..." : "Send password reset email"}
+              </button>
+            </div>
           )}
 
           <button
             type="submit"
             className="settings-btn primary full"
             style={{ marginTop: "16px" }}
-            disabled={loading}
+            disabled={loading || !hasPasswordProvider}
           >
             {loading ? "Updating Password..." : "Update Password"}
           </button>
@@ -2210,7 +2189,32 @@ export function ConnectedAccountsScreen({
   userEmail,
   currentUser,
 }: ConnectedAccountsScreenProps) {
-  const isGoogleLinked = currentUser?.providerData.some((p) => p.providerId === "google.com") ?? false;
+  const [providerTick, setProviderTick] = useState(0);
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
+
+  void providerTick;
+  const activeUser = auth.currentUser || currentUser || null;
+  const providers = activeUser?.providerData || [];
+  const isPasswordLinked = providers.some((p) => p.providerId === "password");
+  const isGoogleLinked = providers.some((p) => p.providerId === "google.com");
+
+  const handleToggleGoogle = async () => {
+    setLinkingGoogle(true);
+    try {
+      if (isGoogleLinked) {
+        await unlinkGoogleProvider();
+        notify("Google account disconnected");
+      } else {
+        await linkGoogleProvider();
+        notify("Google account connected!");
+      }
+      setProviderTick((n) => n + 1);
+    } catch (err: any) {
+      notify(err?.message || "Could not update Google connection.");
+    } finally {
+      setLinkingGoogle(false);
+    }
+  };
 
   return (
     <div className="settings-subpage">
@@ -2220,22 +2224,24 @@ export function ConnectedAccountsScreen({
         </button>
         <div className="settings-page-header-title">
           <h1>Connected Accounts</h1>
-          <p>Third-party sign-in & synced credentials</p>
+          <p>Sign-in methods linked to your ONY account</p>
         </div>
       </div>
 
       <div className="settings-subpage-content">
-        <SettingsSection title="ACTIVE ACCOUNTS">
+        <SettingsSection title="ACTIVE SIGN-IN METHODS">
           {/* Email / Password */}
           <div className="connected-account-row">
             <div className="account-icon-badge mail">
               <SettingsIcon name="fileText" />
             </div>
             <div className="account-meta">
-              <strong>Email Account</strong>
-              <small>{userEmail || "email@ony.app"}</small>
+              <strong>Email & Password</strong>
+              <small>{userEmail || activeUser?.email || "Not registered"}</small>
             </div>
-            <span className="account-status-badge connected">Connected</span>
+            <span className={`account-status-badge ${isPasswordLinked ? "connected" : ""}`}>
+              {isPasswordLinked ? "Connected" : "Not set"}
+            </span>
           </div>
 
           {/* Google */}
@@ -2245,50 +2251,38 @@ export function ConnectedAccountsScreen({
             </div>
             <div className="account-meta">
               <strong>Google Account</strong>
-              <small>{isGoogleLinked ? "Syncs with Google Workspace" : "Not connected"}</small>
+              <small>{isGoogleLinked ? "Sign in with Google active" : "Not connected"}</small>
             </div>
             {isGoogleLinked ? (
-              <span className="account-status-badge connected">Connected</span>
+              providers.length > 1 ? (
+                <button
+                  type="button"
+                  className="settings-small-link-btn"
+                  onClick={() => void handleToggleGoogle()}
+                  disabled={linkingGoogle}
+                >
+                  {linkingGoogle ? "Updating..." : "Disconnect"}
+                </button>
+              ) : (
+                <span className="account-status-badge connected">Connected</span>
+              )
             ) : (
               <button
                 type="button"
                 className="settings-small-link-btn"
-                onClick={() => {
-                  // TODO: Connect OAuth provider via Firebase Auth linkWithPopup(auth.currentUser, new GoogleAuthProvider())
-                  notify("Google authentication linking requires browser OAuth popup.");
-                }}
+                onClick={() => void handleToggleGoogle()}
+                disabled={linkingGoogle}
               >
-                Connect
+                {linkingGoogle ? "Connecting..." : "Connect"}
               </button>
             )}
-          </div>
-
-          {/* Apple ID */}
-          <div className="connected-account-row">
-            <div className="account-icon-badge apple">
-              <span style={{ fontWeight: 800 }}></span>
-            </div>
-            <div className="account-meta">
-              <strong>Apple ID</strong>
-              <small>Not connected</small>
-            </div>
-            <button
-              type="button"
-              className="settings-small-link-btn"
-              onClick={() => {
-                // TODO: Connect Apple Sign-In via Firebase Auth OAuthProvider
-                notify("Apple ID connection is available on iOS devices.");
-              }}
-            >
-              Connect
-            </button>
           </div>
         </SettingsSection>
 
         <div className="settings-callout-info" style={{ marginTop: "16px" }}>
           <SettingsIcon name="shield" />
           <span>
-            Connected accounts allow you to sign in smoothly across mobile and web without losing your private diary entries.
+            Connected accounts allow you to sign in across devices while keeping your private Firestore journal and conversations synced.
           </span>
         </div>
       </div>
@@ -2302,30 +2296,48 @@ export function ConnectedAccountsScreen({
 
 export interface DeleteAccountScreenProps {
   back: () => void;
-  onConfirmDelete: () => void;
+  onConfirmDelete: (reauthPassword?: string) => Promise<void> | void;
+  currentUser?: User | null;
   notify: (msg: string) => void;
 }
 
-export function DeleteAccountScreen({ back, onConfirmDelete, notify }: DeleteAccountScreenProps) {
+export function DeleteAccountScreen({
+  back,
+  onConfirmDelete,
+  currentUser,
+  notify,
+}: DeleteAccountScreenProps) {
   const [typedConfirm, setTypedConfirm] = useState("");
+  const [reauthPassword, setReauthPassword] = useState("");
   const [showFinalModal, setShowFinalModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  const activeUser = auth.currentUser || currentUser || null;
+  const hasPasswordProvider =
+    activeUser?.providerData.some((p) => p.providerId === "password") ?? false;
 
   const canProceed = typedConfirm.trim().toUpperCase() === "DELETE";
 
   const executeDelete = async () => {
+    setDeleteError("");
     setIsDeleting(true);
-    setShowFinalModal(false);
-    writeSystemLog({
-      level: "warn",
-      category: "auth",
-      action: "USER_ACCOUNT_PURGE_REQUESTED",
-      message: "User permanently confirmed account and data deletion.",
-    }).catch(() => {});
-    notify("Account deletion requested. Erasing all data...");
-    setTimeout(() => {
-      onConfirmDelete();
-    }, 700);
+    try {
+      await onConfirmDelete(hasPasswordProvider ? reauthPassword || undefined : undefined);
+      setShowFinalModal(false);
+    } catch (err: any) {
+      const code = err?.code || "";
+      const msg =
+        code === "auth/requires-recent-login"
+          ? hasPasswordProvider
+            ? "For security, please enter your account password to confirm deletion."
+            : "Please confirm re-authentication in the popup window to delete your account."
+          : err?.message || "Could not delete account right now.";
+      setDeleteError(msg);
+      notify(msg);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -2376,7 +2388,10 @@ export function DeleteAccountScreen({ back, onConfirmDelete, notify }: DeleteAcc
             className="settings-btn danger full"
             style={{ marginTop: "16px" }}
             disabled={!canProceed || isDeleting}
-            onClick={() => setShowFinalModal(true)}
+            onClick={() => {
+              setDeleteError("");
+              setShowFinalModal(true);
+            }}
           >
             {isDeleting ? "Erasing Data..." : "Permanently Delete My Account"}
           </button>
@@ -2384,7 +2399,7 @@ export function DeleteAccountScreen({ back, onConfirmDelete, notify }: DeleteAcc
       </div>
 
       {showFinalModal && (
-        <div className="settings-modal-overlay" onClick={() => setShowFinalModal(false)}>
+        <div className="settings-modal-overlay" onClick={() => !isDeleting && setShowFinalModal(false)}>
           <div className="settings-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="settings-modal-icon-alert">
               <SettingsIcon name="trash" />
@@ -2393,20 +2408,36 @@ export function DeleteAccountScreen({ back, onConfirmDelete, notify }: DeleteAcc
             <p className="settings-modal-desc">
               Are you completely certain? Your account, private diary, and emotional history will be permanently erased right now.
             </p>
+            {hasPasswordProvider && (
+              <div className="form-field-group" style={{ textAlign: "left", marginBottom: "12px" }}>
+                <label className="form-field-label">Confirm Password (if required)</label>
+                <input
+                  type="password"
+                  className="settings-text-input"
+                  value={reauthPassword}
+                  onChange={(e) => setReauthPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  disabled={isDeleting}
+                />
+              </div>
+            )}
+            {deleteError && <div className="settings-alert danger">{deleteError}</div>}
             <div className="settings-modal-actions">
               <button
                 type="button"
                 className="settings-btn secondary"
                 onClick={() => setShowFinalModal(false)}
+                disabled={isDeleting}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="settings-btn danger"
-                onClick={executeDelete}
+                onClick={() => void executeDelete()}
+                disabled={isDeleting}
               >
-                Yes, Delete Everything
+                {isDeleting ? "Erasing..." : "Yes, Delete Everything"}
               </button>
             </div>
           </div>
@@ -2427,40 +2458,21 @@ export interface ExportDataScreenProps {
   displayName: string;
 }
 
-export function ExportDataScreen({ back, notify, currentUser, displayName }: ExportDataScreenProps) {
-  const [status, setStatus] = useState<"idle" | "preparing" | "downloading" | "done">("idle");
+export function ExportDataScreen({ back, notify, currentUser }: ExportDataScreenProps) {
+  const [status, setStatus] = useState<"idle" | "preparing" | "done" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const uid = currentUser?.uid || auth.currentUser?.uid || "";
+    if (!uid) {
+      notify("Please sign in to export your account archive.");
+      return;
+    }
+
     setStatus("preparing");
-
-    setTimeout(() => {
-      setStatus("downloading");
-
-      // Compile exported data JSON
-      const exportObject = {
-        meta: {
-          application: "ONY Mental Wellness Companion",
-          exportDate: new Date().toISOString(),
-          version: "1.0.0",
-          user: {
-            displayName,
-            email: currentUser?.email || "anonymous@ony.app",
-            uid: currentUser?.uid || "guest",
-          },
-          privacyStandards: "Malaysian PDPA & End-to-End Client Security",
-        },
-        profile: loadStoredProfile(),
-        appearance: loadStoredAppearance(),
-        notificationPreferences: (() => {
-          try {
-            return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEYS.NOTIFICATION_PREFS) || "{}");
-          } catch {
-            return {};
-          }
-        })(),
-        journalEntriesNote: "Private journal entries are cryptographically preserved in your personal device and Firestore subcollection.",
-      };
-
+    setErrorMsg("");
+    try {
+      const exportObject = await exportUserData(uid);
       const jsonStr = JSON.stringify(exportObject, null, 2);
       const blob = new Blob([jsonStr], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -2478,9 +2490,14 @@ export function ExportDataScreen({ back, notify, currentUser, displayName }: Exp
         level: "info",
         category: "privacy",
         action: "DATA_EXPORT_DOWNLOADED",
-        message: "User generated and downloaded local privacy archive.",
+        message: "User generated and downloaded Firestore privacy archive.",
       }).catch(() => {});
-    }, 1200);
+    } catch (err: any) {
+      setStatus("error");
+      const msg = err?.message || "Could not export user data.";
+      setErrorMsg(msg);
+      notify(msg);
+    }
   };
 
   return (
@@ -2502,22 +2519,28 @@ export function ExportDataScreen({ back, notify, currentUser, displayName }: Exp
           </div>
           <h3 style={{ textAlign: "center", margin: "0 0 6px" }}>Download Personal Wellness Archive</h3>
           <p style={{ textAlign: "center", color: "var(--theme-text-secondary)", fontSize: "var(--font-caption, 12px)", margin: "0 0 16px" }}>
-            ONY respects your digital sovereignty. You can download a complete, readable JSON archive of your account settings, mood entries, and reflections.
+            ONY respects your digital sovereignty. Download a complete JSON archive directly from your Firestore account records.
           </p>
 
           <ul className="settings-bullet-list">
-            <li>Profile metadata & preferences</li>
-            <li>Daily mood check-ins & reflection timestamps</li>
-            <li>Digital journal entry reflections & photo metadata</li>
-            <li>Notification quiet hour configurations</li>
+            <li>Profile metadata, settings & preferences</li>
+            <li>Daily mood check-ins & AI companion conversations</li>
+            <li>Digital journal shelves, books, entries & photo links</li>
+            <li>Voucher claims, toolkit completions & community posts</li>
           </ul>
 
+          {errorMsg && (
+            <div className="settings-alert danger" style={{ marginTop: "12px" }}>
+              {errorMsg}
+            </div>
+          )}
+
           <div style={{ marginTop: "20px" }}>
-            {status === "idle" && (
+            {(status === "idle" || status === "error") && (
               <button
                 type="button"
                 className="settings-btn primary full"
-                onClick={handleExport}
+                onClick={() => void handleExport()}
               >
                 Request & Download Data
               </button>
@@ -2525,13 +2548,7 @@ export function ExportDataScreen({ back, notify, currentUser, displayName }: Exp
 
             {status === "preparing" && (
               <button type="button" className="settings-btn secondary full" disabled>
-                Preparing encrypted archive...
-              </button>
-            )}
-
-            {status === "downloading" && (
-              <button type="button" className="settings-btn secondary full" disabled>
-                Generating download...
+                Fetching Firestore archive...
               </button>
             )}
 
@@ -2556,15 +2573,32 @@ export interface FeedbackReportScreenProps {
   back: () => void;
   notify: (msg: string) => void;
   userEmail?: string;
+  currentUid?: string;
 }
 
-export function FeedbackReportScreen({ type, back, notify, userEmail }: FeedbackReportScreenProps) {
+export function FeedbackReportScreen({
+  type,
+  back,
+  notify,
+  userEmail,
+  currentUid,
+}: FeedbackReportScreenProps) {
   const isFeedback = type === "feedback";
   const [category, setCategory] = useState(isFeedback ? "General Experience" : "Bug or Glitch");
   const [message, setMessage] = useState("");
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+      }
+    };
+  }, []);
 
   const feedbackCategories = [
     "General Experience",
@@ -2587,38 +2621,67 @@ export function FeedbackReportScreen({ type, back, notify, userEmail }: Feedback
   const handleScreenshot = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setScreenshotUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    if (!file.type.startsWith("image/")) {
+      notify("Please select an image file.");
+      return;
+    }
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+    }
+    const objUrl = URL.createObjectURL(file);
+    previewUrlRef.current = objUrl;
+    setScreenshotFile(file);
+    setScreenshotUrl(objUrl);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) {
       notify("Please enter a short message describing your input.");
       return;
     }
+    const uid = (currentUid || auth.currentUser?.uid || "").trim();
+    if (!uid) {
+      notify("Please sign in to submit feedback or problem reports.");
+      return;
+    }
 
     setIsSubmitting(true);
-    writeSystemLog({
-      level: "info",
-      category: "user_action",
-      action: isFeedback ? "USER_FEEDBACK_SUBMITTED" : "USER_BUG_REPORTED",
-      message: `[${category}] ${message.trim().slice(0, 120)}`,
-      metadata: { category, hasScreenshot: !!screenshotUrl, userEmail },
-    }).catch(() => {});
+    try {
+      let uploadedScreenshotUrl: string | undefined;
+      if (screenshotFile) {
+        const uploaded = await uploadUserMedia(uid, "feedback", screenshotFile, {
+          maxDimension: 1280,
+        });
+        uploadedScreenshotUrl = uploaded.url;
+      }
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+      await submitFeedbackReport({
+        userId: uid,
+        category: `${isFeedback ? "Feedback" : "Bug"}: ${category}`,
+        description: message.trim(),
+        screenshotUrl: uploadedScreenshotUrl,
+      });
+
+      writeSystemLog({
+        level: "info",
+        category: "user_action",
+        action: isFeedback ? "USER_FEEDBACK_SUBMITTED" : "USER_BUG_REPORTED",
+        message: `[${category}] ${message.trim().slice(0, 120)}`,
+        metadata: { category, hasScreenshot: Boolean(uploadedScreenshotUrl), userEmail },
+      }).catch(() => {});
+
       notify(
         isFeedback
-          ? "Thank you! Your feedback helps us make ONY gentler and better."
-          : "Thank you for reporting. Our engineering team has received your ticket.",
+          ? "Thank you! Your feedback has been saved."
+          : "Thank you for reporting. Your ticket has been recorded.",
       );
       back();
-    }, 800);
+    } catch (err: any) {
+      notify(err?.message || "Could not submit your message. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -2678,7 +2741,10 @@ export function FeedbackReportScreen({ type, back, notify, userEmail }: Feedback
                 <button
                   type="button"
                   className="remove-screenshot-btn"
-                  onClick={() => setScreenshotUrl(null)}
+                  onClick={() => {
+                    setScreenshotUrl(null);
+                    setScreenshotFile(null);
+                  }}
                 >
                   <SettingsIcon name="trash" /> Remove
                 </button>

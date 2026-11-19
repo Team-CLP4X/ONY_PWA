@@ -137,7 +137,7 @@ class OnyBackendChatService implements AIService {
         message: messageText,
         safetyAction: data?.safetyAction || "support",
         citedResourceIds: Array.isArray(data?.citedResourceIds) ? data.citedResourceIds : [],
-        model: data?.model || "gemini-3.1-flash-lite",
+        model: data?.model || "gemini-4-hydrogen",
         recommendedVoucher: recommendedVouchers[0] || null,
         recommendedVouchers,
         copingActivity: data?.copingActivity || null,

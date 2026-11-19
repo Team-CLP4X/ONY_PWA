@@ -53,6 +53,7 @@ export function VoiceMessagePlayer({
     getCachedTranscript(messageId, audioUrl) || transcription?.trim() || null,
   );
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
 
   const [translatedTranscript, setTranslatedTranscript] = useState<string | null>(() =>
     transcriptText ? getCachedTranslation(transcriptText, appLang) : null,
@@ -172,20 +173,11 @@ export function VoiceMessagePlayer({
     }
   };
 
-  const handleToggleTranscript = async () => {
-    onInteract?.();
-    if (showTranscript) {
-      setShowTranscript(false);
-      return;
-    }
-
-    if (transcriptText) {
-      setShowTranscript(true);
-      onTranscriptResolved?.(messageId, transcriptText);
-      return;
-    }
-
+  const runTranscription = async () => {
+    if (isTranscribing) return;
     setIsTranscribing(true);
+    setTranscriptError(null);
+    setShowTranscript(true);
     try {
       const result = await transcribeCommunityVoice({
         messageId,
@@ -195,19 +187,37 @@ export function VoiceMessagePlayer({
         existingTranscription: transcription,
       });
       setTranscriptText(result);
-      setShowTranscript(true);
       onTranscriptResolved?.(messageId, result);
-    } catch {
-      notify(
-        language === "Bahasa Melayu"
+    } catch (err: any) {
+      const msg =
+        err?.message ||
+        (language === "Bahasa Melayu"
           ? "Tidak dapat mendapatkan transkrip"
           : language === "中文"
             ? "未能获取语音文字"
-            : "Could not load transcript",
-      );
+            : "Could not load transcript");
+      setTranscriptError(msg);
+      notify(msg);
     } finally {
       setIsTranscribing(false);
     }
+  };
+
+  const handleToggleTranscript = async () => {
+    onInteract?.();
+    if (showTranscript) {
+      setShowTranscript(false);
+      return;
+    }
+
+    if (transcriptText) {
+      setTranscriptError(null);
+      setShowTranscript(true);
+      onTranscriptResolved?.(messageId, transcriptText);
+      return;
+    }
+
+    await runTranscription();
   };
 
   const formattedTotal = formatAudioDuration(audioDuration);
@@ -270,6 +280,24 @@ export function VoiceMessagePlayer({
           {isTranscribing ? strings.transcribing : showTranscript ? strings.hideTranscript : strings.viewTranscript}
         </button>
       </div>
+
+      {showTranscript && transcriptError && !displayTranscript && (
+        <div className="inbox-transcript-panel" role="alert">
+          <div className="inbox-transcript-error-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <span className="inbox-transcript-copy" style={{ color: "var(--theme-danger)" }}>
+              {transcriptError}
+            </span>
+            <button
+              type="button"
+              className="inbox-retry-inline"
+              onClick={() => void runTranscription()}
+              disabled={isTranscribing}
+            >
+              {strings.retry}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showTranscript && displayTranscript && (
         <div className="inbox-transcript-panel">

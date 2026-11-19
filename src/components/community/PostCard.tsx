@@ -386,7 +386,17 @@ export function PostCard({
 
         {post.media === "image" && (
           <div className="post-image-calming">
-            <span>{t.community_calm_image}</span>
+            {post.imageUrl ? (
+              <img
+                src={post.imageUrl}
+                alt={displayTitle || "Post attachment"}
+                className="post-card-image"
+                loading="lazy"
+                style={{ width: "100%", maxHeight: "320px", objectFit: "cover", borderRadius: "14px" }}
+              />
+            ) : (
+              <span>{t.community_calm_image}</span>
+            )}
           </div>
         )}
       </div>

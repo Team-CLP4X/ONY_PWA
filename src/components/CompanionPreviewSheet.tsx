@@ -7,6 +7,7 @@ import {
   type CompanionSize,
 } from "./CompanionAvatar";
 import { useTheme } from "../theme/ThemeContext";
+import { getResolvedTokens, MASCOT_SWATCH_DESCRIPTIONS } from "../theme/palettes";
 
 export interface CompanionPreviewSheetProps {
   isOpen: boolean;
@@ -25,7 +26,6 @@ const ALL_ANIMALS: {
   descriptionBm: string;
   descriptionZh: string;
   personality: string;
-  paletteInfo: string;
 }[] = [
   {
     id: "Cat",
@@ -36,7 +36,6 @@ const ALL_ANIMALS: {
     descriptionBm: "Kucing krim berbelang pic lembut dengan telinga merah jambu yang mendamaikan.",
     descriptionZh: "奶桃暖色虎斑小猫，粉嫩内耳与温柔疗愈的静心陪伴。",
     personality: "Gentle, attentive & cozy listener",
-    paletteInfo: "Cream #FFF7F0 · Peach #FEECE0 · Tabby #E2AC8D",
   },
   {
     id: "Dog",
@@ -47,7 +46,6 @@ const ALL_ANIMALS: {
     descriptionBm: "Anak anjing karamel hangat dengan telinga labuh lembut dan ekor bergoyang riang.",
     descriptionZh: "暖焦糖色垂耳小狗，乳白小嘴与摇尾鼓励，永远守候身旁。",
     personality: "Loyal, encouraging & cheerful companion",
-    paletteInfo: "Caramel #FFECCE · Amber #C78750 · Cream #FFFDF9",
   },
   {
     id: "Bunny",
@@ -58,7 +56,6 @@ const ALL_ANIMALS: {
     descriptionBm: "Arnab putih merah jambu marshmallow dengan telinga panjang gebu dan ekor bebola.",
     descriptionZh: "棉花糖白粉色软萌兔，修长立耳与小绒球尾巴，细腻守护心情。",
     personality: "Soft, mindful, patient & calming",
-    paletteInfo: "Marshmallow #FFFFFF · Blossom #FEE6ED · Rose #FDC4D1",
   },
   {
     id: "Bear",
@@ -69,7 +66,6 @@ const ALL_ANIMALS: {
     descriptionBm: "Beruang madu hangat dengan telinga bulat comel dan pelukan emosi yang menenangkan.",
     descriptionZh: "蜂蜜棕暖心泰迪熊，圆圆小耳与香草小鼻，给您安心的大拥抱。",
     personality: "Grounded, protective, warm & comforting",
-    paletteInfo: "Honey Brown #D49E69 · Vanilla #FFF3E5 · Biscuit #BC834C",
   },
   {
     id: "Fox",
@@ -80,7 +76,6 @@ const ALL_ANIMALS: {
     descriptionBm: "Musang kayu manis jingga lembut dengan hujung telinga arang dan ekor kembang putih.",
     descriptionZh: "柔暖肉桂橘色小狐狸，墨尖耳尖与蓬松白绒尾尖，聪明解忧。",
     personality: "Empathetic, intuitive, wise & uplifting",
-    paletteInfo: "Cinnamon #FF935E · Charcoal Tip #322E30 · Fluff #FFF9F5",
   },
   {
     id: "Panda",
@@ -91,7 +86,6 @@ const ALL_ANIMALS: {
     descriptionBm: "Panda baldu putih susu dengan tompok kelabu arang lembut yang mendamaikan.",
     descriptionZh: "丝绒乳白小熊猫，柔和灰炭眼斑与圆润小耳，悠然自得无压力。",
     personality: "Peaceful, restorative, slow & grounded",
-    paletteInfo: "Milk White #FFFFFF · Soft Slate #3D3C46 · Cloud #E8E9F0",
   },
 ];
 
@@ -124,7 +118,7 @@ export function CompanionPreviewSheet({
   onSelectCompanion,
   language = "English",
 }: CompanionPreviewSheetProps) {
-  const { isDark, tokens } = useTheme();
+  const { isDark, themeId } = useTheme();
   const [activeMood, setActiveMood] = useState<CompanionExpression>("idle");
   const [selectedAnimalForDetail, setSelectedAnimalForDetail] = useState<CompanionAnimal>(
     (currentCompanion as CompanionAnimal) || "Cat"
@@ -135,6 +129,10 @@ export function CompanionPreviewSheet({
 
   const effectiveIsDark =
     previewMode === "forceLight" ? false : previewMode === "forceDark" ? true : isDark;
+  const { tokens: previewTokens } = getResolvedTokens(
+    themeId,
+    effectiveIsDark ? "dark" : "light"
+  );
 
   const lang = language.toLowerCase();
   const isBm = lang.includes("melayu") || lang.includes("bm");
@@ -156,7 +154,7 @@ export function CompanionPreviewSheet({
         maxWidth: "430px",
         bottom: "var(--active-nav-clearance, 0px)",
         zIndex: 145,
-        background: "rgba(10, 10, 15, 0.64)",
+        background: "var(--theme-backdrop)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
         display: "flex",
@@ -171,18 +169,28 @@ export function CompanionPreviewSheet({
         onClick={(e) => e.stopPropagation()}
         data-theme-mode={effectiveIsDark ? "dark" : "light"}
         style={{
+          ["--theme-bg" as any]: previewTokens.background,
+          ["--theme-surface" as any]: previewTokens.surface,
+          ["--theme-surface-elevated" as any]: previewTokens.surfaceElevated,
+          ["--theme-surface-soft" as any]: previewTokens.surfaceSoft,
+          ["--theme-primary" as any]: previewTokens.primary,
+          ["--theme-primary-dark" as any]: previewTokens.primaryDark,
+          ["--theme-on-primary" as any]: previewTokens.onPrimary,
+          ["--theme-accent" as any]: previewTokens.accent,
+          ["--theme-text-primary" as any]: previewTokens.textPrimary,
+          ["--theme-text-secondary" as any]: previewTokens.textSecondary,
+          ["--theme-text-muted" as any]: previewTokens.textMuted,
+          ["--theme-border" as any]: previewTokens.border,
           width: "100%",
           maxWidth: "410px",
           maxHeight: "calc(100% - 12px)",
           display: "flex",
           flexDirection: "column",
           borderRadius: "24px",
-          background: effectiveIsDark ? "var(--theme-surface, #1e1919)" : "var(--theme-surface, #ffffff)",
-          border: "1px solid var(--theme-border, rgba(0,0,0,0.1))",
-          boxShadow: effectiveIsDark
-            ? "0 24px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08)"
-            : "0 24px 60px rgba(233,111,115,0.22), 0 0 0 1px rgba(0,0,0,0.05)",
-          color: "var(--theme-text-primary, #2d2424)",
+          background: "var(--theme-surface)",
+          border: "1px solid var(--theme-border)",
+          boxShadow: "var(--theme-shadow-lg)",
+          color: "var(--theme-text-primary)",
           overflow: "hidden",
         }}
       >
@@ -190,23 +198,23 @@ export function CompanionPreviewSheet({
         <header
           style={{
             padding: "20px 24px 16px",
-            borderBottom: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+            borderBottom: "1px solid var(--theme-border)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             gap: "16px",
             flexShrink: 0,
-            background: effectiveIsDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.6)",
+            background: "var(--theme-surface-elevated)",
           }}
         >
           <div>
             <div
               style={{
-                fontSize: "11px",
+                fontSize: "calc(11px * var(--font-scale, 1))",
                 fontWeight: 800,
                 textTransform: "uppercase",
                 letterSpacing: "0.12em",
-                color: "var(--theme-primary, #F28C78)",
+                color: "var(--theme-primary)",
                 marginBottom: "3px",
               }}
             >
@@ -215,7 +223,7 @@ export function CompanionPreviewSheet({
             <h2
               style={{
                 margin: 0,
-                fontSize: "20px",
+                fontSize: "calc(20px * var(--font-scale, 1))",
                 fontWeight: 800,
                 letterSpacing: "-0.02em",
               }}
@@ -233,7 +241,7 @@ export function CompanionPreviewSheet({
             <div
               style={{
                 display: "inline-flex",
-                background: effectiveIsDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)",
+                background: "var(--theme-surface-soft)",
                 padding: "3px",
                 borderRadius: "100px",
                 gap: "2px",
@@ -246,11 +254,11 @@ export function CompanionPreviewSheet({
                   border: "none",
                   padding: "5px 10px",
                   borderRadius: "100px",
-                  fontSize: "11px",
+                  fontSize: "calc(11px * var(--font-scale, 1))",
                   fontWeight: 700,
                   cursor: "pointer",
-                  background: previewMode === "forceLight" ? "var(--theme-primary, #F28C78)" : "transparent",
-                  color: previewMode === "forceLight" ? "#ffffff" : "inherit",
+                  background: previewMode === "forceLight" ? "var(--theme-primary)" : "transparent",
+                  color: previewMode === "forceLight" ? "var(--theme-on-primary)" : "inherit",
                 }}
               >
                 ☀️ Light
@@ -262,11 +270,11 @@ export function CompanionPreviewSheet({
                   border: "none",
                   padding: "5px 10px",
                   borderRadius: "100px",
-                  fontSize: "11px",
+                  fontSize: "calc(11px * var(--font-scale, 1))",
                   fontWeight: 700,
                   cursor: "pointer",
-                  background: previewMode === "forceDark" ? "var(--theme-primary, #F28C78)" : "transparent",
-                  color: previewMode === "forceDark" ? "#ffffff" : "inherit",
+                  background: previewMode === "forceDark" ? "var(--theme-primary)" : "transparent",
+                  color: previewMode === "forceDark" ? "var(--theme-on-primary)" : "inherit",
                 }}
               >
                 🌙 Dark
@@ -278,11 +286,11 @@ export function CompanionPreviewSheet({
                   border: "none",
                   padding: "5px 10px",
                   borderRadius: "100px",
-                  fontSize: "11px",
+                  fontSize: "calc(11px * var(--font-scale, 1))",
                   fontWeight: 700,
                   cursor: "pointer",
-                  background: previewMode === "current" ? "var(--theme-primary, #F28C78)" : "transparent",
-                  color: previewMode === "current" ? "#ffffff" : "inherit",
+                  background: previewMode === "current" ? "var(--theme-primary)" : "transparent",
+                  color: previewMode === "current" ? "var(--theme-on-primary)" : "inherit",
                 }}
               >
                 ⚙️ System
@@ -298,12 +306,12 @@ export function CompanionPreviewSheet({
                 height: "36px",
                 borderRadius: "50%",
                 border: "none",
-                background: effectiveIsDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+                background: "var(--theme-surface-soft)",
                 color: "inherit",
                 cursor: "pointer",
                 display: "grid",
                 placeItems: "center",
-                fontSize: "18px",
+                fontSize: "var(--font-heading)",
               }}
             >
               ✕
@@ -331,14 +339,14 @@ export function CompanionPreviewSheet({
                 marginBottom: "14px",
               }}
             >
-              <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700 }}>
+              <h3 style={{ margin: 0, fontSize: "calc(15px * var(--font-scale, 1))", fontWeight: 700 }}>
                 {isBm
                   ? "Pilih Rakan Anda (Ketik untuk pratonton/pilih)"
                   : isZh
                   ? "选择您的专属萌友 (点击查看表情并一键更换)"
                   : "Mascot Family (Tap to view details & switch)"}
               </h3>
-              <span style={{ fontSize: "12px", opacity: 0.7 }}>
+              <span style={{ fontSize: "var(--font-caption)", opacity: 0.7 }}>
                 Current: <strong>{currentCompanion}</strong>
               </span>
             </div>
@@ -370,15 +378,11 @@ export function CompanionPreviewSheet({
                       gap: "8px",
                       cursor: "pointer",
                       border: isSelected
-                        ? "2px solid var(--theme-primary, #F28C78)"
-                        : "1px solid var(--theme-border, rgba(0,0,0,0.1))",
+                        ? "2px solid var(--theme-primary)"
+                        : "1px solid var(--theme-border)",
                       background: isSelected
-                        ? effectiveIsDark
-                          ? "rgba(242, 140, 120, 0.16)"
-                          : "var(--theme-surface-elevated, #FFF0EC)"
-                        : effectiveIsDark
-                        ? "rgba(255,255,255,0.03)"
-                        : "var(--theme-surface, #ffffff)",
+                        ? "var(--theme-surface-elevated)"
+                        : "var(--theme-surface)",
                       transition: "all 0.2s ease",
                       outline: "none",
                     }}
@@ -389,9 +393,9 @@ export function CompanionPreviewSheet({
                           position: "absolute",
                           top: "8px",
                           right: "8px",
-                          background: "var(--theme-primary, #F28C78)",
-                          color: "#ffffff",
-                          fontSize: "10px",
+                          background: "var(--theme-primary)",
+                          color: "var(--theme-on-primary)",
+                          fontSize: "var(--font-micro)",
                           fontWeight: 800,
                           padding: "2px 6px",
                           borderRadius: "100px",
@@ -409,18 +413,18 @@ export function CompanionPreviewSheet({
                     />
 
                     <div style={{ textAlign: "center" }}>
-                      <strong style={{ fontSize: "13px", display: "block" }}>
+                      <strong style={{ fontSize: "var(--font-body-sm)", display: "block" }}>
                         {isBm ? animal.nameBm : isZh ? animal.nameZh : animal.nameEn}
                       </strong>
                       <span
                         style={{
-                          fontSize: "11px",
+                          fontSize: "calc(11px * var(--font-scale, 1))",
                           opacity: 0.65,
                           display: "block",
                           marginTop: "2px",
                         }}
                       >
-                        {animal.personality.split(",")[0]}
+                        {MASCOT_SWATCH_DESCRIPTIONS[animal.id]?.summary || animal.personality.split(",")[0]}
                       </span>
                     </div>
                   </button>
@@ -434,8 +438,8 @@ export function CompanionPreviewSheet({
             style={{
               borderRadius: "24px",
               padding: "20px",
-              background: effectiveIsDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-              border: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+              background: "var(--theme-surface-soft)",
+              border: "1px solid var(--theme-border)",
               display: "grid",
               gridTemplateColumns: "1fr 1.3fr",
               gap: "24px",
@@ -472,12 +476,12 @@ export function CompanionPreviewSheet({
               </div>
 
               <div style={{ marginTop: "12px" }}>
-                <strong style={{ fontSize: "16px", display: "block" }}>
+                <strong style={{ fontSize: "var(--font-subheading)", display: "block" }}>
                   {selectedAnimalForDetail} · {activeMood.toUpperCase()}
                 </strong>
                 <p
                   style={{
-                    fontSize: "12px",
+                    fontSize: "var(--font-caption)",
                     margin: "4px 0 12px",
                     opacity: 0.75,
                     maxWidth: "240px",
@@ -493,15 +497,15 @@ export function CompanionPreviewSheet({
                     onClose();
                   }}
                   style={{
-                    background: "var(--theme-primary, #F28C78)",
-                    color: "#ffffff",
+                    background: "var(--theme-primary)",
+                    color: "var(--theme-on-primary)",
                     border: "none",
                     borderRadius: "100px",
                     padding: "8px 20px",
-                    fontSize: "12px",
+                    fontSize: "var(--font-caption)",
                     fontWeight: 800,
                     cursor: "pointer",
-                    boxShadow: "0 4px 14px rgba(242,140,120,0.35)",
+                    boxShadow: "var(--theme-shadow-primary)",
                   }}
                 >
                   {isBm
@@ -515,7 +519,7 @@ export function CompanionPreviewSheet({
 
             {/* Expression Switcher & Details */}
             <div>
-              <h4 style={{ margin: "0 0 12px", fontSize: "14px", fontWeight: 700 }}>
+              <h4 style={{ margin: "0 0 12px", fontSize: "var(--font-body)", fontWeight: 700 }}>
                 {isBm
                   ? "Uji Reaksi Emosi & Ekspresi"
                   : isZh
@@ -538,12 +542,10 @@ export function CompanionPreviewSheet({
                         padding: "10px 14px",
                         borderRadius: "14px",
                         border: isActive
-                          ? "2px solid var(--theme-primary, #F28C78)"
-                          : "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+                          ? "2px solid var(--theme-primary)"
+                          : "1px solid var(--theme-border)",
                         background: isActive
-                          ? effectiveIsDark
-                            ? "rgba(242, 140, 120, 0.14)"
-                            : "var(--theme-surface-elevated, #FFF0EC)"
+                          ? "var(--theme-surface-elevated)"
                           : "transparent",
                         color: "inherit",
                         cursor: "pointer",
@@ -552,18 +554,18 @@ export function CompanionPreviewSheet({
                       }}
                     >
                       <div>
-                        <strong style={{ fontSize: "13px", display: "block" }}>
+                        <strong style={{ fontSize: "var(--font-body-sm)", display: "block" }}>
                           {isBm ? exp.labelBm : isZh ? exp.labelZh : exp.labelEn}
                         </strong>
-                        <small style={{ fontSize: "11px", opacity: 0.65 }}>
+                        <small style={{ fontSize: "calc(11px * var(--font-scale, 1))", opacity: 0.65 }}>
                           {exp.desc}
                         </small>
                       </div>
                       <span
                         style={{
-                          fontSize: "14px",
+                          fontSize: "var(--font-body)",
                           fontWeight: 800,
-                          color: isActive ? "var(--theme-primary, #F28C78)" : "transparent",
+                          color: isActive ? "var(--theme-primary)" : "transparent",
                         }}
                       >
                         ✓
@@ -577,7 +579,7 @@ export function CompanionPreviewSheet({
 
           {/* SECTION 3: Responsive Scale Matrix */}
           <section>
-            <h4 style={{ margin: "0 0 14px", fontSize: "14px", fontWeight: 700 }}>
+            <h4 style={{ margin: "0 0 14px", fontSize: "var(--font-body)", fontWeight: 700 }}>
               {isBm
                 ? "Skala Saiz Sejagat (28px hingga 140px)"
                 : isZh
@@ -593,8 +595,8 @@ export function CompanionPreviewSheet({
                 gap: "20px",
                 padding: "18px 20px",
                 borderRadius: "20px",
-                background: effectiveIsDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
-                border: "1px solid var(--theme-border, rgba(0,0,0,0.06))",
+                background: "var(--theme-surface-soft)",
+                border: "1px solid var(--theme-border)",
               }}
             >
               {SIZES.map((sz) => (
@@ -615,7 +617,7 @@ export function CompanionPreviewSheet({
                   />
                   <span
                     style={{
-                      fontSize: "10px",
+                      fontSize: "var(--font-micro)",
                       opacity: 0.7,
                       fontWeight: 600,
                       whiteSpace: "nowrap",
@@ -633,15 +635,15 @@ export function CompanionPreviewSheet({
         <footer
           style={{
             padding: "16px 24px",
-            borderTop: "1px solid var(--theme-border, rgba(0,0,0,0.08))",
+            borderTop: "1px solid var(--theme-border)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: effectiveIsDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.6)",
+            background: "var(--theme-surface-elevated)",
             flexShrink: 0,
           }}
         >
-          <div style={{ fontSize: "12px", opacity: 0.7 }}>
+          <div style={{ fontSize: "var(--font-caption)", opacity: 0.7 }}>
             ✨ Pure Scalable SVG · Zero clipping · Theme & dark mode aware
           </div>
           <button
@@ -651,10 +653,10 @@ export function CompanionPreviewSheet({
               padding: "10px 24px",
               borderRadius: "100px",
               border: "none",
-              background: "var(--theme-primary, #F28C78)",
-              color: "#ffffff",
+              background: "var(--theme-primary)",
+              color: "var(--theme-on-primary)",
               fontWeight: 800,
-              fontSize: "13px",
+              fontSize: "var(--font-body-sm)",
               cursor: "pointer",
             }}
           >
