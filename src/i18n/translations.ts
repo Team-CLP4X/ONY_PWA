@@ -99,7 +99,6 @@ export interface TranslationDictionary {
   // Marketplace
   market_title: string;
   market_subtitle: string;
-  market_verified_partners: string;
   market_claim_voucher: string;
   market_voucher_validity: string;
 
@@ -739,9 +738,8 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
     // Marketplace
     market_title: "Discover",
-    market_subtitle: "Wellness & Verified Partner Offers",
-    market_verified_partners: "Verified Partners",
-    market_claim_voucher: "Claim Voucher",
+    market_subtitle: "Wellness & Partner Offers",
+    market_claim_voucher: "View Offer ›",
     market_voucher_validity: "Validity",
 
     // Profile & Settings
@@ -871,7 +869,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     onboarding_privacy_control_desc: "Ask before anything is saved.",
     onboarding_complete_eyebrow: "You’re all set",
     onboarding_complete_title: "Enter ONY",
-    onboarding_complete_lead: "Experience compassionate companion conversations, daily mood check-ins, and verified wellbeing resources.",
+    onboarding_complete_lead: "Experience compassionate companion conversations, daily mood check-ins, and practical wellbeing resources.",
     onboarding_btn_continue: "Continue",
     onboarding_btn_enter: "Enter ONY",
 
@@ -920,19 +918,19 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Extra Marketplace & Voucher
     market_nearby_eyebrow: "Wellness, Nearby",
     market_hero_title: "Make a little room for you.",
-    market_hero_desc: "Exclusive partner privileges, calming spaces, and verified care directory.",
+    market_hero_desc: "Partner privileges, calming spaces, and local care directory.",
     market_search_placeholder: "Search providers or offers",
     market_wellness_vouchers: "Wellness Vouchers",
     market_view_all: "View all",
     market_prof_banner_title: "Find professional support nearby",
-    market_prof_banner_desc: "Registered clinics, MENTARI centres, and certified counsellors",
+    market_prof_banner_desc: "Registered clinics, MENTARI centres, and licensed counsellors",
     voucher_details_title: "Voucher Details",
     voucher_partner_offer: "Wellness Partner Offer",
     voucher_terms_title: "Terms & conditions",
-    voucher_redeem_btn: "Redeem Voucher",
-    voucher_ready_title: "Voucher Ready!",
-    voucher_ready_subtitle: "Digital Member Pass",
-    voucher_ready_eyebrow: "Your voucher is ready to use",
+    voucher_redeem_btn: "Save Offer Reference",
+    voucher_ready_title: "Offer Saved!",
+    voucher_ready_subtitle: "Partner Redemption Reference",
+    voucher_ready_eyebrow: "Your saved partner reference code",
     voucher_done_btn: "Done",
 
     // Language Preferences Screen
@@ -1376,9 +1374,8 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
     // Marketplace
     market_title: "Teroka",
-    market_subtitle: "Kesejahteraan & Tawaran Rakan Kongsi Sah",
-    market_verified_partners: "Rakan Kongsi Sah",
-    market_claim_voucher: "Tuntut Baucar",
+    market_subtitle: "Kesejahteraan & Tawaran Rakan Kongsi",
+    market_claim_voucher: "Lihat Tawaran ›",
     market_voucher_validity: "Sah Sehingga",
 
     // Profile & Settings
@@ -1508,7 +1505,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     onboarding_privacy_control_desc: "Minta kebenaran sebelum sesuatu disimpan.",
     onboarding_complete_eyebrow: "Semuanya sedia",
     onboarding_complete_title: "Masuk ke ONY",
-    onboarding_complete_lead: "Alami perbualan teman penuh empati, daftar masuk mood harian, dan sumber kesejahteraan yang disahkan.",
+    onboarding_complete_lead: "Alami perbualan teman penuh empati, daftar masuk mood harian, dan sumber kesejahteraan yang praktikal.",
     onboarding_btn_continue: "Teruskan",
     onboarding_btn_enter: "Masuk ke ONY",
 
@@ -1557,19 +1554,19 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Extra Marketplace & Voucher
     market_nearby_eyebrow: "Kesejahteraan, Berhampiran",
     market_hero_title: "Beri sedikit ruang untuk diri anda.",
-    market_hero_desc: "Keistimewaan rakan kongsi eksklusif, ruang menenangkan, dan direktori penjagaan disahkan.",
+    market_hero_desc: "Keistimewaan rakan kongsi, ruang menenangkan, dan direktori penjagaan tempatan.",
     market_search_placeholder: "Cari rakan kongsi atau tawaran",
     market_wellness_vouchers: "Baucar Kesejahteraan",
     market_view_all: "Lihat semua",
     market_prof_banner_title: "Cari sokongan profesional berhampiran",
-    market_prof_banner_desc: "Klinik berdaftar, pusat MENTARI, dan kaunselor bertauliah",
+    market_prof_banner_desc: "Klinik berdaftar, pusat MENTARI, dan kaunselor berdaftar",
     voucher_details_title: "Butiran Baucar",
     voucher_partner_offer: "Tawaran Rakan Kesejahteraan",
     voucher_terms_title: "Terma & syarat",
-    voucher_redeem_btn: "Tebus Baucar",
-    voucher_ready_title: "Baucar Sedia Digunakan!",
-    voucher_ready_subtitle: "Pas Ahli Digital",
-    voucher_ready_eyebrow: "Baucar anda sedia digunakan",
+    voucher_redeem_btn: "Simpan Rujukan Tawaran",
+    voucher_ready_title: "Tawaran Disimpan!",
+    voucher_ready_subtitle: "Rujukan Penebusan Rakan",
+    voucher_ready_eyebrow: "Kod rujukan tawaran anda telah disimpan",
     voucher_done_btn: "Selesai",
 
     // Language Preferences Screen
@@ -2013,9 +2010,8 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
     // Marketplace
     market_title: "发现精选",
-    market_subtitle: "身心健康与认证合作伙伴礼遇",
-    market_verified_partners: "认证合作伙伴",
-    market_claim_voucher: "领取优惠券",
+    market_subtitle: "身心健康与合作商户礼遇",
+    market_claim_voucher: "查看礼遇 ›",
     market_voucher_validity: "有效期至",
 
     // Profile & Settings
@@ -2087,7 +2083,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Activity & System Logs
     logs_title: "活动与系统审计日志",
     logs_subtitle: "生产级数据库审计流水",
-    logs_hero_desc: "实时展示系统安全事件、认证记录、危机升级和系统关键操作。",
+    logs_hero_desc: "实时展示系统安全事件、身份验证记录、危机升级和系统关键操作。",
     logs_export_log_btn: "导出 .log 文件",
     logs_export_json_btn: "导出 .json 文件",
     logs_diagnostic_btn: "+ 写入一条诊断测试日志",
@@ -2145,7 +2141,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     onboarding_privacy_control_desc: "在存储任何信息前先向我询问确认。",
     onboarding_complete_eyebrow: "准备就绪",
     onboarding_complete_title: "进入 ONY",
-    onboarding_complete_lead: "开启温暖共情的陪伴对话、每日心情打卡与经过验证的身心健康指南。",
+    onboarding_complete_lead: "开启温暖共情的陪伴对话、每日心情打卡与实用的身心健康指南。",
     onboarding_btn_continue: "继续",
     onboarding_btn_enter: "开启 ONY",
 
@@ -2194,19 +2190,19 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Extra Marketplace & Voucher
     market_nearby_eyebrow: "身心疗愈 · 触手可及",
     market_hero_title: "为自己留一刻舒展的空间。",
-    market_hero_desc: "专属合作伙伴礼遇、静心疗愈空间与严选专业健康目录。",
+    market_hero_desc: "合作商户礼遇、静心疗愈空间与本地专业健康目录。",
     market_search_placeholder: "搜索合作机构或专属优惠",
     market_wellness_vouchers: "身心关爱卡券",
     market_view_all: "查看全部",
     market_prof_banner_title: "寻找附近的专业心理与医疗机构",
-    market_prof_banner_desc: "注册诊所、MENTARI 心理健康中心及认证辅导咨询师",
+    market_prof_banner_desc: "注册诊所、MENTARI 心理健康中心及注册辅导咨询师",
     voucher_details_title: "卡券详情",
     voucher_partner_offer: "疗愈商户专属礼遇",
     voucher_terms_title: "使用条款与规则",
-    voucher_redeem_btn: "立即兑换卡券",
-    voucher_ready_title: "卡券已就绪！",
-    voucher_ready_subtitle: "数字会员通行证",
-    voucher_ready_eyebrow: "您的凭证已生成，可出示核销",
+    voucher_redeem_btn: "保存礼遇编号",
+    voucher_ready_title: "礼遇已保存！",
+    voucher_ready_subtitle: "合作商户兑换参考凭证",
+    voucher_ready_eyebrow: "您的礼遇兑换编号已保存",
     voucher_done_btn: "完成",
 
     // Language Preferences Screen
@@ -2415,7 +2411,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_mod_notice: "社区公约与智能风控实时生效。辱骂或违规内容将被自动拦截。",
     community_post_detail_title: "社区动态详情",
     community_private_identity: "身份严格保密",
-    community_profile_identity: "ONY 社区认证",
+    community_profile_identity: "ONY 社区资料",
     community_calm_image: "分享舒缓心情的图片",
     community_comments_title: "评论",
     community_no_comments: "暂无评论。欢迎在下方留下暖心善意的话语。",

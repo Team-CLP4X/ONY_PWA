@@ -31,7 +31,7 @@ export interface HealthcareProvider {
   website?: string;
 }
 
-export const VERIFIED_MALAYSIAN_PROVIDERS: HealthcareProvider[] = [
+export const MALAYSIAN_CARE_PROVIDERS: HealthcareProvider[] = [
   {
     id: "heal_15555",
     name: "Talian HEAL 15555 (KKM / MOH Malaysia)",
@@ -266,9 +266,9 @@ export const VERIFIED_MALAYSIAN_PROVIDERS: HealthcareProvider[] = [
     hours: "Mon - Sun, 9:00 AM - 9:00 PM (Helpline 24/7: 1-800-820-066)",
     hoursBm: "Isn - Ahd, 9:00 PG - 9:00 MLM (Talian 24/7: 1-800-820-066)",
     hoursZh: "周一至周日 9:00 - 21:00 (免费热线 24/7: 1-800-820-066)",
-    label: "Certified Peer NGO & Clinic",
-    labelBm: "NGO Rakan Sebaya & Klinik Bertauliah",
-    labelZh: "官方认证同伴关怀与心理支持组织",
+    label: "Registered Peer NGO & Clinic",
+    labelBm: "NGO Rakan Sebaya & Klinik Berdaftar",
+    labelZh: "注册同伴关怀与心理支持组织",
     service: "Holistic Mental Health Clinic, Peer Support & Islamic Psychotherapy",
     serviceBm: "Klinik Kesihatan Mental Holistik, Sokongan Rakan & Psikoterapi Islam",
     serviceZh: "全人心理疗愈、同伴社群支持与专业心理辅导",

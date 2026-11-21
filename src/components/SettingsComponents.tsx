@@ -1617,7 +1617,7 @@ export function NotificationSettingsScreen({ back, notify }: NotificationSetting
             checked={categories.marketplace}
             onChange={(v) => setCategories((prev: NotifCategories) => ({ ...prev, marketplace: v }))}
             label="Marketplace & Wellness Perks"
-            description="New student discounts and verified wellness vouchers"
+            description="New student discounts and wellness partner vouchers"
             onStatusText="On · notifications active"
             offStatusText="Off · muted"
             ariaLabel="Marketplace & Wellness Perks"

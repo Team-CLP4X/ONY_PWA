@@ -104,7 +104,7 @@ async function test1_databaseConnectionAndNoMockContract() {
     assert.ok(v.value, `Voucher ${v.name} must have a discount value`);
     assert.ok(v.category, `Voucher ${v.name} must have a category`);
     assert.ok(v.validity, `Voucher ${v.name} must have validity`);
-    assert.ok(!v.name.toLowerCase().includes("grab"), "No Grab vouchers exist in verified wellness DB");
+    assert.ok(!v.name.toLowerCase().includes("grab"), "No Grab vouchers exist in partner wellness DB");
   }
 
   console.log("✓ PASS: Unauthenticated lookup does not leak mock data & catalog fixture schema is valid.");
@@ -246,7 +246,9 @@ async function test4_noMatchingEmotionalNeedReturnsNoFabricatedOffers() {
 }
 
 async function test5_expiredOrInactiveVouchersAreExcluded() {
-  console.log("\n[Test 5] Expired and inactive vouchers are strictly excluded:");
+  console.log("\n[Test 5] Expired and inactive vouchers are strictly excluded (with full & yearless date parsing):");
+
+  const referenceNow = new Date(2026, 10, 20, 12, 0, 0, 0); // 20 Nov 2026 12:00 local
 
   const activeVoucher: FirestoreMerchant = {
     id: "active_test",
@@ -259,27 +261,77 @@ async function test5_expiredOrInactiveVouchersAreExcluded() {
     validity: "Valid until 31 Dec 2029",
     active: true,
   };
-  assert.equal(isVoucherActiveAndValid(activeVoucher), true, "Active future voucher should be valid");
+  assert.equal(isVoucherActiveAndValid(activeVoucher, referenceNow), true, "Active future 4-digit-year voucher should be valid");
+
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "Valid until 30 Jun 2026" }, referenceNow),
+    false,
+    "Past 4-digit-year voucher (30 Jun 2026) must be expired on 20 Nov 2026",
+  );
+
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "Valid until 2026-10-01" }, referenceNow),
+    false,
+    "Past ISO date (2026-10-01) must be expired on 20 Nov 2026",
+  );
+
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "2026-12-31" }, referenceNow),
+    true,
+    "Future ISO date (2026-12-31) must be valid on 20 Nov 2026",
+  );
+
+  // Same-day end-of-day boundary: valid until 20 Nov 2026 23:59:59.999
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "Valid until 20 Nov 2026" }, referenceNow),
+    true,
+    "Voucher expiring today must remain valid until local 23:59:59.999",
+  );
+  assert.equal(
+    isVoucherActiveAndValid(
+      { ...activeVoucher, validity: "Valid until 20 Nov 2026" },
+      new Date(2026, 10, 21, 0, 0, 1, 0),
+    ),
+    false,
+    "Voucher expired yesterday must become invalid after local midnight",
+  );
+
+  // Yearless dates resolved against `now.getFullYear()` instead of JS year 2001 default
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "Valid until 31 Dec" }, referenceNow),
+    true,
+    "Yearless future date ('Valid until 31 Dec' in Nov 2026) must resolve to current year and stay valid",
+  );
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "Valid until 30 Jun" }, referenceNow),
+    false,
+    "Yearless past date ('Valid until 30 Jun' in Nov 2026) must be expired",
+  );
+  assert.equal(
+    isVoucherActiveAndValid({ ...activeVoucher, validity: "Sah sehingga 25 Dis" }, referenceNow),
+    true,
+    "Yearless Malay future date ('Sah sehingga 25 Dis' in Nov 2026) must resolve to current year",
+  );
 
   const inactiveVoucher: FirestoreMerchant = {
     ...activeVoucher,
     active: false,
   };
-  assert.equal(isVoucherActiveAndValid(inactiveVoucher), false, "Inactive voucher must be excluded");
+  assert.equal(isVoucherActiveAndValid(inactiveVoucher, referenceNow), false, "Inactive voucher must be excluded");
 
   const expiredFieldVoucher: FirestoreMerchant = {
     ...activeVoucher,
     expired: true,
   };
-  assert.equal(isVoucherActiveAndValid(expiredFieldVoucher), false, "Voucher marked expired must be excluded");
+  assert.equal(isVoucherActiveAndValid(expiredFieldVoucher, referenceNow), false, "Voucher marked expired must be excluded");
 
   const expiredTextVoucher: FirestoreMerchant = {
     ...activeVoucher,
     validity: "Expired on 1 Jan 2024",
   };
-  assert.equal(isVoucherActiveAndValid(expiredTextVoucher), false, "Voucher with expired text must be excluded");
+  assert.equal(isVoucherActiveAndValid(expiredTextVoucher, referenceNow), false, "Voucher with expired text must be excluded");
 
-  console.log("✓ PASS: Inactive and expired vouchers are properly excluded by validator.");
+  console.log("✓ PASS: Inactive and expired vouchers are properly excluded by validator (including ISO & yearless dates).");
 }
 
 async function test6_suicideRiskMessageNeverReturnsVouchers() {

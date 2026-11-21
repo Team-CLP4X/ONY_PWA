@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MarketplaceRecommendation, SafetyAction } from "../services/contracts.ts";
-import type { FirestoreMerchant } from "../data/merchants.ts";
+import { isVoucherActiveAndValid, type FirestoreMerchant } from "../data/merchants.ts";
+export { isVoucherActiveAndValid };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,7 +61,7 @@ function readRestBool(fields: Record<string, FirestoreRestValue> | undefined, ke
 }
 
 /**
- * Fetches active verified vouchers from Firestore REST `/merchants` using the caller's Firebase ID token.
+ * Fetches active partner offers from Firestore REST `/merchants` using the caller's Firebase ID token.
  * Returns [] if unavailable or empty (never falls back to mocked merchant data).
  */
 export async function getActiveDatabaseVouchers(idToken?: string): Promise<FirestoreMerchant[]> {
@@ -134,30 +135,7 @@ export function clearVoucherMatcherCache(): void {
   lastCacheTimestamp = 0;
 }
 
-export function isVoucherActiveAndValid(voucher: FirestoreMerchant): boolean {
-  if (voucher.active === false || voucher.expired === true) {
-    return false;
-  }
-
-  const validityText = (voucher.validity || "").toLowerCase();
-  if (
-    validityText.includes("expired") ||
-    validityText.includes("tamat tempoh") ||
-    validityText.includes("已过期")
-  ) {
-    return false;
-  }
-
-  const dateMatch = validityText.match(/valid until\s+(\d{1,2}\s+[a-z]{3}(?:\s+\d{4})?)/i);
-  if (dateMatch && dateMatch[1]) {
-    const parsed = new Date(dateMatch[1]);
-    if (!isNaN(parsed.getTime()) && parsed.getTime() < Date.now()) {
-      return false;
-    }
-  }
-
-  return true;
-}
+// isVoucherActiveAndValid is imported and re-exported from ../data/merchants.ts
 
 const CRISIS_OR_EMERGENCY_TRIGGERS = [
   /\b(suicid|kill myself|end my life|hurt myself|self[- ]?harm|don'?t want to live|want to die)\b/i,
@@ -192,7 +170,7 @@ export async function evaluateMarketplaceRecommendations(
   const allMerchants = Array.isArray(merchantsOverride)
     ? merchantsOverride
     : await getActiveDatabaseVouchers(idToken);
-  const validVouchers = allMerchants.filter(isVoucherActiveAndValid);
+  const validVouchers = allMerchants.filter((m) => isVoucherActiveAndValid(m));
 
   if (validVouchers.length === 0) {
     return {
@@ -468,10 +446,10 @@ function getLocalizedVoucherLabels(
     }
   } else {
     contextReason = language === "Bahasa Melayu"
-      ? "Cadangan rakan niaga disahkan yang bersesuaian dengan keperluan anda."
+      ? "Cadangan rakan niaga yang bersesuaian dengan keperluan anda."
       : language === "中文"
-        ? "为你精选的社区认证伙伴健康礼遇。"
-        : "A verified partner offer matched to your emotional need.";
+        ? "为你精选的社区伙伴健康礼遇。"
+        : "A partner offer matched to your emotional need.";
   }
 
   return { contextReason, actionLabel };

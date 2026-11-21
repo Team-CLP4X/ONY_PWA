@@ -168,9 +168,10 @@ import {
   createManualLocation,
 } from "./utils/geo";
 import {
-  VERIFIED_MALAYSIAN_PROVIDERS,
+  MALAYSIAN_CARE_PROVIDERS,
   type HealthcareProvider,
 } from "./data/providers";
+import { isVoucherActiveAndValid } from "./data/merchants";
 import {
   ambientMusicEngine,
   CALMING_TRACKS,
@@ -776,7 +777,7 @@ function AreaSearchPicker({
           </span>
           <div style={{ display: "flex", gap: "6px" }}>
             {onClearLocation && (
-              <Button variant="ghost" onClick={onClearLocation} style={{ fontSize: "11px", padding: "3px 8px" }}>
+              <Button variant="ghost" onClick={onClearLocation} style={{ fontSize: "calc(11px * var(--font-scale, 1))", padding: "3px 8px" }}>
                 {t.geo_clear}
               </Button>
             )}
@@ -832,7 +833,7 @@ function AreaSearchPicker({
             </div>
 
             {totalResults === 0 ? (
-              <div style={{ padding: "14px 12px", fontSize: "12px", color: "var(--muted)", textAlign: "center" }}>
+              <div style={{ padding: "14px 12px", fontSize: "calc(12px * var(--font-scale, 1))", color: "var(--muted)", textAlign: "center" }}>
                 {t.geo_no_areas_found}
               </div>
             ) : (
@@ -920,7 +921,7 @@ function AreaSearchPicker({
               variant="secondary"
               onClick={onDetectLocation}
               disabled={detectingLocation}
-              style={{ fontSize: "12px", padding: "6px 12px" }}
+              style={{ fontSize: "calc(12px * var(--font-scale, 1))", padding: "6px 12px" }}
             >
               {detectingLocation ? (
                 <>
@@ -1131,8 +1132,8 @@ function AppLockGate({
         position: "absolute",
         inset: 0,
         zIndex: 9999,
-        background: "var(--theme-bg, #0d161b)",
-        color: "var(--theme-text-primary, #f1f5f9)",
+        background: "var(--theme-bg)",
+        color: "var(--theme-text-primary)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -1163,7 +1164,7 @@ function AppLockGate({
             ? "ONY 已锁定"
             : "ONY is Locked"}
       </h2>
-      <p style={{ margin: "0 0 18px", color: "var(--muted)", fontSize: "13px", maxWidth: "280px" }}>
+      <p style={{ margin: "0 0 18px", color: "var(--muted)", fontSize: "calc(13px * var(--font-scale, 1))", maxWidth: "280px" }}>
         {userEmail
           ? `${userEmail} · ${biometricEnabled ? "PIN" : "PIN"}`
           : language === "Bahasa Melayu"
@@ -1183,7 +1184,7 @@ function AppLockGate({
             if (error) setError("");
           }}
           placeholder="••••"
-          style={{ textAlign: "center", letterSpacing: "0.35em", fontSize: "18px" }}
+          style={{ textAlign: "center", letterSpacing: "0.35em", fontSize: "calc(18px * var(--font-scale, 1))" }}
         />
         {error && (
           <div className="form-error" role="alert">
@@ -1265,7 +1266,7 @@ function AppInner() {
   const [incomingTrustedRequests, setIncomingTrustedRequests] = useState<FirestoreTrustedContactRequest[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [selectedMerchantName, setSelectedMerchantName] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState<HealthcareProvider>(() => VERIFIED_MALAYSIAN_PROVIDERS[0]);
+  const [selectedProvider, setSelectedProvider] = useState<HealthcareProvider>(() => MALAYSIAN_CARE_PROVIDERS[0]);
   const [userCoords, setUserCoords] = useState<UserCoordinates | null>(() => loadCachedLocation());
   const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
   const [selectedCommunityUser, setSelectedCommunityUser] = useState<GlobeUser | null>(null);
@@ -2746,7 +2747,7 @@ function AppInner() {
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: "8px",
-                fontSize: "12px",
+                fontSize: "calc(12px * var(--font-scale, 1))",
                 color: "var(--theme-text-primary)",
                 zIndex: 60,
               }}
@@ -2773,11 +2774,11 @@ function AppInner() {
                   }}
                   style={{
                     background: "var(--theme-primary)",
-                    color: "#fff",
+                    color: "var(--theme-on-primary)",
                     border: 0,
                     borderRadius: "8px",
                     padding: "4px 10px",
-                    fontSize: "11px",
+                    fontSize: "calc(11px * var(--font-scale, 1))",
                     fontWeight: 700,
                     cursor: "pointer",
                   }}
@@ -2793,12 +2794,12 @@ function AppInner() {
               style={{
                 padding: "6px 12px",
                 background: "var(--theme-primary)",
-                color: "#fff",
+                color: "var(--theme-on-primary)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: "8px",
-                fontSize: "12px",
+                fontSize: "calc(12px * var(--font-scale, 1))",
                 zIndex: 60,
               }}
             >
@@ -2815,12 +2816,12 @@ function AppInner() {
                   (window as unknown as { __onyApplyPwaUpdate?: () => void }).__onyApplyPwaUpdate?.();
                 }}
                 style={{
-                  background: "rgba(255,255,255,0.2)",
-                  color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.4)",
+                  background: "var(--theme-glass-soft)",
+                  color: "var(--theme-on-dark)",
+                  border: "1px solid color-mix(in srgb, var(--theme-on-dark) 40%, transparent)",
                   borderRadius: "8px",
                   padding: "4px 10px",
-                  fontSize: "11px",
+                  fontSize: "calc(11px * var(--font-scale, 1))",
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
@@ -3622,7 +3623,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
       sections: [
         { heading: "What ONY is", text: "ONY is designed for everyday emotional support, self-reflection, and gentle wellbeing companionship. It is not medical care, psychotherapy, psychological diagnosis, or an emergency service." },
         { heading: "AI Generative Model Scope", text: "Conversations are powered by secure server-side generative artificial intelligence. While safety guardrails and multi-tier crisis protocols are active at all times, generative responses may occasionally be imperfect. Always exercise personal discernment." },
-        { heading: "Your Choices & Autonomy", text: "You maintain complete agency to end conversations, adjust tone personas, manage or delete memory vault entries, and transition to verified professional human care at any moment." }
+        { heading: "Your Choices & Autonomy", text: "You maintain complete agency to end conversations, adjust tone personas, manage or delete memory vault entries, and transition to qualified professional human care at any moment." }
       ]
     },
     terms: {
@@ -3646,7 +3647,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     },
     crisis: {
       title: "Crisis & Emergency Hotlines",
-      subtitle: "24/7 verified Malaysian support resources",
+      subtitle: "Malaysian support resources",
       sections: [
         { heading: "Immediate Life-Threatening Danger", text: "If you or someone around you is in immediate danger of injury or suicide, please call 999 immediately or go to the nearest hospital emergency department." },
         { heading: "Talian HEAL 15555 (MOH Malaysia)", text: "Free, confidential national mental health crisis hotline operated daily from 8:00 AM to 12:00 AM (midnight) by qualified counsellors from the Ministry of Health Malaysia." },
@@ -3686,7 +3687,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     },
     crisis: {
       title: "Talian Krisis & Kecemasan",
-      subtitle: "Sumber sokongan Malaysia yang disahkan",
+      subtitle: "Sumber sokongan Malaysia",
       sections: [
         { heading: "Bahaya Mengancam Nyawa Segera", text: "Sekiranya anda atau sesiapa di sekeliling anda berada dalam bahaya kecederaan atau bunuh diri serta-merta, sila hubungi 999 dengan segera atau pergi ke jabatan kecemasan hospital terdekat." },
         { heading: "Talian HEAL 15555 (KKM Malaysia)", text: "Talian krisis kesihatan mental kebangsaan percuma dan sulit yang beroperasi setiap hari dari jam 8:00 pagi hingga 12:00 tengah malam, dikendalikan oleh kaunselor bertauliah Kementerian Kesihatan Malaysia." },
@@ -3702,7 +3703,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
       sections: [
         { heading: "关于 ONY 的定位", text: "ONY 专为日常情绪舒缓、自我倾听反思和温和身心陪伴而设计。它绝非医疗服务、心理治疗、精神科临床诊断或紧急危机救援。" },
         { heading: "生成式 AI 模型范围", text: "对话由严格受控的服务端生成式人工智能驱动。尽管全天候激活多级危机防护与安全护栏，生成式回应偶有不尽完美之处。请始终保留个人的理性判断。" },
-        { heading: "您的自主掌控权", text: "您拥有随时结束对话、更换陪伴语调、编辑或删除记忆宝库记录，以及直接转介至核实专业人类援助的完整自主权利。" }
+        { heading: "您的自主掌控权", text: "您拥有随时结束对话、更换陪伴语调、编辑或删除记忆宝库记录，以及直接转介至执业专业人类援助的完整自主权利。" }
       ]
     },
     terms: {
@@ -3726,7 +3727,7 @@ function LegalDocument({ document, back, forceLanguage }: { document: LegalDocum
     },
     crisis: {
       title: "危机干预与紧急援助热线",
-      subtitle: "马来西亚官方核实支持热线",
+      subtitle: "马来西亚官方支持热线",
       sections: [
         { heading: "危及生命的紧急险情", text: "如果您或身旁人员面临即刻的人身伤害或自残自杀危险，请立即拨打 999 报警或前往就近医院的急诊部（A&E）。" },
         { heading: "Talian HEAL 15555 (马来西亚卫生部 MOH)", text: "由马来西亚卫生部注册辅导员运营的免费、保密国家心理健康热线（每天开放时间为早上 8:00 至午夜 12:00）。" },
@@ -3982,7 +3983,7 @@ function CompanionPicker({ value, setValue }: { value: Companion; setValue: (v: 
         <Button
           variant="ghost"
           onClick={() => setShowPreviewSheet(true)}
-          style={{ fontSize: "12px", gap: "6px", display: "inline-flex", alignItems: "center" }}
+          style={{ fontSize: "calc(12px * var(--font-scale, 1))", gap: "6px", display: "inline-flex", alignItems: "center" }}
         >
           <span>✨</span>
           {language === "Bahasa Melayu"
@@ -8091,8 +8092,8 @@ function Marketplace({
     }
     return c;
   };
-  const list = merchants || [];
-  const claimedSet = useMemo(
+  const list = (merchants || []).filter((m) => isVoucherActiveAndValid(m));
+  const savedOfferSet = useMemo(
     () => new Set(voucherClaims.map((c) => c.merchantName.toLowerCase())),
     [voucherClaims],
   );
@@ -8103,18 +8104,18 @@ function Marketplace({
         title={t.market_title}
         subtitle={t.market_subtitle}
         action={
-          <span
-            className="status-badge"
-            style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}
-          >
-            {dbSyncing
-              ? language === "Bahasa Melayu"
+          dbSyncing ? (
+            <span
+              className="status-badge"
+              style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}
+            >
+              {language === "Bahasa Melayu"
                 ? "Menyegerak…"
                 : language === "中文"
                 ? "同步中…"
-                : "Syncing…"
-              : t.market_verified_partners}
-          </span>
+                : "Syncing…"}
+            </span>
+          ) : undefined
         }
       />
       <section className="page-pad topless market-page-section">
@@ -8172,16 +8173,16 @@ function Marketplace({
               {dbSyncing
                 ? t.common_loading
                 : language === "Bahasa Melayu"
-                  ? "Tiada tawaran rakan kesejahteraan tersedia buat masa ini."
+                  ? "Tiada tawaran rakan kesejahteraan aktif tersedia buat masa ini."
                   : language === "中文"
-                    ? "暂无可用的合作商户礼遇。"
-                    : "No wellness partner offers are available right now."}
+                    ? "暂无可用的有效合作商户礼遇。"
+                    : "No active wellness partner offers are available right now."}
             </p>
           </div>
         ) : (
           <div className="voucher-list">
             {shown.map((m) => {
-              const isClaimed = claimedSet.has(m.name.toLowerCase());
+              const hasSavedOffer = savedOfferSet.has(m.name.toLowerCase());
               return (
                 <button className="voucher-ticket" key={m.id || m.name} onClick={() => openMerchant(m.name)}>
                   <span className="voucher-ticket-stub">
@@ -8195,7 +8196,7 @@ function Marketplace({
                     <b>{m.offer}</b>
                     <span>{m.description}</span>
                     <em>{m.validity}</em>
-                    <i>{isClaimed ? (language === "Bahasa Melayu" ? "Baucar Aktif ›" : language === "中文" ? "已领取 ›" : "Claimed ›") : t.market_claim_voucher}</i>
+                    <i>{hasSavedOffer ? (language === "Bahasa Melayu" ? "Disimpan ›" : language === "中文" ? "已保存 ›" : "Saved ›") : t.market_claim_voucher}</i>
                   </span>
                 </button>
               );
@@ -8203,7 +8204,7 @@ function Marketplace({
           </div>
         )}
         <button className="professional-banner" onClick={() => navigate("professional")}><Icon name="shield" /><span><strong>{t.market_prof_banner_title}</strong><small>{t.market_prof_banner_desc}</small></span><Icon name="chevron" /></button>
-        <p className="disclaimer"><Icon name="info" /> {language === "Bahasa Melayu" ? "Semua keistimewaan rakan kongsi dan tawaran kesejahteraan telah disahkan bersama komuniti peniaga tempatan kami." : language === "中文" ? "所有合作专属礼遇及身心健康优惠均经由我们本地合作商户社区实名核实。" : "All partner privileges and wellness offers are verified with our local merchant community."}</p>
+        <p className="disclaimer"><Icon name="info" /> {language === "Bahasa Melayu" ? "Tawaran yang dipaparkan datang daripada penyenaraian rakan niaga ONY. Ketersediaan dan terma tertakluk kepada syarat setiap rakan niaga." : language === "中文" ? "展示的优惠来自 ONY 合作商户目录，具体可用性与条款以各合作门店为准。" : "Offers shown come from ONY partner listings. Availability and terms are subject to each partner’s conditions."}</p>
       </section>
     </>
   );
@@ -8248,22 +8249,107 @@ function MerchantDetail({
       </>
     );
   }
+  const isOfferValid = isVoucherActiveAndValid(merchant);
   const handleActivate = async () => {
+    if (!isOfferValid) {
+      notify(
+        language === "Bahasa Melayu"
+          ? "Tawaran ini telah tamat tempoh atau tidak lagi aktif."
+          : language === "中文"
+            ? "该礼遇已过期或当前不可用。"
+            : "This offer has expired or is no longer active.",
+      );
+      return;
+    }
     if (claiming) return;
     setClaiming(true);
     try {
       if (onClaimVoucher && !claimedVoucher) {
         await onClaimVoucher(merchant);
       }
-      notify(language === "Bahasa Melayu" ? "Baucar diaktifkan! Tunjukkan kod bar di kaunter" : language === "中文" ? "优惠券已激活！请在柜台出示条形码" : "Voucher activated! Show barcode at counter");
+      notify(
+        language === "Bahasa Melayu"
+          ? "Rujukan tawaran disimpan ke akaun anda."
+          : language === "中文"
+            ? "礼遇参考编号已保存至您的账户。"
+            : "Offer reference saved to your account.",
+      );
       navigate("voucher");
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not activate voucher.");
+      notify(err instanceof Error ? err.message : "Could not save offer reference.");
     } finally {
       setClaiming(false);
     }
   };
-  return <><PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} /><section className="page-pad voucher-detail-page"><div className="physical-voucher large"><div className="physical-voucher-image"><img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} /><span>{language === "Bahasa Melayu" ? "Tawaran Rakan" : language === "中文" ? "合作伙伴特惠" : "Partner Offer"}</span></div><div className="physical-voucher-main"><small>{merchant.category} · {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}</small><h1>{merchant.name}</h1><strong>{merchant.value}</strong><h3>{merchant.offer}</h3><p>{merchant.description}</p><em>{merchant.validity}</em></div><div className="voucher-serial">{claimedVoucher?.voucherCode || "ONY · PASS"}</div></div><div className="voucher-terms"><h3>{t.voucher_terms_title}</h3><p>{language === "Bahasa Melayu" ? "Sah untuk kegunaan sekali bagi setiap ahli di cawangan yang mengambil bahagian. Tunjukkan kod bar baucar digital semasa membuat pesanan. Tidak boleh ditukar dengan wang tunai atau digabungkan dengan promosi lain." : language === "中文" ? "每位会员在参与合作门市仅限使用一次。点单或核销时请出示数字条形码。不可兑换现金，亦不可与其他优惠叠加使用。" : "Valid for single use per member at participating branches. Present digital voucher barcode upon ordering. Cannot be exchanged for cash or combined with other promotions."}</p></div><Button className="full redeem-voucher" disabled={claiming} onClick={() => void handleActivate()}>{claiming ? t.common_loading : claimedVoucher ? (language === "Bahasa Melayu" ? "Lihat Pas Baucar" : language === "中文" ? "查看礼券凭证" : "View Active Voucher") : t.voucher_redeem_btn}</Button><p className="disclaimer"><Icon name="info" />{language === "Bahasa Melayu" ? "Tunjukkan pas ini terus kepada juruwang rakan niaga untuk menebus." : language === "中文" ? "结账时直接向合作门市收银员出示此通行证即可兑换。" : "Show this pass directly to the partner cashier to redeem."}</p></section></>;
+  return (
+    <>
+      <PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} />
+      <section className="page-pad voucher-detail-page">
+        <div className="physical-voucher large">
+          <div className="physical-voucher-image">
+            <img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} />
+            <span>
+              {!isOfferValid
+                ? (language === "Bahasa Melayu" ? "Tamat Tempoh" : language === "中文" ? "已过期" : "Expired")
+                : (language === "Bahasa Melayu" ? "Tawaran Rakan" : language === "中文" ? "合作伙伴特惠" : "Partner Offer")}
+            </span>
+          </div>
+          <div className="physical-voucher-main">
+            <small>{merchant.category} · {language === "Bahasa Melayu" ? "Rakan" : language === "中文" ? "合作商户" : "Partner"}</small>
+            <h1>{merchant.name}</h1>
+            <strong>{merchant.value}</strong>
+            <h3>{merchant.offer}</h3>
+            <p>{merchant.description}</p>
+            <em>{merchant.validity}</em>
+          </div>
+          <div className="voucher-serial">
+            {claimedVoucher?.voucherCode || (!isOfferValid
+              ? (language === "Bahasa Melayu" ? "TIDAK AKTIF / TAMAT TEMPOH" : language === "中文" ? "已过期 / 不可用" : "EXPIRED / UNAVAILABLE")
+              : merchant.validity)}
+          </div>
+        </div>
+        {!isOfferValid && (
+          <div className="community-note" style={{ background: "var(--theme-error-soft)", borderColor: "var(--theme-border)", color: "var(--theme-error)", marginTop: "12px" }}>
+            <Icon name="info" />
+            <span>
+              {language === "Bahasa Melayu"
+                ? "Tawaran ini telah tamat tempoh atau dinyahaktifkan oleh rakan niaga."
+                : language === "中文"
+                  ? "此礼遇已过期或已被合作商户下线，目前无法保存或使用。"
+                  : "This offer has expired or is currently inactive and cannot be redeemed."}
+            </span>
+          </div>
+        )}
+        <div className="voucher-terms">
+          <h3>{t.voucher_terms_title}</h3>
+          <p>
+            {language === "Bahasa Melayu"
+              ? "Tertakluk kepada penyertaan cawangan rakan niaga dan ketersediaan semasa. Simpan rujukan tawaran anda atau nyatakan butiran tawaran semasa membuat pesanan atau tempahan. Tidak boleh ditukar dengan wang tunai atau digabungkan dengan promosi lain."
+              : language === "中文"
+                ? "适用范围与可用性以参与合作门店为准。保存您的礼遇编号，或在点单与预约时向工作人员出示礼遇详情。不可兑换现金，亦不可与其他优惠叠加使用。"
+                : "Subject to participating branch availability and partner conditions. Save your offer reference or mention the offer details upon ordering or booking. Cannot be exchanged for cash or combined with other promotions."}
+          </p>
+        </div>
+        <Button className="full redeem-voucher" disabled={claiming || !isOfferValid} onClick={() => void handleActivate()}>
+          {claiming
+            ? t.common_loading
+            : !isOfferValid
+              ? (language === "Bahasa Melayu" ? "Tawaran Tamat Tempoh" : language === "中文" ? "已过期" : "Expired")
+              : claimedVoucher
+                ? (language === "Bahasa Melayu" ? "Lihat Rujukan Disimpan" : language === "中文" ? "查看已保存编号" : "View Saved Reference")
+                : t.voucher_redeem_btn}
+        </Button>
+        <p className="disclaimer">
+          <Icon name="info" />
+          {language === "Bahasa Melayu"
+            ? "Tunjukkan kod rujukan atau butiran tawaran anda kepada kakitangan rakan niaga semasa membuat pesanan."
+            : language === "中文"
+              ? "点单或核销时向合作门店工作人员出示您的参考编号或礼遇详情。"
+              : "Share your saved reference code or offer details with the partner staff when ordering."}
+        </p>
+      </section>
+    </>
+  );
 }
 
 function Voucher({
@@ -8281,12 +8367,61 @@ function Voucher({
   const merchant = merchants.find((item) => item.name === merchantName) || merchants[0];
   const displayName = claimedVoucher?.merchantName || merchant?.name || merchantName;
   const displayOffer = claimedVoucher?.offer || merchant?.offer || "";
-  const displayValue = claimedVoucher?.value || merchant?.value || "Partner Pass";
-  const displayCode =
-    claimedVoucher?.voucherCode ||
-    `ONY-PASS-${displayName.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "O") || "ONY"}`;
+  const displayValue = claimedVoucher?.value || merchant?.value || "";
+  const savedCode = claimedVoucher?.voucherCode || "";
 
-  return <div className="voucher-page"><PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} /><section className="page-pad"><div className="redeemed-mark"><Icon name="check" /></div><div className="voucher-card"><SmallLogo /><span className="eyebrow">{t.voucher_ready_eyebrow}</span><h1>{displayValue}</h1><p>{displayOffer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {displayName}</p><div className="voucher-code">{displayCode}</div><div className="barcode">|||| || ||| | |||| |||</div><small>{language === "Bahasa Melayu" ? "Pas Ahli Digital Aktif" : language === "中文" ? "有效数字会员凭证" : "Active Digital Member Pass"}</small></div><div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}><Icon name="check" />{language === "Bahasa Melayu" ? "Tunjukkan kod bar ini kepada kakitangan semasa membuat pesanan atau tempahan." : language === "中文" ? "在点单或预约核销时向店员出示此条形码即可。" : "Present this barcode to the staff upon placing your order or booking."}</div><Button className="full" onClick={back}>{t.voucher_done_btn}</Button></section></div>;
+  if (!claimedVoucher || !savedCode) {
+    return (
+      <div className="voucher-page">
+        <PageHeader title={t.voucher_details_title} subtitle={t.voucher_partner_offer} back={back} />
+        <section className="page-pad">
+          <div className="empty">
+            <Icon name="market" />
+            <p>
+              {language === "Bahasa Melayu"
+                ? "Tiada kod rujukan disimpan ditemui untuk tawaran ini."
+                : language === "中文"
+                  ? "未找到该礼遇的已保存参考编号。"
+                  : "No saved offer reference was found for this partner."}
+            </p>
+            <Button className="full" onClick={back}>{t.voucher_done_btn}</Button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="voucher-page">
+      <PageHeader title={t.voucher_ready_title} subtitle={t.voucher_ready_subtitle} back={back} />
+      <section className="page-pad">
+        <div className="redeemed-mark"><Icon name="check" /></div>
+        <div className="voucher-card">
+          <SmallLogo />
+          <span className="eyebrow">{t.voucher_ready_eyebrow}</span>
+          <h1>{displayValue}</h1>
+          <p>{displayOffer} {language === "Bahasa Melayu" ? "di" : language === "中文" ? "于" : "at"} {displayName}</p>
+          <div className="voucher-code">{savedCode}</div>
+          <small>
+            {language === "Bahasa Melayu"
+              ? "Rujukan Penawaran Disimpan · Akaun Anda"
+              : language === "中文"
+                ? "已保存至您的账号 · 合作伙伴参考编号"
+                : "Saved Offer Reference · Your Account"}
+          </small>
+        </div>
+        <div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}>
+          <Icon name="check" />
+          {language === "Bahasa Melayu"
+            ? "Nyatakan kod rujukan ini kepada kakitangan rakan niaga semasa membuat pesanan atau tempahan. Penebusan tertakluk kepada terma rakan niaga."
+            : language === "中文"
+              ? "在点单或预约时向门店工作人员提供此参考编号即可。具体可用性以合作品牌门店条件为准。"
+              : "Share this reference code with the partner staff when ordering or booking. Redemption depends on partner availability."}
+        </div>
+        <Button className="full" onClick={back}>{t.voucher_done_btn}</Button>
+      </section>
+    </div>
+  );
 }
 
 function Profile({
@@ -9209,7 +9344,7 @@ function Notifications({
                       <div style={{ marginTop: "6px" }}>
                         <span
                           style={{
-                            fontSize: "11px",
+                            fontSize: "calc(11px * var(--font-scale, 1))",
                             fontWeight: 700,
                             color: "var(--coral-dark)",
                             display: "inline-flex",
@@ -9351,7 +9486,7 @@ function Help({ back, navigate }: { back: () => void; navigate: (s: Screen) => v
       level: "info",
       category: "safety",
       action: "CRISIS_DIRECTORY_ACCESSED",
-      message: "User opened verified Malaysian helplines and emergency directory.",
+      message: "User opened Malaysian helplines and emergency directory.",
     }).catch(() => {});
   }, []);
   return <><PageHeader title={t.profile_menu_help} subtitle={t.profile_menu_help_sub} back={back} /><section className="page-pad">
@@ -9464,16 +9599,16 @@ function JobOpportunities({ back, navigate }: { back: () => void; navigate: (s: 
     back={back}
   /><section className="page-pad">
     <div className="community-note" style={{ background: "var(--theme-surface-soft)", borderColor: "var(--theme-border)", color: "var(--theme-success)" }}>
-      <Icon name="check" />{language === "Bahasa Melayu" ? "Senarai rakan kongsi disahkan yang komited kepada kesejahteraan belia dan waktu kerja munasabah." : language === "中文" ? "经认证的合作伙伴，致力于保障青年身心健康与合理工时。" : "Verified partner listings committed to young adult well-being and reasonable working hours."}
+      <Icon name="check" />{language === "Bahasa Melayu" ? "Senarai rakan kongsi pilihan yang mengutamakan kesejahteraan belia dan waktu kerja munasabah." : language === "中文" ? "精选合作伙伴列表，关注青年身心健康与合理工时。" : "Curated partner listings focused on young adult well-being and reasonable working hours."}
     </div>
     <div className="result-summary">
-      <strong>3 {language === "Bahasa Melayu" ? "padanan disahkan" : language === "中文" ? "个精选认证匹配" : "verified matches"}</strong>
+      <strong>3 {language === "Bahasa Melayu" ? "padanan pilihan" : language === "中文" ? "个精选匹配" : "curated matches"}</strong>
       <span>Marketing & Community · {language === "Bahasa Melayu" ? "Peringkat permulaan · Malaysia" : language === "中文" ? "入门级 · 马来西亚" : "Entry level · Malaysia"}</span>
     </div>
     {jobs.map((job) => (
       <div className="job-card" key={job.title}>
         <span className="status-badge" style={{ background: "var(--peach-soft)", color: "var(--coral-dark)" }}>
-          {language === "Bahasa Melayu" ? "Rakan Disahkan" : language === "中文" ? "认证伙伴" : "Verified Partner"}
+          {language === "Bahasa Melayu" ? "Rakan Pilihan" : language === "中文" ? "合作企业" : "Partner"}
         </span>
         <h3>{job.title}</h3>
         <strong>{job.company}</strong>
@@ -9798,7 +9933,7 @@ function ProfessionalSupport({
   };
 
   // Calculate distance for all providers
-  const providersWithDistance = VERIFIED_MALAYSIAN_PROVIDERS.map((provider) => {
+  const providersWithDistance = MALAYSIAN_CARE_PROVIDERS.map((provider) => {
     const distanceKm = userCoords
       ? haversineDistanceKm(userCoords.lat, userCoords.lng, provider.lat, provider.lng)
       : null;
@@ -9848,7 +9983,7 @@ function ProfessionalSupport({
     <>
       <PageHeader
         title={language === "Bahasa Melayu" ? "Bantuan Profesional Berdekatan" : language === "中文" ? "附近的专业心理支援" : "Professional Help Nearby"}
-        subtitle={language === "Bahasa Melayu" ? "Rangkaian kesihatan mental Malaysia yang disahkan & hospital KKM" : language === "中文" ? "马来西亚官方卫生部认证精神专科医院与心理中心" : "Verified Malaysian mental health resources & MOH hospitals"}
+        subtitle={language === "Bahasa Melayu" ? "Rangkaian kesihatan mental Malaysia & hospital KKM" : language === "中文" ? "马来西亚卫生部公立精神专科医院与心理中心目录" : "Malaysian mental health directory & MOH hospitals"}
         back={back}
       />
       <section className="page-pad">
@@ -9949,7 +10084,7 @@ function ProfessionalSupport({
               border: 0,
               padding: "10px 4px 10px 0",
               background: "transparent",
-              fontSize: "13px",
+              fontSize: "calc(13px * var(--font-scale, 1))",
               textAlign: "left",
               outline: "none",
             }}
@@ -9969,7 +10104,7 @@ function ProfessionalSupport({
 
         {/* State filter scroll */}
         <div style={{ marginBottom: "6px" }}>
-          <small style={{ fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.06em", display: "block", marginBottom: "6px" }}>
+          <small style={{ fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", fontSize: "calc(10px * var(--font-scale, 1))", letterSpacing: "0.06em", display: "block", marginBottom: "6px" }}>
             {t.professional_filter_state}
           </small>
           <div className="state-filter-scroll">
@@ -10006,9 +10141,9 @@ function ProfessionalSupport({
         </div>
 
         {/* Results Count & Note */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", fontSize: "11px", color: "var(--muted)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", fontSize: "calc(11px * var(--font-scale, 1))", color: "var(--muted)" }}>
           <span>
-            {shown.length} {language === "Bahasa Melayu" ? "pusat rawatan disahkan" : language === "中文" ? "所认证医疗服务机构" : "verified healthcare providers"}
+            {shown.length} {language === "Bahasa Melayu" ? "pusat rawatan tersenarai" : language === "中文" ? "所精神心理服务机构" : "healthcare providers listed"}
           </span>
           {userCoords && (
             <span style={{ color: "var(--theme-success)", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
@@ -10024,7 +10159,7 @@ function ProfessionalSupport({
             <h3 style={{ marginTop: "10px" }}>
               {language === "Bahasa Melayu" ? "Tiada pusat rawatan padanan ditemui" : language === "中文" ? "未找到符合条件的机构" : "No matching providers found"}
             </h3>
-            <p style={{ color: "var(--muted)", fontSize: "12px" }}>
+            <p style={{ color: "var(--muted)", fontSize: "calc(12px * var(--font-scale, 1))" }}>
               {language === "Bahasa Melayu" ? "Cuba ubah pilihan carian negeri atau kosongkan kata kunci carian." : language === "中文" ? "请尝试选择其他州属或清空搜索关键词。" : "Try selecting 'All Malaysia' or clearing your search keywords."}
             </p>
             <Button variant="secondary" onClick={() => { setSearch(""); setSelectedState("All"); setFilter("All"); }} style={{ marginTop: "12px" }}>
@@ -10091,8 +10226,8 @@ function ProfessionalSupport({
                     )}
                   </div>
 
-                  <h3 style={{ fontSize: "16px", marginTop: "8px", marginBottom: "3px" }}>{displayName}</h3>
-                  <strong style={{ fontSize: "12px", color: "var(--coral-dark)", display: "block" }}>
+                  <h3 style={{ fontSize: "calc(16px * var(--font-scale, 1))", marginTop: "8px", marginBottom: "3px" }}>{displayName}</h3>
+                  <strong style={{ fontSize: "calc(12px * var(--font-scale, 1))", color: "var(--coral-dark)", display: "block" }}>
                     {displayService}
                   </strong>
 
@@ -10110,13 +10245,13 @@ function ProfessionalSupport({
                     )}
                   </div>
 
-                  {/* Physical verified address */}
+                  {/* Physical address */}
                   <div className="provider-address-row">
                     <Icon name="mapPin" />
                     <span>{provider.address}</span>
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "calc(11px * var(--font-scale, 1))", color: "var(--muted)", marginTop: "2px" }}>
                     <Icon name="calendarCheck" />
                     <span>{displayHours}</span>
                   </div>
@@ -10169,8 +10304,8 @@ function ProfessionalSupport({
           {language === "Bahasa Melayu"
             ? "Semua talian bantuan, pusat MENTARI, dan hospital yang disenaraikan adalah perkhidmatan kesihatan mental bertauliah di bawah Kementerian Kesihatan Malaysia atau badan kebajikan berdaftar."
             : language === "中文"
-              ? "所列所有 24 小时热线、MENTARI 社区中心及综合公立医院均为马来西亚卫生部 (KKM) 官方认证或国家注册权威公益机构。"
-              : "All listed helplines, MENTARI centres, and hospital psychiatric units are certified under the Ministry of Health Malaysia or legally registered organizations."}
+              ? "所列 24 小时热线、MENTARI 社区中心及综合公立医院信息整理自马来西亚卫生部 (KKM) 公开名录及注册公益机构，请以各机构最新公布为准。"
+              : "All listed helplines, MENTARI centres, and hospital psychiatric units are compiled from public Ministry of Health Malaysia and registered organisation directories."}
         </p>
       </section>
     </>
@@ -10236,7 +10371,7 @@ function ProviderDetail({
     <>
       <PageHeader
         title={language === "Bahasa Melayu" ? "Butiran Pusat Rawatan" : language === "中文" ? "医疗机构详情" : "Provider Details"}
-        subtitle={language === "Bahasa Melayu" ? "Pusat jagaan kesihatan mental Malaysia disahkan" : language === "中文" ? "经认证的马来西亚心理医疗中心" : "Verified Malaysian mental healthcare centre"}
+        subtitle={language === "Bahasa Melayu" ? "Direktori pusat kesihatan mental Malaysia" : language === "中文" ? "马来西亚心理医疗中心名录" : "Malaysian mental healthcare directory"}
         back={back}
       />
       <section className="page-pad">
@@ -10266,7 +10401,7 @@ function ProviderDetail({
           <div className="provider-avatar">
             <Icon name="shield" />
           </div>
-          <h1 style={{ fontSize: "21px", margin: "6px 0 2px" }}>{displayName}</h1>
+          <h1 style={{ fontSize: "calc(21px * var(--font-scale, 1))", margin: "6px 0 2px" }}>{displayName}</h1>
           <p style={{ color: "var(--coral-dark)", fontWeight: 700, margin: "2px 0 6px" }}>{displayService}</p>
           <small style={{ color: "var(--muted)" }}>{provider.address}</small>
         </div>
@@ -10711,7 +10846,7 @@ function TrustedContact({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
             <div>
               <span className="eyebrow">{t.trusted_phone_section}</span>
-              <strong style={{ display: "block", fontSize: "14px", marginTop: "2px" }}>
+              <strong style={{ display: "block", fontSize: "calc(14px * var(--font-scale, 1))", marginTop: "2px" }}>
                 {currentName} ({currentEmail})
               </strong>
               <small style={{ color: "var(--muted)", display: "block", marginTop: "2px" }}>
@@ -10916,7 +11051,7 @@ function TrustedContact({
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <span className="trusted-avatar" style={{ width: "38px", height: "38px", fontSize: "15px" }}>
+                      <span className="trusted-avatar" style={{ width: "38px", height: "38px", fontSize: "calc(15px * var(--font-scale, 1))" }}>
                         {req.fromName[0]?.toUpperCase() || "O"}
                       </span>
                       <div style={{ flex: 1 }}>
@@ -10933,7 +11068,7 @@ function TrustedContact({
                       <span className="status-badge">{language === "Bahasa Melayu" ? "Menunggu" : language === "中文" ? "待审核" : "Pending"}</span>
                     </div>
                     {req.relationshipNote && (
-                      <p style={{ margin: "8px 0 0", fontSize: "13px", fontStyle: "italic" }}>
+                      <p style={{ margin: "8px 0 0", fontSize: "calc(13px * var(--font-scale, 1))", fontStyle: "italic" }}>
                         “{req.relationshipNote}”
                       </p>
                     )}
@@ -10979,7 +11114,7 @@ function TrustedContact({
                     }}
                   >
                     <div>
-                      <strong style={{ display: "block", fontSize: "13px" }}>
+                      <strong style={{ display: "block", fontSize: "calc(13px * var(--font-scale, 1))" }}>
                         {language === "Bahasa Melayu" ? "Kepada" : language === "中文" ? "发送给" : "To"} {req.toName} ({req.toEmail})
                       </strong>
                       <small style={{ color: "var(--muted)" }}>
@@ -11018,7 +11153,7 @@ function TrustedContact({
                   }}
                 >
                   <div>
-                    <strong style={{ display: "block", fontSize: "13px" }}>{item.personName}</strong>
+                    <strong style={{ display: "block", fontSize: "calc(13px * var(--font-scale, 1))" }}>{item.personName}</strong>
                     <small style={{ color: "var(--muted)" }}>
                       {item.personEmail} · {item.via} · {language === "Bahasa Melayu" ? "Diterima" : language === "中文" ? "已接受" : "Accepted"}
                     </small>
@@ -11747,7 +11882,7 @@ function CommunityMember({
           <div className="voice-mic-notice-card" style={{ marginBottom: "8px" }}>
             <div className="voice-mic-notice-header">
               <Icon name="info" />
-              <span style={{ flex: 1, fontSize: "12px", color: "var(--ink)" }}>{micNotice}</span>
+              <span style={{ flex: 1, fontSize: "calc(12px * var(--font-scale, 1))", color: "var(--ink)" }}>{micNotice}</span>
               <button
                 type="button"
                 className="notice-dismiss-btn"
@@ -11860,7 +11995,7 @@ function CommunityMember({
                     {language === "Bahasa Melayu" ? "Audio sedia · " : language === "中文" ? "音频就绪 · " : "Audio ready · "}
                     {formatAudioDuration(recordedVoice?.duration || voiceSeconds || 8)}
                   </span>
-                  <span className="voice-status-hint" style={{ display: "block", fontSize: "11px" }}>
+                  <span className="voice-status-hint" style={{ display: "block", fontSize: "calc(11px * var(--font-scale, 1))" }}>
                     {isPlayingPreview
                       ? (language === "Bahasa Melayu" ? "Memainkan pratonton…" : language === "中文" ? "正在试听…" : "Playing preview…")
                       : (language === "Bahasa Melayu" ? "Ketik untuk dengar sebelum hantar" : language === "中文" ? "点击播放试听，确认后发送" : "Tap play to review before sending")}
@@ -12027,7 +12162,7 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
     },
     {
       title: language === "Bahasa Melayu" ? "Krisis & kecemasan" : language === "中文" ? "紧急危机支援" : "Crisis & emergency",
-      description: language === "Bahasa Melayu" ? "Akses langkah keselamatan segera dan sahkan butiran hubungan krisis terkini." : language === "中文" ? "获取紧急安全自护步骤并核实官方最新危机救助热线。" : "Access urgent safety steps and confirm current crisis contact details.",
+      description: language === "Bahasa Melayu" ? "Akses langkah keselamatan segera dan semak butiran hubungan krisis terkini." : language === "中文" ? "获取紧急安全自护步骤并查看最新危机救助热线。" : "Access urgent safety steps and review current crisis contact details.",
       action: language === "Bahasa Melayu" ? "Lihat bantuan segera" : language === "中文" ? "查看紧急援助" : "View urgent help",
     },
   ];
@@ -12048,12 +12183,12 @@ function ResourceLibrary({ back, navigate, notify }: { back: () => void; navigat
           <Icon name="memory" />
           <div>
             <h2>{language === "Bahasa Melayu" ? "Sokongan praktikal, langkah demi langkah." : language === "中文" ? "实用支持，步步为营。" : "Practical support, in small steps."}</h2>
-            <p>{language === "Bahasa Melayu" ? "Teknik bantu diri berasaskan klinikal dan direktori kecemasan disahkan sedia apabila anda memerlukannya." : language === "中文" ? "基于临床的自助技巧与经过核实的马来西亚危机专线，随时为您守候。" : "Clinically-grounded self-help techniques and verified emergency directories ready when you need them."}</p>
+            <p>{language === "Bahasa Melayu" ? "Teknik bantu diri berasaskan bukti dan direktori kecemasan Malaysia sedia apabila anda memerlukannya." : language === "中文" ? "实用的自助技巧与马来西亚危机专线目录，随时为您守候。" : "Evidence-based self-help techniques and emergency directories ready when you need them."}</p>
           </div>
         </div>
         <div className="knowledge-status">
-          <span className="status-badge" style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}>{language === "Bahasa Melayu" ? "Perpustakaan Disahkan" : language === "中文" ? "权威核实资源库" : "Verified Library"}</span>
-          <p>{language === "Bahasa Melayu" ? "Disusun selaras dengan garis panduan kesihatan mental dan talian bantuan krisis Malaysia yang disahkan." : language === "中文" ? "依据心理健康准则与马来西亚官方核实危机热线精选编制。" : "Curated in alignment with mental health guidelines and verified Malaysian crisis helplines."}</p>
+          <span className="status-badge" style={{ background: "var(--theme-surface-soft)", color: "var(--theme-success)" }}>{language === "Bahasa Melayu" ? "Perpustakaan Rujukan" : language === "中文" ? "精选心理资源库" : "Curated Library"}</span>
+          <p>{language === "Bahasa Melayu" ? "Disusun selaras dengan garis panduan kesihatan mental dan talian bantuan krisis Malaysia." : language === "中文" ? "依据心理健康准则与马来西亚危机求助热线目录整理。" : "Curated in alignment with mental health guidelines and Malaysian crisis helplines."}</p>
         </div>
         <div className="resource-library">
           {resources.map((resource) => (
@@ -12309,7 +12444,7 @@ function SystemLogsView({
         level: "info",
         category: "system",
         action: "DIAGNOSTIC_PING_OK",
-        message: "Manual diagnostic ping generated by user. Cloud round-trip verified.",
+        message: "Manual diagnostic ping generated by user. Cloud round-trip succeeded.",
         userId: currentUser?.uid,
         userEmail: currentUser?.email,
         metadata: {
@@ -12381,8 +12516,8 @@ function SystemLogsView({
         <div className="log-file-summary-card">
           <div className="log-file-summary-header">
             <div>
-              <strong style={{ fontSize: "13px" }}>{language === "Bahasa Melayu" ? "📦 Aliran Log Pangkalan Data Langsung" : language === "中文" ? "📦 实时数据库日志流" : "📦 Live Database Log Stream"}</strong>
-              <small style={{ display: "block", color: "var(--muted)", fontSize: "11px" }}>
+              <strong style={{ fontSize: "calc(13px * var(--font-scale, 1))" }}>{language === "Bahasa Melayu" ? "📦 Aliran Log Pangkalan Data Langsung" : language === "中文" ? "📦 实时数据库日志流" : "📦 Live Database Log Stream"}</strong>
+              <small style={{ display: "block", color: "var(--muted)", fontSize: "calc(11px * var(--font-scale, 1))" }}>
                 {language === "Bahasa Melayu" ? "Koleksi: systemLogs · Keselamatan Sifar Kepercayaan" : language === "中文" ? "集合: systemLogs · 零信任安全机制" : "Collection: systemLogs · Zero-Trust Security"}
               </small>
             </div>
@@ -12441,7 +12576,7 @@ function SystemLogsView({
             placeholder={t.logs_search_placeholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: "100%", padding: "8px 12px", fontSize: "12.5px" }}
+            style={{ width: "100%", padding: "8px 12px", fontSize: "calc(12.5px * var(--font-scale, 1))" }}
           />
         </div>
 
@@ -12450,7 +12585,7 @@ function SystemLogsView({
             const label = language === "Bahasa Melayu"
               ? (cat === "All" ? "Semua" : cat === "Security" ? "Keselamatan" : cat === "Audit" ? "Audit" : cat === "Safety" ? "Krisis/SOP" : cat === "Auth" ? "Pengesahan" : cat === "System" ? "Sistem" : "Ralat")
               : language === "中文"
-              ? (cat === "All" ? "全部" : cat === "Security" ? "安全防御" : cat === "Audit" ? "审计追踪" : cat === "Safety" ? "危机/SOP" : cat === "Auth" ? "用户认证" : cat === "System" ? "系统运行" : "异常错误")
+              ? (cat === "All" ? "全部" : cat === "Security" ? "安全防御" : cat === "Audit" ? "审计追踪" : cat === "Safety" ? "危机/SOP" : cat === "Auth" ? "身份验证" : cat === "System" ? "系统运行" : "异常错误")
               : cat;
             return (
               <button
