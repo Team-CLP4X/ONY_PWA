@@ -7,6 +7,16 @@ export interface TranslationDictionary {
   nav_community: string;
   nav_market: string;
   nav_profile: string;
+  nav_chat_compact: string;
+  nav_memory_compact: string;
+  nav_community_compact: string;
+  nav_market_compact: string;
+  nav_profile_compact: string;
+  nav_chat_a11y: string;
+  nav_memory_a11y: string;
+  nav_community_a11y: string;
+  nav_market_a11y: string;
+  nav_profile_a11y: string;
 
   // Common UI
   common_save: string;
@@ -84,6 +94,7 @@ export interface TranslationDictionary {
   community_subtitle: string;
   community_create_post: string;
   community_my_node: string;
+  community_node_tab_short: string;
   community_anonymous_member: string;
   community_filter_all: string;
   community_filter_thoughts: string;
@@ -101,6 +112,11 @@ export interface TranslationDictionary {
   market_subtitle: string;
   market_claim_voucher: string;
   market_voucher_validity: string;
+  market_save_offer: string;
+  market_saved: string;
+  market_expired: string;
+  market_no_matches: string;
+  market_clear_filters: string;
 
   // Profile & Settings
   profile_title: string;
@@ -642,11 +658,21 @@ export interface TranslationDictionary {
 export const translations: Record<AppLanguage, TranslationDictionary> = {
   English: {
     // Navigation
-    nav_chat: "Chatbot",
+    nav_chat: "Chat",
     nav_memory: "Memory Vault",
     nav_community: "Community",
     nav_market: "Marketplace",
     nav_profile: "Profile",
+    nav_chat_compact: "Chat",
+    nav_memory_compact: "Vault",
+    nav_community_compact: "Community",
+    nav_market_compact: "Market",
+    nav_profile_compact: "Profile",
+    nav_chat_a11y: "Chat",
+    nav_memory_a11y: "Memory Vault",
+    nav_community_a11y: "Community",
+    nav_market_a11y: "Marketplace",
+    nav_profile_a11y: "Profile",
 
     // Common UI
     common_save: "Save",
@@ -724,6 +750,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_subtitle: "Connected gently, across the world",
     community_create_post: "Create Post",
     community_my_node: "Your Anonymous Node",
+    community_node_tab_short: "My Node",
     community_anonymous_member: "Anonymous Member",
     community_filter_all: "All",
     community_filter_thoughts: "Thoughts",
@@ -739,8 +766,13 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Marketplace
     market_title: "Discover",
     market_subtitle: "Wellness & Partner Offers",
-    market_claim_voucher: "View Offer ›",
+    market_claim_voucher: "View offer",
     market_voucher_validity: "Validity",
+    market_save_offer: "Save offer",
+    market_saved: "Saved",
+    market_expired: "Expired",
+    market_no_matches: "No offers match your search",
+    market_clear_filters: "Clear filters",
 
     // Profile & Settings
     profile_title: "Profile",
@@ -1278,11 +1310,21 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
   "Bahasa Melayu": {
     // Navigation
-    nav_chat: "Pembantu",
-    nav_memory: "Memory Vault",
+    nav_chat: "Sembang",
+    nav_memory: "Kubah Memori",
     nav_community: "Komuniti",
     nav_market: "Pasaran",
     nav_profile: "Profil",
+    nav_chat_compact: "Sembang",
+    nav_memory_compact: "Memori",
+    nav_community_compact: "Komuniti",
+    nav_market_compact: "Pasaran",
+    nav_profile_compact: "Profil",
+    nav_chat_a11y: "Sembang",
+    nav_memory_a11y: "Kubah Memori",
+    nav_community_a11y: "Komuniti",
+    nav_market_a11y: "Pasaran",
+    nav_profile_a11y: "Profil",
 
     // Common UI
     common_save: "Simpan",
@@ -1360,6 +1402,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_subtitle: "Terhubung secara harmoni dari seluruh dunia",
     community_create_post: "Cipta Siaran",
     community_my_node: "Nod Tanpa Nama Anda",
+    community_node_tab_short: "Nod Saya",
     community_anonymous_member: "Ahli Tanpa Nama",
     community_filter_all: "Semua",
     community_filter_thoughts: "Luahan Fikiran",
@@ -1375,8 +1418,13 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Marketplace
     market_title: "Teroka",
     market_subtitle: "Kesejahteraan & Tawaran Rakan Kongsi",
-    market_claim_voucher: "Lihat Tawaran ›",
+    market_claim_voucher: "Lihat tawaran",
     market_voucher_validity: "Sah Sehingga",
+    market_save_offer: "Simpan tawaran",
+    market_saved: "Disimpan",
+    market_expired: "Tamat tempoh",
+    market_no_matches: "Tiada tawaran sepadan dengan carian anda",
+    market_clear_filters: "Kosongkan penapis",
 
     // Profile & Settings
     profile_title: "Profil",
@@ -1914,11 +1962,21 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
 
   "中文": {
     // Navigation
-    nav_chat: "倾诉伙伴",
+    nav_chat: "倾诉",
     nav_memory: "记忆库",
-    nav_community: "互助社区",
+    nav_community: "社区",
     nav_market: "精选好物",
-    nav_profile: "个人中心",
+    nav_profile: "我的",
+    nav_chat_compact: "倾诉",
+    nav_memory_compact: "记忆",
+    nav_community_compact: "社区",
+    nav_market_compact: "好物",
+    nav_profile_compact: "我的",
+    nav_chat_a11y: "倾诉伙伴",
+    nav_memory_a11y: "记忆库",
+    nav_community_a11y: "互助社区",
+    nav_market_a11y: "精选好物",
+    nav_profile_a11y: "个人中心",
 
     // Common UI
     common_save: "保存",
@@ -1996,6 +2054,7 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     community_subtitle: "温柔相连，共度人间悲欢",
     community_create_post: "发布心声",
     community_my_node: "您的匿名光点",
+    community_node_tab_short: "我的光点",
     community_anonymous_member: "匿名成员",
     community_filter_all: "全部",
     community_filter_thoughts: "随想",
@@ -2011,8 +2070,13 @@ export const translations: Record<AppLanguage, TranslationDictionary> = {
     // Marketplace
     market_title: "发现精选",
     market_subtitle: "身心健康与合作商户礼遇",
-    market_claim_voucher: "查看礼遇 ›",
+    market_claim_voucher: "查看礼遇",
     market_voucher_validity: "有效期至",
+    market_save_offer: "收藏礼遇",
+    market_saved: "已收藏",
+    market_expired: "已过期",
+    market_no_matches: "没有符合搜索条件的礼遇",
+    market_clear_filters: "清除筛选",
 
     // Profile & Settings
     profile_title: "个人中心",

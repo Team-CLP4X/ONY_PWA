@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import type { MarketplaceRecommendation } from "../services/contracts";
+import { formatVoucherValidity } from "../data/merchants";
 
 interface ContextualVoucherCardProps {
   voucher: MarketplaceRecommendation;
@@ -28,6 +29,9 @@ export function ContextualVoucherCard({
         ? "温和伙伴推荐"
         : "Gentle Partner Suggestion";
 
+  const [imgFailed, setImgFailed] = useState(false);
+  const cleanValidity = formatVoucherValidity(voucher.validity);
+
   return (
     <div className="chat-voucher-card" role="region" aria-label="Marketplace suggestion">
       <div className="chat-voucher-header">
@@ -54,13 +58,19 @@ export function ContextualVoucherCard({
       )}
 
       <div className="chat-voucher-body">
-        {voucher.image && (
+        {voucher.image && !imgFailed ? (
           <img
             src={voucher.image}
             alt={voucher.merchantName}
             className="chat-voucher-img"
             loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setImgFailed(true)}
           />
+        ) : (
+          <div className="chat-voucher-img chat-voucher-img-fallback" aria-hidden="true">
+            {voucher.merchantName.charAt(0).toUpperCase()}
+          </div>
         )}
         <div className="chat-voucher-info">
           <div className="chat-voucher-topline">
@@ -70,7 +80,7 @@ export function ContextualVoucherCard({
           <strong className="chat-voucher-name">{voucher.merchantName}</strong>
           <span className="chat-voucher-offer">{voucher.offer}</span>
           <p className="chat-voucher-desc">{voucher.description}</p>
-          <small className="chat-voucher-validity">{voucher.validity}</small>
+          {cleanValidity && <small className="chat-voucher-validity">{cleanValidity}</small>}
         </div>
       </div>
 

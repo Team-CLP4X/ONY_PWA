@@ -130,8 +130,8 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       headerBorder: "#d3e7e2",
       navBarBg: "rgba(255, 255, 255, 0.96)",
       navBarBorder: "#d3e7e2",
-      navBarActive: "#0d9488",
-      navBarInactive: "#6e8e88",
+      navBarActive: "#0c5e58",
+      navBarInactive: "#4a6b65",
       iconContainerBg: "rgba(13, 148, 136, 0.12)",
       iconColor: "#0d9488",
       inputBg: "#ffffff",
@@ -241,8 +241,8 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       headerBorder: "#d0e3f1",
       navBarBg: "rgba(255, 255, 255, 0.96)",
       navBarBorder: "#d0e3f1",
-      navBarActive: "#0284c7",
-      navBarInactive: "#6e8eab",
+      navBarActive: "#075985",
+      navBarInactive: "#415e78",
       iconContainerBg: "rgba(2, 132, 199, 0.12)",
       iconColor: "#0284c7",
       inputBg: "#ffffff",
@@ -352,8 +352,8 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       headerBorder: "#f3d5d1",
       navBarBg: "rgba(255, 255, 255, 0.96)",
       navBarBorder: "#f3d5d1",
-      navBarActive: "#e15b64",
-      navBarInactive: "#9d747a",
+      navBarActive: "#9f1239",
+      navBarInactive: "#6b454b",
       iconContainerBg: "rgba(225, 91, 100, 0.12)",
       iconColor: "#e15b64",
       inputBg: "#ffffff",
@@ -451,7 +451,7 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       surfaceElevated: "#ffece1",
       surfaceSoft: "#fedccb",
       primary: "#e96f73",
-      primaryDark: "#ca555f",
+      primaryDark: "#bd4650",
       onPrimary: "#ffffff",
       accent: "#f97316",
       textPrimary: "#2f231e",
@@ -463,8 +463,8 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       headerBorder: "#eadfd7",
       navBarBg: "rgba(255, 255, 255, 0.96)",
       navBarBorder: "#eadfd7",
-      navBarActive: "#ca555f",
-      navBarInactive: "#98847b",
+      navBarActive: "#a8353f",
+      navBarInactive: "#756259",
       iconContainerBg: "rgba(233, 111, 115, 0.12)",
       iconColor: "#e96f73",
       inputBg: "#ffffff",
@@ -574,8 +574,8 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       headerBorder: "#e5dcf0",
       navBarBg: "rgba(255, 255, 255, 0.96)",
       navBarBorder: "#e5dcf0",
-      navBarActive: "#7c3aed",
-      navBarInactive: "#8e7c9f",
+      navBarActive: "#5b21b6",
+      navBarInactive: "#6c5b7d",
       iconContainerBg: "rgba(139, 92, 246, 0.12)",
       iconColor: "#8b5cf6",
       inputBg: "#ffffff",
@@ -686,7 +686,7 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       navBarBg: "rgba(255, 255, 255, 0.96)",
       navBarBorder: "#e7e5e4",
       navBarActive: "#1c1917",
-      navBarInactive: "#78716c",
+      navBarInactive: "#5e5955",
       iconContainerBg: "rgba(87, 83, 78, 0.12)",
       iconColor: "#57534e",
       inputBg: "#ffffff",
@@ -735,7 +735,7 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
       navBarBg: "rgba(22, 22, 25, 0.97)",
       navBarBorder: "rgba(255, 255, 255, 0.10)",
       navBarActive: "#f5f5f4",
-      navBarInactive: "#85817c",
+      navBarInactive: "#938f8a",
       iconContainerBg: "rgba(255, 255, 255, 0.12)",
       iconColor: "#d6d3d1",
       inputBg: "#202023",
@@ -946,6 +946,12 @@ export function applyTokensToDocument(
 
   // Global Shadows, Backdrops, Glass & Structural Accents
   root.style.setProperty("--theme-on-dark", "#ffffff");
+  root.style.setProperty("--theme-accent-text", isDark ? tokens.primary : tokens.primaryDark);
+  root.style.setProperty("--theme-badge-bg", isDark ? tokens.primary : tokens.primaryDark);
+  root.style.setProperty(
+    "--theme-photo-scrim",
+    "linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.36) 52%, rgba(0, 0, 0, 0) 100%)"
+  );
   root.style.setProperty(
     "--theme-backdrop",
     isDark ? "rgba(4, 7, 11, 0.72)" : "rgba(25, 18, 14, 0.46)"

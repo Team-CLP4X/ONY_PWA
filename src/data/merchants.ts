@@ -129,3 +129,19 @@ export function isVoucherActiveAndValid(
 
   return true;
 }
+
+/**
+ * Strips any legacy "· Demo" / "- Demo" / trailing "Demo" marker from voucher validity strings.
+ */
+export function formatVoucherValidity(validity?: string | null): string {
+  const raw = (validity || "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/\s*[·•|\-–—]\s*demo\b/gi, "")
+    .replace(/\bdemo\s*[·•|\-–—]\s*/gi, "")
+    .replace(/\s+\bdemo\b$/i, "")
+    .replace(/^\s*[·•|\-–—]+\s*|\s*[·•|\-–—]+\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+

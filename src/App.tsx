@@ -171,7 +171,7 @@ import {
   MALAYSIAN_CARE_PROVIDERS,
   type HealthcareProvider,
 } from "./data/providers";
-import { isVoucherActiveAndValid } from "./data/merchants";
+import { formatVoucherValidity, isVoucherActiveAndValid } from "./data/merchants";
 import {
   ambientMusicEngine,
   CALMING_TRACKS,
@@ -497,13 +497,61 @@ type Merchant = FirestoreMerchant;
 type Memory = { id: number; text: string; reason: string; active: boolean; category?: string; kind?: "text" | "image"; imageTone?: string; imageUrl?: string; firestoreId?: string };
 type Post = FirestoreCommunityPost;
 
-const Icon = ({ name }: { name: string }) => {
+const Icon = ({ name, filled = false }: { name: string; filled?: boolean }) => {
   const paths: Record<string, ReactNode> = {
-    chat: <><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8M8 12h5"/></>,
-    memory: <><path d="M6 3h12v18l-6-3-6 3V3Z"/><path d="M9 8h6M9 12h4"/></>,
-    community: <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6M15 15c4 0 6 2 6 5"/></>,
-    market: <><path d="M4 9h16l-1 12H5L4 9ZM7 9V7a5 5 0 0 1 10 0v2"/></>,
-    profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-7 8-7s8 2 8 7"/></>,
+    chat: filled ? (
+      <>
+        <path d="M4 5h16v11H9l-5 4V5Z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+        <path d="M8 9h8M8 12h5" stroke="var(--theme-bg)" strokeWidth="1.9" strokeLinecap="round" />
+      </>
+    ) : (
+      <><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8M8 12h5"/></>
+    ),
+    memory: filled ? (
+      <>
+        <path d="M6 3h12v18l-6-3-6 3V3Z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+        <path d="M9 8h6M9 12h4" stroke="var(--theme-bg)" strokeWidth="1.9" strokeLinecap="round" />
+      </>
+    ) : (
+      <><path d="M6 3h12v18l-6-3-6 3V3Z"/><path d="M9 8h6M9 12h4"/></>
+    ),
+    community: filled ? (
+      <>
+        <circle cx="9" cy="8" r="3" fill="currentColor" />
+        <circle cx="17" cy="10" r="2" fill="currentColor" />
+        <path d="M3 20c0-4 2-6 6-6s6 2 6 6Z" fill="currentColor" />
+        <path d="M15 15c4 0 6 2 6 5h-6" fill="currentColor" />
+      </>
+    ) : (
+      <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6M15 15c4 0 6 2 6 5"/></>
+    ),
+    market: filled ? (
+      <>
+        <path d="M4 9h16l-1 12H5L4 9Z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+        <path d="M8 9V7a4 4 0 0 1 8 0v2" fill="none" />
+      </>
+    ) : (
+      <><path d="M4 9h16l-1 12H5L4 9ZM7 9V7a5 5 0 0 1 10 0v2"/></>
+    ),
+    profile: filled ? (
+      <>
+        <circle cx="12" cy="8" r="4" fill="currentColor" />
+        <path d="M4 21c0-5 3-7 8-7s8 2 8 7Z" fill="currentColor" />
+      </>
+    ) : (
+      <><circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-7 8-7s8 2 8 7"/></>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <polyline points="12 7 12 12 15 14" />
+      </>
+    ),
+    bookmark: filled ? (
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+    ) : (
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" strokeLinejoin="round" />
+    ),
     back: <path d="m15 18-6-6 6-6"/>,
     close: <path d="m6 6 12 12M18 6 6 18"/>,
     search: (
@@ -638,6 +686,12 @@ const Icon = ({ name }: { name: string }) => {
         <circle cx="12" cy="12" r="10" />
         <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" opacity="0.3" />
         <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+      </>
+    ),
+    ticket: (
+      <>
+        <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9Z" />
+        <path d="M9 7v10" strokeDasharray="2 2" />
       </>
     ),
   };
@@ -1458,18 +1512,104 @@ function AppInner() {
   }, [authenticated, settings.appLock]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
+    if (tab !== "memory" || screen !== "main") {
+      setIsWritingJournalBook(false);
+    }
+    setIsVirtualKeyboardOpen(false);
+    setVisualViewportHeight(null);
+  }, [tab, screen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const vv = window.visualViewport;
-    let baseline = Math.max(window.innerHeight, vv.height);
-    const syncViewport = () => {
-      baseline = Math.max(baseline, window.innerHeight);
-      const ratio = vv.height / Math.max(baseline, 1);
-      const kbOpen = ratio < 0.78;
-      setIsVirtualKeyboardOpen(kbOpen);
-      setVisualViewportHeight(kbOpen ? Math.round(vv.height) : null);
+    const vk = (navigator as Navigator & {
+      virtualKeyboard?: {
+        boundingRect?: DOMRect;
+        addEventListener?: (type: string, listener: () => void) => void;
+        removeEventListener?: (type: string, listener: () => void) => void;
+      };
+    }).virtualKeyboard;
+
+    const isEditableFocused = () => {
+      const el = document.activeElement;
+      if (!el || !(el instanceof HTMLElement)) return false;
+      if (el.isContentEditable) return true;
+      if (el.tagName === "TEXTAREA") {
+        const ta = el as HTMLTextAreaElement;
+        return !ta.readOnly && !ta.disabled;
+      }
+      if (el.tagName === "INPUT") {
+        const inp = el as HTMLInputElement;
+        if (inp.readOnly || inp.disabled) return false;
+        const t = (inp.type || "text").toLowerCase();
+        return !["checkbox", "radio", "button", "submit", "reset", "file", "range", "color", "image", "hidden"].includes(t);
+      }
+      return false;
     };
-    vv.addEventListener("resize", syncViewport);
-    return () => vv.removeEventListener("resize", syncViewport);
+
+    let baseline = Math.max(window.innerHeight, vv ? vv.height : window.innerHeight);
+    let focusOutTimer: number | null = null;
+
+    const syncViewport = () => {
+      const currentVvHeight = vv ? vv.height : window.innerHeight;
+      const focused = isEditableFocused();
+
+      if (!focused) {
+        // Dynamically recalibrate baseline when not typing (handles window resizes, device emulation, rotation)
+        baseline = Math.max(window.innerHeight, currentVvHeight);
+        setIsVirtualKeyboardOpen(false);
+        setVisualViewportHeight(null);
+        return;
+      }
+
+      const vkHeight = vk?.boundingRect?.height ?? 0;
+      const heightDrop = baseline - currentVvHeight;
+      const ratio = currentVvHeight / Math.max(baseline, 1);
+      const kbOpen = vkHeight > 60 || (heightDrop > 120 && ratio < 0.82);
+
+      setIsVirtualKeyboardOpen(kbOpen);
+      setVisualViewportHeight(kbOpen && vv ? Math.round(currentVvHeight) : null);
+    };
+
+    const handleFocusOut = () => {
+      if (focusOutTimer !== null) window.clearTimeout(focusOutTimer);
+      focusOutTimer = window.setTimeout(() => {
+        focusOutTimer = null;
+        syncViewport();
+      }, 80);
+    };
+
+    const handleFocusIn = () => {
+      if (focusOutTimer !== null) {
+        window.clearTimeout(focusOutTimer);
+        focusOutTimer = null;
+      }
+      window.setTimeout(syncViewport, 50);
+    };
+
+    const handleOrientationOrResize = () => {
+      if (!isEditableFocused()) {
+        baseline = Math.max(window.innerHeight, vv ? vv.height : window.innerHeight);
+      }
+      syncViewport();
+    };
+
+    vv?.addEventListener("resize", syncViewport);
+    vk?.addEventListener?.("geometrychange", syncViewport);
+    window.addEventListener("resize", handleOrientationOrResize);
+    window.addEventListener("orientationchange", handleOrientationOrResize);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+
+    return () => {
+      if (focusOutTimer !== null) window.clearTimeout(focusOutTimer);
+      vv?.removeEventListener("resize", syncViewport);
+      vk?.removeEventListener?.("geometrychange", syncViewport);
+      window.removeEventListener("resize", handleOrientationOrResize);
+      window.removeEventListener("orientationchange", handleOrientationOrResize);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+    };
   }, []);
 
   const handleToggleSound = (targetTrackId?: string) => {
@@ -2118,6 +2258,58 @@ function AppInner() {
     [allNotifications],
   );
 
+  const unreadCommunityCount = useMemo(() => {
+    const unreadSupport = mySupportMessages.filter(
+      (msg) =>
+        msg.fromUserId !== effectiveUid &&
+        !(msg.senderAnonymous || "").includes("(You)") &&
+        !msg.readAt &&
+        !readNotificationIds.has(`support_${msg.id}`),
+    ).length;
+    const unreadPostActivity = allNotifications.filter(
+      (n) =>
+        !n.read &&
+        (n.type === "post_liked" || n.type === "post_commented" || n.type === "comment_replied"),
+    ).length;
+    return unreadSupport + unreadPostActivity;
+  }, [mySupportMessages, effectiveUid, readNotificationIds, allNotifications]);
+
+  const savedVoucherIds = useMemo(
+    () => new Set<string>(settings.savedVoucherIds || []),
+    [settings.savedVoucherIds],
+  );
+
+  const handleToggleSaveVoucher = (merchant: Merchant) => {
+    const voucherKey = (merchant.id || merchant.name).toLowerCase();
+    const isCurrentlySaved = savedVoucherIds.has(voucherKey);
+    const next = isCurrentlySaved
+      ? (settings.savedVoucherIds || []).filter((id) => id.toLowerCase() !== voucherKey)
+      : Array.from(new Set([...(settings.savedVoucherIds || []), voucherKey]));
+    updateSettings({ savedVoucherIds: next.slice(-100) });
+    if (
+      (settings.soundHapticsPreferences?.hapticsEnabled ?? settings.soundHaptics?.hapticsEnabled ?? true) &&
+      typeof navigator !== "undefined" &&
+      typeof navigator.vibrate === "function"
+    ) {
+      try {
+        navigator.vibrate(10);
+      } catch {}
+    }
+    notify(
+      isCurrentlySaved
+        ? (language === "Bahasa Melayu"
+            ? "Dibuang daripada tawaran disimpan"
+            : language === "中文"
+              ? "已从收藏礼遇中移除"
+              : "Removed from saved offers")
+        : (language === "Bahasa Melayu"
+            ? "Tawaran disimpan"
+            : language === "中文"
+              ? "已收藏此礼遇"
+              : "Offer saved"),
+    );
+  };
+
   const handleMarkAllRead = () => {
     const nextSet = new Set(readNotificationIds);
     allNotifications.forEach((n) => nextSet.add(n.id));
@@ -2729,6 +2921,8 @@ function AppInner() {
       <div className={`app-shell theme-${theme}`}>
         <div
           className={`phone ${isVirtualKeyboardOpen ? "virtual-keyboard-open" : ""}`}
+          data-active-tab={tab}
+          data-active-screen={screen}
           style={
             visualViewportHeight
               ? ({ "--vvh": `${visualViewportHeight}px` } as CSSProperties)
@@ -2942,6 +3136,8 @@ function AppInner() {
                     navigate={navigate}
                     merchants={merchants}
                     voucherClaims={voucherClaims}
+                    savedVoucherIds={settings.savedVoucherIds || []}
+                    onToggleSaveVoucher={handleToggleSaveVoucher}
                     dbSyncing={dbSyncing}
                     openMerchant={(name) => { setSelectedMerchantName(name); navigate("merchant"); }}
                   />
@@ -3307,7 +3503,17 @@ function AppInner() {
           />
         )}
         {isBottomNavVisible && (
-          <BottomNav tab={tab} setTab={goTab} />
+          <BottomNav
+            tab={tab}
+            setTab={goTab}
+            unreadCommunityCount={unreadCommunityCount}
+            unreadProfileCount={unreadNotificationsCount + pendingIncomingTrusted.length}
+            hapticsEnabled={
+              settings.soundHapticsPreferences?.hapticsEnabled ??
+              settings.soundHaptics?.hapticsEnabled ??
+              true
+            }
+          />
         )}
         {toast && (
           <div className="toast">
@@ -4415,17 +4621,35 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
   useEffect(() => {
     if (typeof window === "undefined") return;
     const vv = window.visualViewport;
-    const baselineHeight = window.innerHeight;
-    const updateViewport = () => {
-      if (!vv) return;
-      const ratio = vv.height / Math.max(window.innerHeight, baselineHeight);
-      setKeyboardOpen(ratio < 0.78);
+    let baselineHeight = Math.max(window.innerHeight, vv ? vv.height : window.innerHeight);
+    const hasFocusedInput = () => {
+      const el = document.activeElement;
+      return Boolean(
+        el &&
+          (el.tagName === "TEXTAREA" ||
+            (el.tagName === "INPUT" &&
+              !["checkbox", "radio", "button", "submit"].includes(((el as HTMLInputElement).type || "").toLowerCase()))),
+      );
     };
-    if (vv) {
-      vv.addEventListener("resize", updateViewport);
-      return () => vv.removeEventListener("resize", updateViewport);
-    }
-    return undefined;
+    const updateViewport = () => {
+      if (!hasFocusedInput()) {
+        baselineHeight = Math.max(window.innerHeight, vv ? vv.height : window.innerHeight);
+        setKeyboardOpen(false);
+        return;
+      }
+      if (!vv) return;
+      const drop = baselineHeight - vv.height;
+      const ratio = vv.height / Math.max(baselineHeight, 1);
+      setKeyboardOpen(drop > 120 && ratio < 0.82);
+    };
+    vv?.addEventListener("resize", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    document.addEventListener("focusout", updateViewport);
+    return () => {
+      vv?.removeEventListener("resize", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+      document.removeEventListener("focusout", updateViewport);
+    };
   }, []);
 
   useEffect(() => {
@@ -5388,12 +5612,11 @@ function ChatHome({ navigate, goTab, displayName, companion, persona, setPersona
         }}
         onBlurInput={() => {
           setIsUserTyping(false);
-          if (typeof window !== "undefined" && window.visualViewport) {
-            const ratio = window.visualViewport.height / Math.max(window.innerHeight, 1);
-            if (ratio >= 0.85) setKeyboardOpen(false);
-          } else {
-            setKeyboardOpen(false);
-          }
+          window.setTimeout(() => {
+            const el = document.activeElement;
+            const stillTyping = Boolean(el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT"));
+            if (!stillTyping) setKeyboardOpen(false);
+          }, 80);
         }}
         onSubmitText={submit}
         onSwitchToTextMode={() => {
@@ -7223,7 +7446,13 @@ function Community({
     <div className="community-view-switch" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
       <Button variant={view === "globe" ? "primary" : "secondary"} onClick={() => setView("globe")}>{t.community_tab_globe}</Button>
       <Button variant={view === "posts" ? "primary" : "secondary"} onClick={() => setView("posts")}>{t.community_tab_posts}</Button>
-      <Button variant={view === "myNode" ? "primary" : "secondary"} onClick={() => setView("myNode")}>{t.community_my_node} ({mySupportMessages.length})</Button>
+      <Button
+        variant={view === "myNode" ? "primary" : "secondary"}
+        onClick={() => setView("myNode")}
+        title={`${t.community_my_node} (${mySupportMessages.length})`}
+      >
+        {t.community_node_tab_short} ({mySupportMessages.length})
+      </Button>
     </div>
     {view === "globe" && <>
       <div className="globe-stage-shell">
@@ -8046,17 +8275,57 @@ function VoiceNote({
 
 
 
+function VoucherCardMedia({
+  image,
+  name,
+  value,
+  expired,
+}: {
+  image?: string;
+  name: string;
+  value?: string;
+  expired?: boolean;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showFallback = !image || imgFailed;
+
+  return (
+    <div className={`voucher-card-media ${showFallback ? "is-fallback" : ""} ${expired ? "is-expired" : ""}`}>
+      {!showFallback ? (
+        <img
+          src={image}
+          alt={name}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <div className="voucher-card-media-fallback" aria-hidden="true">
+          <span>{name.charAt(0).toUpperCase()}</span>
+          <Icon name="market" />
+        </div>
+      )}
+      <div className="voucher-card-scrim" aria-hidden="true" />
+      {value && <span className="voucher-value-badge">{value}</span>}
+    </div>
+  );
+}
+
 function Marketplace({
   navigate,
   openMerchant,
   merchants = [],
   voucherClaims = [],
+  savedVoucherIds = [],
+  onToggleSaveVoucher,
   dbSyncing,
 }: {
   navigate: (s: Screen) => void;
   openMerchant: (name: string) => void;
   merchants?: Merchant[];
   voucherClaims?: FirestoreVoucherClaim[];
+  savedVoucherIds?: string[];
+  onToggleSaveVoucher?: (merchant: Merchant) => void;
   dbSyncing?: boolean;
 }) {
   const { t, language } = useLanguage();
@@ -8092,12 +8361,34 @@ function Marketplace({
     }
     return c;
   };
-  const list = (merchants || []).filter((m) => isVoucherActiveAndValid(m));
-  const savedOfferSet = useMemo(
-    () => new Set(voucherClaims.map((c) => c.merchantName.toLowerCase())),
-    [voucherClaims],
-  );
-  const shown = list.filter((m) => (category === "All" || m.category === category) && `${m.name} ${m.offer}`.toLowerCase().includes(query.toLowerCase()));
+  const visibleMerchants = useMemo(() => {
+    const activeListed = (merchants || []).filter((m) => m.active !== false);
+    return [...activeListed].sort((a, b) => {
+      const aValid = isVoucherActiveAndValid(a) ? 0 : 1;
+      const bValid = isVoucherActiveAndValid(b) ? 0 : 1;
+      return aValid - bValid;
+    });
+  }, [merchants]);
+
+  const savedSet = useMemo(() => {
+    const s = new Set<string>(savedVoucherIds.map((id) => id.toLowerCase()));
+    voucherClaims.forEach((c) => {
+      if (c.merchantId) s.add(c.merchantId.toLowerCase());
+      if (c.merchantName) s.add(c.merchantName.toLowerCase());
+    });
+    return s;
+  }, [savedVoucherIds, voucherClaims]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const shown = visibleMerchants.filter((m) => {
+    const matchesCategory = category === "All" || m.category === category;
+    if (!matchesCategory) return false;
+    if (!normalizedQuery) return true;
+    return `${m.name} ${m.offer} ${m.category} ${m.description}`.toLowerCase().includes(normalizedQuery);
+  });
+  const hasFilters = Boolean(normalizedQuery) || category !== "All";
+  const showSkeletons = Boolean(dbSyncing && merchants.length === 0);
+
   return (
     <>
       <PageHeader
@@ -8131,6 +8422,7 @@ function Marketplace({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.market_search_placeholder}
+              aria-label={t.market_search_placeholder}
             />
             {query && (
               <button
@@ -8144,61 +8436,163 @@ function Marketplace({
               </button>
             )}
           </div>
-          <div className="scroll-chips">
-            {cats.map((x) => (
-              <Button
-                key={x}
-                variant={category === x ? "primary" : "secondary"}
-                onClick={() =>
-                  x === "Professional support"
-                    ? navigate("professional")
-                    : setCategory(x)
-                }
-              >
-                {getCatLabel(x)}
-              </Button>
-            ))}
+          <div className="scroll-chips-wrap">
+            <div className="scroll-chips">
+              {cats.map((x) => (
+                <Button
+                  key={x}
+                  variant={category === x ? "primary" : "secondary"}
+                  onClick={() =>
+                    x === "Professional support"
+                      ? navigate("professional")
+                      : setCategory(x)
+                  }
+                >
+                  {getCatLabel(x)}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="market-section-head">
           <h3>{t.market_wellness_vouchers}</h3>
-          <Button variant="ghost" onClick={() => setCategory("All")}>
+          <Button variant="ghost" onClick={() => { setCategory("All"); setQuery(""); }}>
             {t.market_view_all}
           </Button>
         </div>
-        {shown.length === 0 ? (
-          <div className="empty mini-empty">
+        {showSkeletons ? (
+          <div className="voucher-list" aria-busy="true" aria-label={t.common_loading}>
+            {[0, 1, 2].map((idx) => (
+              <div className="voucher-ticket-item" key={idx}>
+                <div className="voucher-ticket-surface voucher-ticket-skeleton">
+                  <div className="voucher-ticket-stub voucher-skeleton-stub">
+                    <div className="voucher-skeleton-media" />
+                  </div>
+                  <div className="voucher-ticket-divider" aria-hidden="true" />
+                  <div className="voucher-ticket-main voucher-skeleton-body">
+                    <span className="voucher-skeleton-line short" />
+                    <span className="voucher-skeleton-line title" />
+                    <span className="voucher-skeleton-line accent" />
+                    <span className="voucher-skeleton-line full" />
+                    <span className="voucher-skeleton-line footer" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="empty mini-empty voucher-empty-state">
             <Icon name="market" />
             <p>
-              {dbSyncing
-                ? t.common_loading
+              {hasFilters
+                ? t.market_no_matches
                 : language === "Bahasa Melayu"
                   ? "Tiada tawaran rakan kesejahteraan aktif tersedia buat masa ini."
                   : language === "中文"
                     ? "暂无可用的有效合作商户礼遇。"
                     : "No active wellness partner offers are available right now."}
             </p>
+            {hasFilters && (
+              <Button variant="secondary" onClick={() => { setCategory("All"); setQuery(""); }}>
+                {t.market_clear_filters}
+              </Button>
+            )}
           </div>
         ) : (
           <div className="voucher-list">
             {shown.map((m) => {
-              const hasSavedOffer = savedOfferSet.has(m.name.toLowerCase());
+              const valid = isVoucherActiveAndValid(m);
+              const voucherKey = (m.id || m.name).toLowerCase();
+              const isSaved =
+                savedSet.has(voucherKey) || savedSet.has(m.name.toLowerCase());
+              const cleanValidity = formatVoucherValidity(m.validity);
+              const voucherTagText =
+                language === "Bahasa Melayu"
+                  ? "BAUCAR"
+                  : language === "中文"
+                    ? "礼券"
+                    : "VOUCHER";
+
               return (
-                <button className="voucher-ticket" key={m.id || m.name} onClick={() => openMerchant(m.name)}>
-                  <span className="voucher-ticket-stub">
-                    <img src={m.image} alt="" />
-                    <small>{getCatLabel(m.category)}</small>
-                    <strong>{m.value}</strong>
-                  </span>
-                  <span className="voucher-ticket-body">
-                    <small>{getCatLabel(m.category)} · {language === "Bahasa Melayu" ? "Rakan" : language === "中文" ? "合作商户" : "Partner"}</small>
-                    <strong>{m.name}</strong>
-                    <b>{m.offer}</b>
-                    <span>{m.description}</span>
-                    <em>{m.validity}</em>
-                    <i>{hasSavedOffer ? (language === "Bahasa Melayu" ? "Disimpan ›" : language === "中文" ? "已保存 ›" : "Saved ›") : t.market_claim_voucher}</i>
-                  </span>
-                </button>
+                <article
+                  className={`voucher-ticket-item ${!valid ? "is-expired" : ""}`}
+                  key={m.id || m.name}
+                >
+                  <div className="voucher-ticket-surface">
+                    <button
+                      type="button"
+                      className="voucher-ticket-stub"
+                      onClick={() => openMerchant(m.name)}
+                      aria-label={`${m.name} — ${m.value || m.offer}`}
+                    >
+                      <VoucherCardMedia
+                        image={m.image}
+                        name={m.name}
+                        value={m.value}
+                        expired={!valid}
+                      />
+                    </button>
+                    <div className="voucher-ticket-divider" aria-hidden="true" />
+                    <div className="voucher-ticket-main">
+                      <div className="voucher-ticket-top">
+                        <span className="voucher-category-pill">{getCatLabel(m.category)}</span>
+                        {!valid ? (
+                          <span className="voucher-expired-stamp">{t.market_expired}</span>
+                        ) : isSaved ? (
+                          <span className="voucher-saved-pill" aria-label={t.market_saved}>
+                            <Icon name="bookmark" filled />
+                            <span>{t.market_saved}</span>
+                          </span>
+                        ) : (
+                          <span className="voucher-ticket-tag" aria-hidden="true">
+                            <Icon name="ticket" />
+                            <span>{voucherTagText}</span>
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="voucher-ticket-tap"
+                        onClick={() => openMerchant(m.name)}
+                        aria-label={`${m.name} — ${m.offer}`}
+                      >
+                        <h4 className="voucher-merchant-title">{m.name}</h4>
+                        <div className="voucher-offer-line">{m.offer}</div>
+                        <p className="voucher-desc-line">{m.description}</p>
+                        <div className="voucher-validity-row">
+                          <Icon name="clock" />
+                          <span>
+                            {!valid
+                              ? t.market_expired
+                              : cleanValidity || t.market_voucher_validity}
+                          </span>
+                        </div>
+                      </button>
+                      <div className="voucher-ticket-actions">
+                        {valid && onToggleSaveVoucher && (
+                          <button
+                            type="button"
+                            className={`voucher-bookmark-btn ${isSaved ? "is-saved" : ""}`}
+                            onClick={() => onToggleSaveVoucher(m)}
+                            aria-pressed={isSaved}
+                            aria-label={isSaved ? t.market_saved : t.market_save_offer}
+                            title={isSaved ? t.market_saved : t.market_save_offer}
+                          >
+                            <Icon name="bookmark" filled={isSaved} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={`voucher-action-btn ${!valid ? "is-expired" : ""}`}
+                          disabled={!valid}
+                          onClick={() => valid && openMerchant(m.name)}
+                        >
+                          {!valid ? t.market_expired : t.market_claim_voucher}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
               );
             })}
           </div>
@@ -8229,6 +8623,7 @@ function MerchantDetail({
 }) {
   const { t, language } = useLanguage();
   const [claiming, setClaiming] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
   const merchant = merchants.find((item) => item.name === merchantName) || merchants[0];
   if (!merchant) {
     return (
@@ -8250,6 +8645,7 @@ function MerchantDetail({
     );
   }
   const isOfferValid = isVoucherActiveAndValid(merchant);
+  const cleanValidity = formatVoucherValidity(merchant.validity);
   const handleActivate = async () => {
     if (!isOfferValid) {
       notify(
@@ -8287,10 +8683,22 @@ function MerchantDetail({
       <section className="page-pad voucher-detail-page">
         <div className="physical-voucher large">
           <div className="physical-voucher-image">
-            <img src={merchant.image} alt={`${merchant.category} example for ${merchant.name}`} />
+            {merchant.image && !imgFailed ? (
+              <img
+                src={merchant.image}
+                alt={`${merchant.category} example for ${merchant.name}`}
+                referrerPolicy="no-referrer"
+                onError={() => setImgFailed(true)}
+              />
+            ) : (
+              <div className="voucher-card-media-fallback" aria-hidden="true">
+                <span>{merchant.name.charAt(0).toUpperCase()}</span>
+                <Icon name="market" />
+              </div>
+            )}
             <span>
               {!isOfferValid
-                ? (language === "Bahasa Melayu" ? "Tamat Tempoh" : language === "中文" ? "已过期" : "Expired")
+                ? t.market_expired
                 : (language === "Bahasa Melayu" ? "Tawaran Rakan" : language === "中文" ? "合作伙伴特惠" : "Partner Offer")}
             </span>
           </div>
@@ -8300,12 +8708,12 @@ function MerchantDetail({
             <strong>{merchant.value}</strong>
             <h3>{merchant.offer}</h3>
             <p>{merchant.description}</p>
-            <em>{merchant.validity}</em>
+            {cleanValidity && <em>{cleanValidity}</em>}
           </div>
           <div className="voucher-serial">
             {claimedVoucher?.voucherCode || (!isOfferValid
               ? (language === "Bahasa Melayu" ? "TIDAK AKTIF / TAMAT TEMPOH" : language === "中文" ? "已过期 / 不可用" : "EXPIRED / UNAVAILABLE")
-              : merchant.validity)}
+              : (cleanValidity || t.market_voucher_validity))}
           </div>
         </div>
         {!isOfferValid && (
@@ -8334,7 +8742,7 @@ function MerchantDetail({
           {claiming
             ? t.common_loading
             : !isOfferValid
-              ? (language === "Bahasa Melayu" ? "Tawaran Tamat Tempoh" : language === "中文" ? "已过期" : "Expired")
+              ? t.market_expired
               : claimedVoucher
                 ? (language === "Bahasa Melayu" ? "Lihat Rujukan Disimpan" : language === "中文" ? "查看已保存编号" : "View Saved Reference")
                 : t.voucher_redeem_btn}
@@ -12647,27 +13055,75 @@ function SystemLogsView({
   );
 }
 
-function BottomNav({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+function BottomNav({
+  tab,
+  setTab,
+  unreadCommunityCount = 0,
+  unreadProfileCount = 0,
+  hapticsEnabled = true,
+}: {
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  unreadCommunityCount?: number;
+  unreadProfileCount?: number;
+  hapticsEnabled?: boolean;
+}) {
   const { t } = useLanguage();
-  const nav: [Tab, string, string][] = [
-    ["chat", t.nav_chat, "chat"],
-    ["memory", t.nav_memory, "memory"],
-    ["community", t.nav_community, "community"],
-    ["market", t.nav_market, "market"],
-    ["profile", t.nav_profile, "profile"],
+  const nav: {
+    id: Tab;
+    label: string;
+    compactLabel: string;
+    a11yLabel: string;
+    icon: string;
+    badgeCount?: number;
+  }[] = [
+    { id: "chat", label: t.nav_chat, compactLabel: t.nav_chat_compact, a11yLabel: t.nav_chat_a11y, icon: "chat" },
+    { id: "memory", label: t.nav_memory, compactLabel: t.nav_memory_compact, a11yLabel: t.nav_memory_a11y, icon: "memory" },
+    { id: "community", label: t.nav_community, compactLabel: t.nav_community_compact, a11yLabel: t.nav_community_a11y, icon: "community", badgeCount: unreadCommunityCount },
+    { id: "market", label: t.nav_market, compactLabel: t.nav_market_compact, a11yLabel: t.nav_market_a11y, icon: "market" },
+    { id: "profile", label: t.nav_profile, compactLabel: t.nav_profile_compact, a11yLabel: t.nav_profile_a11y, icon: "profile", badgeCount: unreadProfileCount },
   ];
+
+  const handleSelect = (nextTab: Tab) => {
+    if (
+      nextTab !== tab &&
+      hapticsEnabled &&
+      typeof navigator !== "undefined" &&
+      typeof navigator.vibrate === "function"
+    ) {
+      try {
+        navigator.vibrate(10);
+      } catch {}
+    }
+    setTab(nextTab);
+  };
+
   return (
-    <nav className="bottom-nav">
-      {nav.map(([id, label, icon]) => (
-        <button
-          key={id}
-          className={tab === id ? "active" : ""}
-          onClick={() => setTab(id)}
-        >
-          <Icon name={icon} />
-          <span>{label}</span>
-        </button>
-      ))}
+    <nav className="bottom-nav" role="tablist" aria-label="Main navigation">
+      {nav.map((item) => {
+        const isActive = tab === item.id;
+        const hasBadge = (item.badgeCount || 0) > 0;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            className={isActive ? "active" : ""}
+            onClick={() => handleSelect(item.id)}
+            aria-label={item.a11yLabel}
+            aria-selected={isActive}
+          >
+            <span className="bottom-nav-icon-pill">
+              <Icon name={item.icon} filled={isActive} />
+              {hasBadge && <i className="bottom-nav-badge" aria-hidden="true" />}
+            </span>
+            <span className="bottom-nav-label nav-label-full">{item.label}</span>
+            <span className="bottom-nav-label nav-label-compact" aria-hidden="true">
+              {item.compactLabel}
+            </span>
+          </button>
+        );
+      })}
     </nav>
   );
 }

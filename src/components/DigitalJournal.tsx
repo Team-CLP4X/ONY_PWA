@@ -2146,7 +2146,7 @@ export function DigitalJournal({
                   {language === "Bahasa Melayu"
                     ? "Refleksi & foto"
                     : language === "中文"
-                    ? "心事、照片与回甘"
+                    ? "心事与照片"
                     : "Reflections & photos"}
                 </small>
               </div>
@@ -2168,16 +2168,16 @@ export function DigitalJournal({
               <div className="segment-btn-text">
                 <strong className="segment-title">
                   {language === "Bahasa Melayu"
-                    ? "Memori Sembang AI"
+                    ? "Memori AI"
                     : language === "中文"
-                    ? "AI 陪伴记忆"
-                    : "AI Recall Memories"}
+                    ? "AI 记忆"
+                    : "AI Recall"}
                 </strong>
                 <small className="segment-subtitle">
                   {language === "Bahasa Melayu"
-                    ? "Konteks diperibadikan"
+                    ? "Konteks sembang"
                     : language === "中文"
-                    ? "辅助日常连贯对话"
+                    ? "陪伴对话上下文"
                     : "For companion chat"}
                 </small>
               </div>
@@ -2585,6 +2585,12 @@ export function DigitalJournal({
                             onClick={() => handleOpenCreateBook(shelf.id)}
                             role="button"
                             tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                handleOpenCreateBook(shelf.id);
+                              }
+                            }}
                             aria-label={`Add book to shelf ${shelf.name}`}
                           >
                             <span className="plus-symbol">+</span>
@@ -2596,6 +2602,23 @@ export function DigitalJournal({
                                 : "NEW"}
                             </span>
                           </div>
+
+                          {!isFilterActive && allBooksOnShelf.length === 0 && (
+                            <button
+                              type="button"
+                              className="bookshelf-empty-starter-card"
+                              onClick={() => handleOpenCreateBook(shelf.id)}
+                            >
+                              <JournalIcon name="bookOpen" size={16} decorative />
+                              <span>
+                                {language === "Bahasa Melayu"
+                                  ? "Cipta buku pertama di rak ini"
+                                  : language === "中文"
+                                  ? "在这里放上第一本手帐"
+                                  : "Add your first book to this shelf"}
+                              </span>
+                            </button>
+                          )}
                         </div>
                       )}
 

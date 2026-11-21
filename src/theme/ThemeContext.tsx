@@ -95,6 +95,7 @@ export interface UserSettingsDoc {
   seenPostIds: string[];
   recentColors: string[];
   readNotificationIds: string[];
+  savedVoucherIds?: string[];
   language: string;
   companionPreferences: CompanionPreferences;
   notificationPreferences: NotificationPreferences;
@@ -125,6 +126,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsDoc = {
   seenPostIds: [],
   recentColors: [],
   readNotificationIds: [],
+  savedVoucherIds: [],
   language: "English",
   companionPreferences: {
     companion: "Cat",
@@ -362,6 +364,9 @@ export function mergeWithDefaults(incoming: Partial<UserSettingsDoc> | null | un
       : [],
     readNotificationIds: Array.isArray(incoming.readNotificationIds)
       ? Array.from(new Set(incoming.readNotificationIds.map(String))).slice(-200)
+      : [],
+    savedVoucherIds: Array.isArray(incoming.savedVoucherIds)
+      ? Array.from(new Set(incoming.savedVoucherIds.map(String))).slice(-100)
       : [],
     language: incoming.language || DEFAULT_USER_SETTINGS.language,
     companionPreferences: {

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MarketplaceRecommendation, SafetyAction } from "../services/contracts.ts";
-import { isVoucherActiveAndValid, type FirestoreMerchant } from "../data/merchants.ts";
+import { formatVoucherValidity, isVoucherActiveAndValid, type FirestoreMerchant } from "../data/merchants.ts";
 export { isVoucherActiveAndValid };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -358,7 +358,7 @@ export async function evaluateMarketplaceRecommendations(
       value: v.value,
       description: v.description,
       image: v.image,
-      validity: v.validity,
+      validity: formatVoucherValidity(v.validity),
       contextReason,
       actionLabel,
     };
